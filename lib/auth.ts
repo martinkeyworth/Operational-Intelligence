@@ -23,6 +23,32 @@ export const auth = betterAuth({
         defaultValue: "viewer",
         input: false,
       },
+      canViewDashboard: { type: "boolean", required: false, input: false },
+      isBarber: { type: "boolean", required: false, input: false },
+      isTrainingLead: { type: "boolean", required: false, input: false },
+      isHrLead: { type: "boolean", required: false, input: false },
+      isSocialMedia: { type: "boolean", required: false, input: false },
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        // Assign default access on sign-up based on email domain:
+        //  - @lessthanzerobarbers.com  -> dashboard access
+        //  - everyone else             -> barber (weekly data input only)
+        before: async (newUser) => {
+          const isCompany = (newUser.email ?? "")
+            .toLowerCase()
+            .endsWith("@lessthanzerobarbers.com")
+          return {
+            data: {
+              ...newUser,
+              canViewDashboard: isCompany,
+              isBarber: !isCompany,
+            },
+          }
+        },
+      },
     },
   },
   trustedOrigins: [

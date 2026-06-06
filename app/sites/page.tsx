@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation"
-import { headers } from "next/headers"
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagDot } from "@/components/rag"
@@ -23,8 +21,7 @@ export default async function SitesPage({
 }: {
   searchParams: Promise<{ week?: string }>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) redirect("/sign-in")
+  const user = await requireDashboard()
 
   const { week: weekParam } = await searchParams
   const weeks = await getWeeks()
@@ -35,7 +32,7 @@ export default async function SitesPage({
   const confirmedCount = sites.filter((s) => s.confirmed).length
 
   return (
-    <AppShell user={session.user as never}>
+    <AppShell user={user}>
       <PageHeader
         meta="Network"
         title="Sites"

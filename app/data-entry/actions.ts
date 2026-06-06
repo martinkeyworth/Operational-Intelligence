@@ -1,0 +1,68 @@
+"use server"
+
+import { and, eq } from "drizzle-orm"
+import { revalidatePath } from "next/cache"
+import { db } from "@/lib/db"
+import { weeklyTakings, barbers } from "@/lib/db/schema"
+import { requireDataEntry } from "@/lib/access"
+
+export async function saveWeeklyTakings(formData: FormData) {
+  await requireDataEntry()
+
+  const barberId = Number(formData.get("barberId"))
+  const weekEnding = String(formData.get("weekEnding"))
+  const cash = Number(formData.get("cash") ?? 0) || 0
+  const card = Number(formData.get("card") ?? 0) || 0
+  const cashRent = Number(formData.get("cashRent") ?? 0) || 0
+  const cardRent = Number(formData.get("cardRent") ?? 0) || 0
+  const manager = String(formData.get("manager") ?? "").trim()
+  const transferCompleted = formData.get("transferCompleted") === "on"
+  const comments = String(formData.get("comments") ?? "").trim() || null
+
+  if (!barberId || !weekEnding) throw new Error("Barber and week are required")
+
+  // Resolve the barber's site for the denormalised siteId column.
+  const [barber] = await db
+    .select({ siteId: barbers.siteId })
+    .from(barbers)
+    .where(eq(barbers.id, barberId))
+  if (!barber) throw new Error("Unknown barber")
+
+  const total = cash + card
+
+  const values = {
+    siteId: barber.siteId,
+    total: String(total),
+    cash: String(cash),
+    card: String(card),
+    cashRent: String(cashRent),
+    cardRent: String(cardRent),
+    manager,
+    transferCompleted,
+    comments,
+  }
+
+  // Upsert: one takings row per barber per week.
+  const existing = await db
+    .select({ id: weeklyTakings.id })
+    .from(weeklyTakings)
+    .where(
+      and(
+        eq(weeklyTakings.barberId, barberId),
+        eq(weeklyTakings.weekEnding, weekEnding),
+      ),
+    )
+
+  if (existing.length > 0) {
+    await db
+      .update(weeklyTakings)
+      .set(values)
+      .where(eq(weeklyTakings.id, existing[0].id))
+  } else {
+    await db.insert(weeklyTakings).values({ barberId, weekEnding, ...values })
+  }
+
+  revalidatePath("/data-entry")
+  revalidatePath("/")
+  revalidatePath("/sites")
+}

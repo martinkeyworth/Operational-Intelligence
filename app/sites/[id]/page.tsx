@@ -1,7 +1,6 @@
-import { redirect, notFound } from "next/navigation"
-import { headers } from "next/headers"
+import { notFound } from "next/navigation"
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagBadge, RagDot } from "@/components/rag"
@@ -34,8 +33,7 @@ export default async function SiteDetailPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ week?: string }>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) redirect("/sign-in")
+  const user = await requireDashboard()
 
   const { id } = await params
   const siteId = Number(id)
@@ -53,7 +51,7 @@ export default async function SiteDetailPage({
   const reporting = barbers.filter((b) => b.reported)
 
   return (
-    <AppShell user={session.user as never}>
+    <AppShell user={user}>
       <PageHeader
         meta={
           <Link href="/sites" className="flex items-center gap-1 hover:underline">

@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation"
-import { headers } from "next/headers"
-import { auth } from "@/lib/auth"
+import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { GroupDashboard } from "@/components/group-dashboard"
 import {
@@ -18,8 +16,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ week?: string }>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) redirect("/sign-in")
+  const user = await requireDashboard()
 
   const { week: weekParam } = await searchParams
   const weeks = await getWeeks()
@@ -27,7 +24,7 @@ export default async function Page({
 
   if (!week) {
     return (
-      <AppShell user={session.user as never}>
+      <AppShell user={user}>
         <div className="p-8 text-sm text-muted-foreground">
           No takings have been reported yet.
         </div>
@@ -44,7 +41,7 @@ export default async function Page({
   ])
 
   return (
-    <AppShell user={session.user as never}>
+    <AppShell user={user}>
       <GroupDashboard
         summary={summary}
         weeks={weeks}

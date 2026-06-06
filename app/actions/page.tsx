@@ -1,19 +1,16 @@
-import { redirect } from "next/navigation"
-import { headers } from "next/headers"
-import { auth } from "@/lib/auth"
+import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
 import { getActions } from "@/lib/data"
 
 export default async function ActionsPage() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) redirect("/sign-in")
+  const user = await requireDashboard()
 
   const actions = await getActions()
 
   return (
-    <AppShell user={session.user as never}>
+    <AppShell user={user}>
       <PageHeader
         meta="Action Management"
         title="Action Register"

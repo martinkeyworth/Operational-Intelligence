@@ -375,3 +375,88 @@ export async function getActions(): Promise<ActionRow[]> {
       return ragRank[a.rag] - ragRank[b.rag]
     })
 }
+
+// ---------------------------------------------------------------------------
+// Data entry helpers
+// ---------------------------------------------------------------------------
+
+export type DataEntryBarber = {
+  id: number
+  name: string
+  role: string
+  targetWeekly: number
+  cash: number
+  card: number
+  cashRent: number
+  cardRent: number
+  manager: string
+  transferCompleted: boolean
+  comments: string | null
+  reported: boolean
+}
+
+export type DataEntrySite = {
+  id: number
+  name: string
+  location: string
+  barbers: DataEntryBarber[]
+}
+
+/** All active barbers grouped by site, pre-filled with the given week's takings. */
+export async function getDataEntrySites(week: string): Promise<DataEntrySite[]> {
+  const siteRows = await db.select().from(sites).orderBy(sites.name)
+  const barberRows = await db
+    .select()
+    .from(barbers)
+    .where(eq(barbers.active, true))
+    .orderBy(asc(barbers.name))
+  const takingRows = await db
+    .select()
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.weekEnding, week))
+
+  return siteRows.map((s) => ({
+    id: s.id,
+    name: s.name,
+    location: s.location,
+    barbers: barberRows
+      .filter((b) => b.siteId === s.id)
+      .map((b) => {
+        const t = takingRows.find((r) => r.barberId === b.id)
+        return {
+          id: b.id,
+          name: b.name,
+          role: b.role,
+          targetWeekly: Number(b.targetWeekly),
+          cash: t ? Number(t.cash) : 0,
+          card: t ? Number(t.card) : 0,
+          cashRent: t ? Number(t.cashRent) : 0,
+          cardRent: t ? Number(t.cardRent) : 0,
+          manager: t?.manager ?? "",
+          transferCompleted: t?.transferCompleted ?? true,
+          comments: t?.comments ?? null,
+          reported: !!t,
+        }
+      }),
+  }))
+}
+
+/** Recent week-ending Saturdays for the picker (existing weeks + next upcoming Saturday). */
+export async function getEntryWeeks(): Promise<string[]> {
+  const existing = await getWeeks()
+  const set = new Set(existing)
+
+  // Compute the most recent Saturday (week ending) and the next one.
+  const today = new Date()
+  const day = today.getUTCDay() // 0 = Sun ... 6 = Sat
+  const daysSinceSat = (day + 1) % 7
+  const lastSat = new Date(today)
+  lastSat.setUTCDate(today.getUTCDate() - daysSinceSat)
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(lastSat)
+    d.setUTCDate(lastSat.getUTCDate() + 7 * i)
+    set.add(d.toISOString().slice(0, 10))
+  }
+
+  return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
+}

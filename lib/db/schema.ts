@@ -18,6 +18,13 @@ export const user = pgTable("user", {
   emailVerified: boolean("emailVerified").notNull().default(false),
   image: text("image"),
   role: text("role").notNull().default("viewer"),
+  // Access capabilities. Company-domain users default to dashboard access;
+  // everyone else is a barber (weekly data input only).
+  canViewDashboard: boolean("can_view_dashboard").notNull().default(false),
+  isBarber: boolean("is_barber").notNull().default(false),
+  isTrainingLead: boolean("is_training_lead").notNull().default(false),
+  isHrLead: boolean("is_hr_lead").notNull().default(false),
+  isSocialMedia: boolean("is_social_media").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })

@@ -9,24 +9,44 @@ import {
   LayoutDashboard,
   Store,
   ListChecks,
+  ClipboardEdit,
+  Users,
   LogOut,
 } from "lucide-react"
 
-const NAV = [
-  { href: "/", label: "Group Overview", icon: LayoutDashboard },
-  { href: "/sites", label: "Sites", icon: Store },
-  { href: "/actions", label: "Action Register", icon: ListChecks },
-]
+type ShellUser = {
+  name: string
+  email: string
+  role?: string
+  isCompany?: boolean
+  canViewDashboard?: boolean
+  isBarber?: boolean
+}
 
 export function AppShell({
   children,
   user,
 }: {
   children: React.ReactNode
-  user: { name: string; email: string; role?: string }
+  user: ShellUser
 }) {
   const pathname = usePathname()
   const router = useRouter()
+
+  const dashboardNav = user.canViewDashboard
+    ? [
+        { href: "/", label: "Group Overview", icon: LayoutDashboard },
+        { href: "/sites", label: "Sites", icon: Store },
+        { href: "/actions", label: "Action Register", icon: ListChecks },
+      ]
+    : []
+  const nav = [
+    ...dashboardNav,
+    { href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit },
+    ...(user.isCompany && user.canViewDashboard
+      ? [{ href: "/admin/people", label: "People & Access", icon: Users }]
+      : []),
+  ]
 
   const initials = user.name
     .split(" ")
@@ -57,7 +77,7 @@ export function AppShell({
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"
@@ -126,7 +146,7 @@ export function AppShell({
           </Button>
         </div>
         <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"
