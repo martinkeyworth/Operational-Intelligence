@@ -239,6 +239,7 @@ export type SiteWeekRow = {
   brand: string
   region: string | null
   managerName: string | null
+  headcount: number
   weekTarget: number
   weekRevenue: number
   attainmentPct: number
@@ -350,6 +351,7 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
       brand: s.brand,
       region: s.region,
       managerName: s.managerName,
+      headcount: s.headcount ?? 0,
       weekTarget,
       weekRevenue,
       attainmentPct,
@@ -1243,6 +1245,25 @@ export async function getCapacityKpis(
       : "red",
     trainingReported: !!tw,
   }
+}
+
+/** Training-academy sites with their KPIs for the given week (for the Weekly
+ *  Input page so training can be entered alongside takings). */
+export async function getTrainingSitesForWeek(
+  week: string,
+): Promise<{ id: number; name: string; kpis: CapacityKpis }[]> {
+  const rows = await db
+    .select({ id: sites.id, name: sites.name })
+    .from(sites)
+    .where(eq(sites.siteType, "training"))
+    .orderBy(sites.name)
+
+  const out: { id: number; name: string; kpis: CapacityKpis }[] = []
+  for (const r of rows) {
+    const kpis = await getCapacityKpis(r.id, week)
+    if (kpis) out.push({ id: r.id, name: r.name, kpis })
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------

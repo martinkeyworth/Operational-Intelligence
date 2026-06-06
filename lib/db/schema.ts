@@ -78,6 +78,8 @@ export const sites = pgTable("sites", {
   brand: text("brand").notNull().default("Less Than Zero"),
   region: text("region"),
   managerName: text("manager_name"),
+  // Confirmed staff headcount for the site (editable on the site record).
+  headcount: integer("headcount").notNull().default(0),
   openedDate: date("opened_date"),
   monthlyTarget: numeric("monthly_target").notNull().default("0"),
   rag: text("rag").notNull().default("green"),
@@ -228,5 +230,41 @@ export const trainingWeeks = pgTable("training_weeks", {
   apprentices: integer("apprentices").notNull().default(0),
   recordedBy: text("recorded_by"),
   notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Weekly board pack: AI analysis + leadership narratives + send status. One
+// row per week-ending. Drives the Saturday reporting workflow.
+export const weeklyReports = pgTable("weekly_reports", {
+  id: serial("id").primaryKey(),
+  weekEnding: date("week_ending").notNull().unique(),
+  overallRag: text("overall_rag"),
+  overallPct: integer("overall_pct"),
+  // Structured snapshot of every area's RAG/score at analysis time (JSON).
+  snapshot: text("snapshot"),
+  // AI week-on-week analysis (improving / static / declining per KPI area).
+  aiAnalysis: text("ai_analysis"),
+  // Narrative supplied by Cosmin (COO) at the 7pm step.
+  cosminNarrative: text("cosmin_narrative"),
+  cosminNarrativeAt: timestamp("cosmin_narrative_at"),
+  // Martin's (CEO) response at the 8:30pm step.
+  martinResponse: text("martin_response"),
+  martinResponseAt: timestamp("martin_response_at"),
+  // Workflow timestamps.
+  remindersSentAt: timestamp("reminders_sent_at"),
+  analysisRunAt: timestamp("analysis_run_at"),
+  reportSentAt: timestamp("report_sent_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Audit log of every outbound email the system sends.
+export const emailLog = pgTable("email_log", {
+  id: serial("id").primaryKey(),
+  kind: text("kind").notNull(), // reminder | narrative_request | board_report
+  recipient: text("recipient").notNull(),
+  subject: text("subject").notNull(),
+  weekEnding: date("week_ending"),
+  status: text("status").notNull().default("sent"), // sent | failed
+  error: text("error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })

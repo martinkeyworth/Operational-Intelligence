@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { requireDashboard } from "@/lib/access"
+import { requireDashboard, canInputArea } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
@@ -15,7 +15,7 @@ import {
 } from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
 import { kpisForArea } from "@/lib/kpi-config"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, PencilLine } from "lucide-react"
 
 export default async function FunctionAreaPage({
   params,
@@ -43,6 +43,10 @@ export default async function FunctionAreaPage({
   const amber = open.filter((a) => a.rag === "amber").length
   const rag = red > 0 ? "red" : amber > 0 ? "amber" : "green"
 
+  // Areas with a dedicated, lead-owned weekly input page.
+  const INPUT_AREAS = ["HR", "Marketing", "Training"]
+  const canInput = INPUT_AREAS.includes(area.key) && canInputArea(user, area.key)
+
   return (
     <AppShell user={user}>
       <PageHeader
@@ -51,6 +55,15 @@ export default async function FunctionAreaPage({
         subtitle={area.description}
       >
         <RagBadge rag={rag} className="px-3 py-1 text-sm" />
+        {canInput && (
+          <Link
+            href={`/functions/${area.key}/input`}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <PencilLine className="h-4 w-4" />
+            Enter weekly input
+          </Link>
+        )}
       </PageHeader>
       <div className="space-y-6 px-5 py-6 md:px-8">
         <Link

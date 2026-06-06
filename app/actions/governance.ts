@@ -79,6 +79,7 @@ export async function createSite(formData: FormData) {
   const brand = String(formData.get("brand") ?? "").trim() || "Less Than Zero"
   const region = String(formData.get("region") ?? "").trim() || null
   const managerName = String(formData.get("managerName") ?? "").trim() || null
+  const headcount = Number(formData.get("headcount") ?? 0) || 0
   const siteType = String(formData.get("siteType") ?? "barbershop").trim()
   const chairCapacity = Number(formData.get("chairCapacity") ?? 0) || 0
   const learnerCapacity = Number(formData.get("learnerCapacity") ?? 0) || 0
@@ -91,6 +92,7 @@ export async function createSite(formData: FormData) {
     brand,
     region,
     managerName,
+    headcount,
     siteType: siteType === "training" ? "training" : "barbershop",
     chairCapacity,
     learnerCapacity,
@@ -99,6 +101,43 @@ export async function createSite(formData: FormData) {
     rag: "green",
   })
   revalidatePath("/sites")
+  revalidatePath("/")
+}
+
+/** Edit a site's core record (name, manager, headcount, capacity). */
+export async function editSite(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) throw new Error("Missing site id")
+  const name = String(formData.get("name") ?? "").trim()
+  const location = String(formData.get("location") ?? "").trim()
+  const brand = String(formData.get("brand") ?? "").trim() || "Less Than Zero"
+  const region = String(formData.get("region") ?? "").trim() || null
+  const managerName = String(formData.get("managerName") ?? "").trim() || null
+  const headcount = Number(formData.get("headcount") ?? 0) || 0
+  const siteType = String(formData.get("siteType") ?? "barbershop").trim()
+  const chairCapacity = Number(formData.get("chairCapacity") ?? 0) || 0
+  const learnerCapacity = Number(formData.get("learnerCapacity") ?? 0) || 0
+  const apprenticeCapacity = Number(formData.get("apprenticeCapacity") ?? 0) || 0
+  if (!name || !location) throw new Error("Name and location are required")
+
+  await db
+    .update(sites)
+    .set({
+      name,
+      location,
+      brand,
+      region,
+      managerName,
+      headcount,
+      siteType: siteType === "training" ? "training" : "barbershop",
+      chairCapacity,
+      learnerCapacity,
+      apprenticeCapacity,
+    })
+    .where(eq(sites.id, id))
+  revalidatePath("/sites")
+  revalidatePath(`/sites/${id}`)
   revalidatePath("/")
 }
 
@@ -216,6 +255,19 @@ export async function confirmSiteWeek(formData: FormData) {
       .where(eq(siteConfirmations.id, existing[0].id))
   } else {
     await db.insert(siteConfirmations).values({ siteId, weekEnding, ...values })
+  }
+
+  // Persist the confirmed manager/headcount/name back onto the site record so
+  // the Sites list and detail page always reflect the latest confirmation
+  // (important for sites like F.AF where no barbers enter takings).
+  const siteUpdate: Record<string, unknown> = {}
+  if (siteNameConfirmed) siteUpdate.name = siteNameConfirmed
+  if (locationConfirmed) siteUpdate.location = locationConfirmed
+  if (brandConfirmed) siteUpdate.brand = brandConfirmed
+  if (managerConfirmed) siteUpdate.managerName = managerConfirmed
+  if (headcountConfirmed !== null) siteUpdate.headcount = headcountConfirmed
+  if (Object.keys(siteUpdate).length > 0) {
+    await db.update(sites).set(siteUpdate).where(eq(sites.id, siteId))
   }
 
   // On weekly confirmation, sync the capacity (chair utilisation) and

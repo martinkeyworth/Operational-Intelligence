@@ -108,7 +108,7 @@ export default async function SitesPage({
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {s.brand} · {s.location}
                         {s.region ? ` · ${s.region}` : ""} · Manager:{" "}
-                        {s.managerName ?? "—"}
+                        {s.managerName ?? "—"} · Headcount: {s.headcount}
                         {s.confirmed && s.confirmedBy
                           ? ` · Confirmed by ${s.confirmedBy}`
                           : ""}
@@ -135,7 +135,7 @@ export default async function SitesPage({
                       location={s.location}
                       brand={s.brand}
                       managerName={s.managerName}
-                      headcount={s.totalBarbers}
+                      headcount={s.headcount}
                       week={week}
                       confirmed={s.confirmed}
                       confirmedBy={s.confirmedBy}

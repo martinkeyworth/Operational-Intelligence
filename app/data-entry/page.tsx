@@ -1,19 +1,20 @@
-import { requireDataEntry } from "@/lib/access"
+import { requireDataEntry, canInputArea } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
 import { WeekSelector } from "@/components/week-selector"
 import { BarberEntryCard } from "@/components/barber-entry-card"
-import { KpiEntryRow } from "@/components/kpi-entry-row"
+import { TrainingCard } from "@/components/training-card"
 import {
   getEntryWeeks,
   getDataEntrySites,
   getSiteOptions,
-  getManualKpiResults,
+  getTrainingSitesForWeek,
   fmtWeekLong,
 } from "@/lib/data"
-import { kpisForArea } from "@/lib/kpi-config"
 import { FUNCTION_AREAS } from "@/lib/function-areas"
+import Link from "next/link"
+import { ArrowRight } from "lucide-react"
 
 export default async function DataEntryPage({
   searchParams,
@@ -28,26 +29,17 @@ export default async function DataEntryPage({
 
   const sites = week ? await getDataEntrySites(week) : []
   const siteOptions = await getSiteOptions()
+  const trainingSites = week ? await getTrainingSitesForWeek(week) : []
+  // Training academies have their own input card; keep them out of the
+  // per-barber takings list.
+  const trainingIds = new Set(trainingSites.map((t) => t.id))
+  const barberSites = sites.filter((s) => !trainingIds.has(s.id))
 
-  // Functional-area KPI input (HR, Marketing) is for management/dashboard users
-  // only — barbers just enter takings.
-  const kpiAreas = ["HR", "Marketing"]
-  const showKpis = user.canViewDashboard && !!week
-  const kpiSections = showKpis
-    ? await Promise.all(
-        kpiAreas.map(async (areaKey) => {
-          const cfg = FUNCTION_AREAS.find((a) => a.key === areaKey)
-          const results = await getManualKpiResults(areaKey, week)
-          const defs = kpisForArea(areaKey)
-          return {
-            areaKey,
-            label: cfg?.label ?? areaKey,
-            defs,
-            results,
-          }
-        }),
-      )
-    : []
+  // Quick links to the functional-area input pages this user leads (HR,
+  // Marketing, Training). Owners see all three.
+  const myAreas = ["HR", "Marketing", "Training"]
+    .map((key) => FUNCTION_AREAS.find((a) => a.key === key))
+    .filter((a): a is NonNullable<typeof a> => !!a && canInputArea(user, a.key))
 
   return (
     <AppShell user={user}>
@@ -60,16 +52,43 @@ export default async function DataEntryPage({
       </PageHeader>
 
       <div className="space-y-8 px-5 py-6 md:px-8">
+        {myAreas.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-foreground">
+              Your functional areas
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {myAreas.map((a) => (
+                <Link
+                  key={a.key}
+                  href={`/functions/${a.key}/input${week ? `?week=${week}` : ""}`}
+                  className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:border-primary"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {a.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Enter weekly KPIs
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
         {!week ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No weeks available.
           </Card>
-        ) : sites.length === 0 ? (
+        ) : barberSites.length === 0 && trainingSites.length === 0 ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No active barbers found. Add barbers to a site first.
           </Card>
         ) : (
-          sites.map((site) => (
+          barberSites.map((site) => (
             <section key={site.id} className="space-y-3">
               <div className="flex items-baseline justify-between">
                 <h2 className="text-sm font-semibold text-foreground">
@@ -101,36 +120,23 @@ export default async function DataEntryPage({
           ))
         )}
 
-        {showKpis && week && (
-          <div className="space-y-8 border-t border-border pt-8">
+        {week && trainingSites.length > 0 && (
+          <div className="space-y-3 border-t border-border pt-8">
             <div>
               <h2 className="text-sm font-semibold text-foreground">
-                Functional Area KPIs
+                Training Academies
               </h2>
               <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
-                Weekly People/HR and Marketing measures. Each is scored RAG
-                against its target and feeds the overall business RAG on the
-                dashboard.
+                Record weekly private learners and apprentices for each academy.
+                Below capacity is flagged red and feeds the Training RAG.
               </p>
             </div>
-            {kpiSections.map((section) => (
-              <section key={section.areaKey} className="space-y-3">
+            {trainingSites.map((t) => (
+              <section key={t.id} className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {section.label}
+                  {t.name}
                 </h3>
-                <div className="flex flex-col gap-3">
-                  {section.defs.map((def) => {
-                    const r = section.results.find((x) => x.code === def.code)
-                    return (
-                      <KpiEntryRow
-                        key={def.code}
-                        def={def}
-                        week={week}
-                        initialValue={r?.value ?? null}
-                      />
-                    )
-                  })}
-                </div>
+                <TrainingCard week={week} kpis={t.kpis} />
               </section>
             ))}
           </div>

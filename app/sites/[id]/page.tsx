@@ -86,7 +86,7 @@ export default async function SiteDetailPage({
             location={site.location}
             brand={site.brand}
             managerName={site.managerName}
-            headcount={siteWeek.totalBarbers}
+            headcount={siteWeek.headcount}
             week={week}
             confirmed={siteWeek.confirmed}
             confirmedBy={siteWeek.confirmedBy}

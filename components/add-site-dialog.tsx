@@ -77,14 +77,25 @@ export function AddSiteDialog() {
                 ))}
               </select>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="region">Region</Label>
+              <Input id="region" name="region" placeholder="Midlands" />
+            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="region">Region</Label>
-                <Input id="region" name="region" placeholder="Midlands" />
-              </div>
               <div className="grid gap-2">
                 <Label htmlFor="managerName">Site manager</Label>
                 <Input id="managerName" name="managerName" placeholder="Name" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="headcount">Headcount</Label>
+                <Input
+                  id="headcount"
+                  name="headcount"
+                  type="number"
+                  min={0}
+                  step="1"
+                  placeholder="e.g. 6"
+                />
               </div>
             </div>
             <div className="grid gap-2">

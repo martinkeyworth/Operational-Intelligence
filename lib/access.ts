@@ -88,6 +88,38 @@ export async function requireOwner(): Promise<AccessUser> {
   return user
 }
 
+/** Map a functional area key -> the capability flag that owns its input. */
+export function areaLeadFlag(
+  areaKey: string,
+): keyof Pick<Capabilities, "isHrLead" | "isSocialMedia" | "isTrainingLead"> | null {
+  switch (areaKey) {
+    case "HR":
+      return "isHrLead"
+    case "Marketing":
+      return "isSocialMedia"
+    case "Training":
+      return "isTrainingLead"
+    default:
+      return null
+  }
+}
+
+/** Can this user input data for the given functional area?
+ *  Owners and the area's designated lead may input. */
+export function canInputArea(user: AccessUser, areaKey: string): boolean {
+  if (user.isOwner) return true
+  const flag = areaLeadFlag(areaKey)
+  if (!flag) return false
+  return Boolean(user[flag])
+}
+
+/** Require input rights for a functional area. Redirects otherwise. */
+export async function requireAreaLead(areaKey: string): Promise<AccessUser> {
+  const user = await requireUser()
+  if (!canInputArea(user, areaKey)) redirect("/no-access")
+  return user
+}
+
 /** List every user with capability flags, for the admin People page. */
 export async function getAllUsers(): Promise<AccessUser[]> {
   const rows = await db.select().from(userTable).orderBy(userTable.email)
