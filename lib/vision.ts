@@ -3,21 +3,23 @@ import { sites as sitesTable, weeklyTakings } from "@/lib/db/schema"
 import { eq, desc } from "drizzle-orm"
 
 /**
- * Long-term vision: £5m overall annual sales revenue by 2030, with RTB
- * (rent-to-business) at 50% = £2.5m.
+ * Long-term vision: £5m overall annual chair-sales revenue by 2030, with RTB
+ * (rent-to-business) at a 50% SITE yield = £2.5m. The 50% is the site's yield
+ * on chair takings, not an individual barber's personal split.
  *
  * The key driver is HEADCOUNT, not per-barber revenue. RTB is assumed at a
- * fixed £500 per barber per week regardless of their personal split %, which
- * (at the 50% rent-to-business ratio) implies ~£1,000 gross per barber per
- * week. The £2.5m RTB goal therefore backs out the number of barbers we need
- * on the floor by 2030 — roughly 100 barbers. This file models the headcount
- * glide path from today up to that 2030 target.
+ * fixed £500 per barber per week, which at the 50% site yield implies ~£1,000
+ * gross chair takings per barber per week. The £2.5m RTB goal therefore backs
+ * out the number of barbers we need on the floor by 2030 — roughly 100
+ * barbers. This file models the headcount glide path from today up to that
+ * 2030 target. Training and subletting income sit on top as the "fat" and are
+ * excluded from the £5m.
  */
 export const VISION = {
   targetYear: 2030,
   baseYear: 2026,
   salesGoal: 5_000_000,
-  rtbRatio: 0.5, // RTB is 50% of sales => £2.5m
+  rtbRatio: 0.5, // 50% site yield => £2.5m RTB
   rtbPerBarberWeekly: 500, // fixed RTB contribution per barber per week
   weeksPerYear: 52,
 } as const

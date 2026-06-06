@@ -28,7 +28,6 @@ import {
   trainingRevenue as calcTrainingRevenue,
   trainingRevenueTarget,
 } from "@/lib/training-config"
-import { perBarberWeeklyRtbTarget, currentTargetYear } from "@/lib/targets"
 import { effectiveBarberPct } from "@/lib/split-config"
 import {
   trainingWeeks,
@@ -525,11 +524,10 @@ export async function getBarberWeek(
         .where(eq(weeklyTakings.weekEnding, prevWeek))
     : []
 
-  // Each barber is assumed to contribute a fixed £500/week RTB regardless of
-  // their personal split %, which at the 50% rent-to-business ratio implies
-  // ~£1,000 gross takings per barber per week. This is the vision target that
-  // rolls up to £5m sales / £2.5m RTB by 2030. A barber's own stored target
-  // overrides it only if it is higher.
+  // Each barber is assumed to contribute a fixed £500/week RTB. At the 50%
+  // site yield on chair takings this implies ~£1,000 gross takings per barber
+  // per week. This is the vision target that rolls up to £5m sales / £2.5m RTB
+  // by 2030. A barber's own stored target overrides it only if it is higher.
   const visionGrossTarget = VISION.rtbPerBarberWeekly / VISION.rtbRatio
 
   return barberRows
@@ -1236,22 +1234,13 @@ export async function getCapacityKpis(
     )
   const rtbActual = Number(rentAgg?.rent ?? 0)
   const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
-  // Per-barber weekly RTB target is worked back from the £2.5m-by-2030
-  // glidepath (site share by chairs / chairs / 52). Falls back to the site's
-  // stored figure only if the glidepath can't be computed.
-  const [totalChairsAgg] = await db
-    .select({ c: sql<number>`coalesce(sum(${sites.chairCapacity}), 0)` })
-    .from(sites)
-    .where(eq(sites.siteType, "barbershop"))
-  const totalChairs = Number(totalChairsAgg?.c ?? 0)
-  const glidepathPerBarber = perBarberWeeklyRtbTarget(
-    currentTargetYear(),
-    chairCapacity,
-    totalChairs,
+  // RTB per barber is a fixed £500/week (the 50% site yield assumption). The
+  // £2.5m-by-2030 RTB goal is reached by growing HEADCOUNT, not this figure.
+  // A site's stored figure overrides it only if explicitly set higher.
+  const rtbPerBarber = Math.max(
+    VISION.rtbPerBarberWeekly,
+    Number(site.rtbPerBarber ?? 0),
   )
-  const rtbPerBarber = glidepathPerBarber > 0
-    ? glidepathPerBarber
-    : Number(site.rtbPerBarber ?? 500)
   const rtbExpected = staffedChairs * rtbPerBarber
 
   // Training throughput for the week (academy sites only).
