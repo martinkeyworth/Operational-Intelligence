@@ -10,10 +10,13 @@ export function rollUpRag(values: Rag[]): Rag {
   return values.reduce((worst, v) => (RAG_ORDER[v] < RAG_ORDER[worst] ? v : worst))
 }
 
-/** RAG from attainment percentage against target. */
+/** RAG from attainment percentage against target.
+ *  Green only when target is achieved or surpassed (>= 100%).
+ *  Amber when within 10% under target (90% - 99%).
+ *  Red when more than 10% under target (< 90%). */
 export function ragFromAttainment(pct: number): Rag {
-  if (pct >= 95) return "green"
-  if (pct >= 80) return "amber"
+  if (pct >= 100) return "green"
+  if (pct >= 90) return "amber"
   return "red"
 }
 
