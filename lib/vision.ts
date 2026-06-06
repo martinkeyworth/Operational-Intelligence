@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
 import { sites as sitesTable, weeklyTakings } from "@/lib/db/schema"
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, sql } from "drizzle-orm"
+import { ragFromAttainment, type Rag } from "@/lib/format"
 
 /**
  * Long-term vision: £5m overall annual chair-sales revenue by 2030, with RTB
@@ -56,6 +57,28 @@ export type VisionGlidePath = {
   years: VisionYear[]
   sites: VisionSite[]
   totalChairs: number
+}
+
+export type VisionMonth = {
+  month: number // 1-12
+  label: string // "Jan", "Feb", ...
+  requiredTakings: number // required monthly chair sales for the glide path
+  actualTakings: number // actual chair sales recorded this month (0 if future)
+  attainmentPct: number // actual / required * 100
+  rag: Rag // RAG colour from attainment
+  barbersNeeded: number // barbers needed on the floor that month
+  isPast: boolean // whether the month has actuals to date
+}
+
+export type VisionMonthlyPlan = {
+  year: number
+  startHeadcount: number
+  endHeadcount: number
+  annualRequired: number // total required chair sales for the year
+  annualActual: number // total actual chair sales year-to-date
+  annualAttainmentPct: number
+  annualRag: Rag
+  months: VisionMonth[]
 }
 
 /** Annualise the trailing weeks of takings to anchor today's run-rate. */
@@ -181,5 +204,115 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     years,
     sites,
     totalChairs,
+  }
+}
+
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+/** Sum of actual chair takings per calendar month for a given year. */
+async function actualTakingsByMonth(year: number): Promise<number[]> {
+  const rows = await db
+    .select({
+      month: sql<number>`extract(month from ${weeklyTakings.weekEnding})`,
+      total: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)`,
+    })
+    .from(weeklyTakings)
+    .where(sql`extract(year from ${weeklyTakings.weekEnding}) = ${year}`)
+    .groupBy(sql`extract(month from ${weeklyTakings.weekEnding})`)
+
+  const months = new Array(12).fill(0)
+  for (const r of rows) {
+    const m = Number(r.month)
+    if (m >= 1 && m <= 12) months[m - 1] = Number(r.total ?? 0)
+  }
+  return months
+}
+
+/**
+ * Model the required chair takings for the current calendar year, month by
+ * month, along the glide path to the £5m / £2.5m 2030 goal. Required takings
+ * ramp from this year's start headcount run-rate up to next year's milestone
+ * (the year-end headcount), so each month carries a realistic, growing target.
+ * Actuals are compared to required to produce an attainment % and RAG colour,
+ * and we surface the barbers ("site numbers") needed each month.
+ */
+export async function getVisionMonthlyPlan(
+  now: Date = new Date(),
+): Promise<VisionMonthlyPlan> {
+  const path = await getVisionGlidePath()
+  const year = Math.min(
+    Math.max(now.getFullYear(), path.baseYear),
+    path.targetYear,
+  )
+
+  // This year's start and end headcount milestones from the annual glide path.
+  const thisYearRow =
+    path.years.find((y) => y.year === year) ?? path.years[0]
+  const nextYearRow =
+    path.years.find((y) => y.year === year + 1) ?? thisYearRow
+  const startHeadcount = thisYearRow.headcountTarget
+  const endHeadcount = nextYearRow.headcountTarget
+
+  const actuals = await actualTakingsByMonth(year)
+  const weeksPerMonth = VISION.weeksPerYear / 12 // ~4.333
+  const grossPerBarberWeekly = path.grossPerBarberWeekly
+
+  const currentMonth =
+    now.getFullYear() === year ? now.getMonth() + 1 : 12 // 1-12; full year if past
+
+  const months: VisionMonth[] = []
+  let annualRequired = 0
+  let annualActual = 0
+
+  for (let i = 0; i < 12; i++) {
+    // Linearly ramp headcount across the 12 months from start -> end.
+    const frac = (i + 0.5) / 12
+    const barbersNeeded = Math.round(
+      startHeadcount + (endHeadcount - startHeadcount) * frac,
+    )
+    const requiredTakings = Math.round(
+      barbersNeeded * grossPerBarberWeekly * weeksPerMonth,
+    )
+    const isPast = i + 1 <= currentMonth
+    const actualTakings = isPast ? actuals[i] : 0
+    const attainmentPct =
+      requiredTakings > 0 ? (actualTakings / requiredTakings) * 100 : 0
+
+    annualRequired += requiredTakings
+    if (isPast) annualActual += actualTakings
+
+    months.push({
+      month: i + 1,
+      label: MONTH_LABELS[i],
+      requiredTakings,
+      actualTakings,
+      attainmentPct: Math.round(attainmentPct * 10) / 10,
+      // Future months have no actuals yet, so they're "pending" (amber) rather
+      // than failing red.
+      rag: isPast ? ragFromAttainment(attainmentPct) : "amber",
+      barbersNeeded,
+      isPast,
+    })
+  }
+
+  // Year-to-date attainment uses required for elapsed months only.
+  const requiredToDate = months
+    .filter((m) => m.isPast)
+    .reduce((s, m) => s + m.requiredTakings, 0)
+  const annualAttainmentPct =
+    requiredToDate > 0 ? (annualActual / requiredToDate) * 100 : 0
+
+  return {
+    year,
+    startHeadcount,
+    endHeadcount,
+    annualRequired,
+    annualActual,
+    annualAttainmentPct: Math.round(annualAttainmentPct * 10) / 10,
+    annualRag: ragFromAttainment(annualAttainmentPct),
+    months,
   }
 }

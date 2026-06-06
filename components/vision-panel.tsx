@@ -1,9 +1,16 @@
 import { Card } from "@/components/ui/card"
 import { VisionGlideChart } from "@/components/vision-glide-chart"
+import { VisionMonthlyTable } from "@/components/vision-monthly-table"
 import { fmtGBP } from "@/lib/format"
-import type { VisionGlidePath } from "@/lib/vision"
+import type { VisionGlidePath, VisionMonthlyPlan } from "@/lib/vision"
 
-export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
+export function VisionPanel({
+  vision,
+  monthly,
+}: {
+  vision: VisionGlidePath
+  monthly: VisionMonthlyPlan
+}) {
   const {
     salesGoal,
     rtbGoal,
@@ -81,6 +88,9 @@ export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
       <div className="mt-5">
         <VisionGlideChart years={years} salesGoal={salesGoal} />
       </div>
+
+      {/* Required takings, attainment & site numbers by month */}
+      <VisionMonthlyTable plan={monthly} />
 
       {/* Per-site worked-back targets */}
       <div className="mt-5">

@@ -16,7 +16,7 @@ import type {
   ActionRow,
   BusinessScorecard,
 } from "@/lib/data"
-import type { VisionGlidePath } from "@/lib/vision"
+import type { VisionGlidePath, VisionMonthlyPlan } from "@/lib/vision"
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -43,6 +43,7 @@ export function GroupDashboard({
   actions,
   scorecard,
   vision,
+  monthly,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -52,6 +53,7 @@ export function GroupDashboard({
   actions: ActionRow[]
   scorecard: BusinessScorecard
   vision: VisionGlidePath
+  monthly: VisionMonthlyPlan
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -284,7 +286,7 @@ export function GroupDashboard({
         </div>
 
         {/* 2030 vision glide path */}
-        <VisionPanel vision={vision} />
+        <VisionPanel vision={vision} monthly={monthly} />
 
         {/* Site performance */}
         <Card className="p-5">

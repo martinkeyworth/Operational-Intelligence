@@ -11,7 +11,7 @@ import {
   getActions,
   getBusinessScorecard,
 } from "@/lib/data"
-import { getVisionGlidePath } from "@/lib/vision"
+import { getVisionGlidePath, getVisionMonthlyPlan } from "@/lib/vision"
 
 export default async function Page({
   searchParams,
@@ -34,7 +34,7 @@ export default async function Page({
     )
   }
 
-  const [summary, sites, trend, barbers, actions, scorecard, vision] =
+  const [summary, sites, trend, barbers, actions, scorecard, vision, monthly] =
     await Promise.all([
       getGroupSummary(week),
       getSiteWeek(week),
@@ -43,6 +43,7 @@ export default async function Page({
       getActions(),
       getBusinessScorecard(week),
       getVisionGlidePath(),
+      getVisionMonthlyPlan(),
     ])
 
   return (
@@ -56,6 +57,7 @@ export default async function Page({
         actions={actions}
         scorecard={scorecard}
         vision={vision}
+        monthly={monthly}
       />
     </AppShell>
   )
