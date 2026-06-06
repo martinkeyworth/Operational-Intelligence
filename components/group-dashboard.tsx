@@ -110,6 +110,35 @@ export function GroupDashboard({
     }))
     .sort((a, b) => b.yieldPct - a.yieldPct)
 
+  // Capacity recruitment trigger: when AVERAGE chair utilisation across the
+  // barbershops is above 90%, the estate is effectively full. HR is actioned
+  // to recruit the variance between barbers on headcount and total chair
+  // capacity (the vacant chairs) to unlock growth.
+  const CAPACITY_UTIL_THRESHOLD = 90
+  const capacityShops = sites.filter(
+    (s) => s.siteType !== "training" && s.chairCapacity > 0,
+  )
+  const totalCapacityChairs = capacityShops.reduce(
+    (a, s) => a + s.chairCapacity,
+    0,
+  )
+  const totalStaffedChairs = capacityShops.reduce(
+    (a, s) => a + Math.min(s.headcount, s.chairCapacity),
+    0,
+  )
+  const avgUtilisationPct =
+    totalCapacityChairs > 0
+      ? (totalStaffedChairs / totalCapacityChairs) * 100
+      : 0
+  const vacantChairs = Math.max(0, totalCapacityChairs - totalStaffedChairs)
+  const capacityRecruit = {
+    triggered: avgUtilisationPct > CAPACITY_UTIL_THRESHOLD && vacantChairs > 0,
+    avgUtilisationPct: Math.round(avgUtilisationPct),
+    vacantChairs,
+    totalCapacityChairs,
+    totalStaffedChairs,
+  }
+
   return (
     <div>
       <PageHeader
@@ -557,10 +586,33 @@ export function GroupDashboard({
                 </span>
               )}
             </div>
+            {capacityRecruit.triggered && (
+              <div className="mb-3 rounded-lg border border-rag-red/30 bg-rag-red/10 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium text-foreground">
+                    Estate at {capacityRecruit.avgUtilisationPct}% utilisation —
+                    HR to recruit {capacityRecruit.vacantChairs} barber
+                    {capacityRecruit.vacantChairs > 1 ? "s" : ""}
+                  </p>
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                    <AlertTriangle className="h-3 w-3" />
+                    HR action
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {capacityRecruit.totalStaffedChairs}/
+                  {capacityRecruit.totalCapacityChairs} chairs filled · average
+                  utilisation above 90%. Recruit the{" "}
+                  {capacityRecruit.vacantChairs}-chair variance to capacity.
+                </p>
+              </div>
+            )}
             {recruitTriggers.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No barbers at capacity. No recruitment action required.
-              </p>
+              !capacityRecruit.triggered ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No barbers at capacity. No recruitment action required.
+                </p>
+              ) : null
             ) : (
               <div className="flex flex-col gap-3">
                 {recruitTriggers.map((r) => (
