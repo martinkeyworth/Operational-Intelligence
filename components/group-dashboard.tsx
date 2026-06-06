@@ -13,6 +13,7 @@ import type {
   TrendPoint,
   BarberWeekRow,
   ActionRow,
+  BusinessScorecard,
 } from "@/lib/data"
 import {
   AlertTriangle,
@@ -38,6 +39,7 @@ export function GroupDashboard({
   trend,
   barbers,
   actions,
+  scorecard,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -45,6 +47,7 @@ export function GroupDashboard({
   trend: TrendPoint[]
   barbers: BarberWeekRow[]
   actions: ActionRow[]
+  scorecard: BusinessScorecard
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -60,7 +63,12 @@ export function GroupDashboard({
         title="Operational Intelligence & Governance"
         subtitle="Weekly group performance, RAG status and key risks across all LTZ sites. Saturday-to-Saturday reporting with worst-status roll-up at every level."
       >
-        <RagBadge rag={summary.groupRag} className="px-3 py-1 text-sm" />
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            Business RAG · {scorecard.overallPct}%
+          </span>
+          <RagBadge rag={scorecard.overallRag} className="px-3 py-1 text-sm" />
+        </div>
         <WeekSelector weeks={weeks} current={summary.week} />
       </PageHeader>
 
@@ -124,6 +132,52 @@ export function GroupDashboard({
             }
           />
         </div>
+
+        {/* Business scorecard — every functional area scored & rolled up */}
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Business Scorecard
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Weighted RAG across all six functional areas
+              </p>
+            </div>
+            <Link
+              href="/functions"
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              Functions
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+            {scorecard.areas.map((a) => (
+              <Link
+                key={a.key}
+                href={`/functions/${encodeURIComponent(a.key)}`}
+                className="group rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                    <RagDot rag={a.rag} />
+                    <span className="truncate">{a.label}</span>
+                  </span>
+                </div>
+                <p className="mt-2 text-lg font-semibold tabular-nums text-foreground">
+                  {a.pct}%
+                </p>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full ${barFill(a.rag)}`}
+                    style={{ width: `${Math.max(4, Math.min(100, a.pct))}%` }}
+                  />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
 
         {/* Trend + RAG distribution / commentary */}
         <div className="grid gap-4 lg:grid-cols-3">

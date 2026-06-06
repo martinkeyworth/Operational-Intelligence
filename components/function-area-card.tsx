@@ -8,12 +8,13 @@ import {
   GraduationCap,
   Users,
   Megaphone,
+  Activity,
   ArrowRight,
   AlertTriangle,
   CheckCircle2,
   type LucideIcon,
 } from "lucide-react"
-import type { FunctionAreaSummary } from "@/lib/data"
+import type { FunctionAreaSummary, AreaScore } from "@/lib/data"
 
 const ICONS: Record<string, LucideIcon> = {
   Armchair,
@@ -22,10 +23,20 @@ const ICONS: Record<string, LucideIcon> = {
   GraduationCap,
   Users,
   Megaphone,
+  Activity,
 }
 
-export function FunctionAreaCard({ area }: { area: FunctionAreaSummary }) {
-  const Icon = ICONS[area.icon] ?? Armchair
+export function FunctionAreaCard({
+  area,
+  score,
+}: {
+  area: FunctionAreaSummary
+  score?: AreaScore
+}) {
+  const Icon = ICONS[score?.icon ?? area.icon] ?? Armchair
+  // Performance RAG comes from the weekly scorecard (KPI/operational); fall back
+  // to the action-derived RAG if no score is available.
+  const rag = score?.rag ?? area.rag
 
   return (
     <Link
@@ -44,12 +55,32 @@ export function FunctionAreaCard({ area }: { area: FunctionAreaSummary }) {
             <p className="text-xs text-muted-foreground">{area.ownerRole}</p>
           </div>
         </div>
-        <RagBadge rag={area.rag} />
+        <RagBadge rag={rag} />
       </div>
 
-      <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-        {area.description}
-      </p>
+      {score && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Weekly KPI score</span>
+            <span className="font-semibold tabular-nums text-foreground">
+              {score.pct}%
+            </span>
+          </div>
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className={
+                rag === "green"
+                  ? "h-full rounded-full bg-rag-green"
+                  : rag === "amber"
+                    ? "h-full rounded-full bg-rag-amber"
+                    : "h-full rounded-full bg-rag-red"
+              }
+              style={{ width: `${Math.max(4, Math.min(100, score.pct))}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">{score.detail}</p>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center gap-4 text-xs">
         <span className="flex items-center gap-1.5 text-foreground">
@@ -60,7 +91,7 @@ export function FunctionAreaCard({ area }: { area: FunctionAreaSummary }) {
           <RagDot rag="amber" />
           {area.amber} amber
         </span>
-        <span className="text-muted-foreground">{area.open} open</span>
+        <span className="text-muted-foreground">{area.open} open actions</span>
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">

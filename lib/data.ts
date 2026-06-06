@@ -8,7 +8,7 @@ import {
   actions,
   sublettingTakings,
 } from "@/lib/db/schema"
-import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import {
   type Rag,
   rollUpRag,
@@ -28,8 +28,20 @@ import {
   trainingRevenueTarget,
 } from "@/lib/training-config"
 import { effectiveBarberPct } from "@/lib/split-config"
-import { trainingWeeks, user as userTable } from "@/lib/db/schema"
+import {
+  trainingWeeks,
+  user as userTable,
+  kpis,
+  kpiValues,
+} from "@/lib/db/schema"
 import { FUNCTION_AREAS, canonicalAreaKey } from "@/lib/function-areas"
+import {
+  kpisForArea,
+  scoreKpi,
+  rollUpWeighted,
+  AREA_WEIGHTS,
+  type WeightedRag,
+} from "@/lib/kpi-config"
 
 export type { Rag }
 export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
@@ -660,6 +672,223 @@ export async function getFunctionAreaActions(
 ): Promise<ActionRow[]> {
   const all = await getActions()
   return all.filter((a) => canonicalAreaKey(a.functionArea) === areaKey)
+}
+
+// ---------------------------------------------------------------------------
+// Weekly KPI framework — every functional area is scored against its KPIs and
+// rolled up (weighted) to a per-area RAG, then to a single overall business
+// RAG using the "weighted score band" industry logic.
+// ---------------------------------------------------------------------------
+
+export type KpiResult = {
+  code: string
+  name: string
+  unit: string
+  value: number | null
+  green: number
+  amber: number
+  direction: "higher_better" | "lower_better"
+  weight: number
+  rag: Rag
+  help: string
+  entered: boolean
+}
+
+export type AreaScore = {
+  key: string
+  label: string
+  icon: string
+  ownerRole: string
+  weight: number
+  rag: Rag
+  pct: number
+  source: "operational" | "manual"
+  detail: string
+  kpis: KpiResult[]
+}
+
+export type BusinessScorecard = {
+  week: string
+  overallRag: Rag
+  overallPct: number
+  areas: AreaScore[]
+}
+
+/** Map KPI code -> kpis.id for joining manual weekly values. */
+async function kpiIdByCode(): Promise<Map<string, number>> {
+  const rows = await db.select({ id: kpis.id, code: kpis.code }).from(kpis)
+  return new Map(rows.map((r) => [r.code, r.id]))
+}
+
+/** Manually-entered KPI results (HR, Marketing) for a given week. */
+export async function getManualKpiResults(
+  areaKey: string,
+  week: string,
+): Promise<KpiResult[]> {
+  const defs = kpisForArea(areaKey)
+  if (defs.length === 0) return []
+
+  const idMap = await kpiIdByCode()
+  const ids = defs.map((d) => idMap.get(d.code)).filter(Boolean) as number[]
+
+  const rows =
+    ids.length > 0
+      ? await db
+          .select()
+          .from(kpiValues)
+          .where(
+            and(
+              eq(kpiValues.period, week),
+              inArray(kpiValues.kpiId, ids),
+            ),
+          )
+      : []
+
+  return defs.map((def) => {
+    const id = idMap.get(def.code)
+    const row = rows.find((r) => r.kpiId === id)
+    const entered = !!row
+    const value = entered ? Number(row!.value) : null
+    const rag: Rag = entered ? scoreKpi(def, value!) : "red"
+    return {
+      code: def.code,
+      name: def.name,
+      unit: def.unit,
+      value,
+      green: def.green,
+      amber: def.amber,
+      direction: def.direction,
+      weight: def.weight,
+      rag,
+      help: def.help,
+      entered,
+    }
+  })
+}
+
+/**
+ * Build the full business scorecard for a week: a RAG + score for every
+ * functional area (operational areas derived from live data, HR/Marketing from
+ * weekly KPI entry) and the weighted overall business RAG.
+ */
+export async function getBusinessScorecard(
+  week: string,
+): Promise<BusinessScorecard> {
+  const siteRows = await getSiteWeek(week)
+  const revenue = await getGroupRevenueBreakdown(week)
+  const shops = siteRows.filter((s) => s.siteType !== "training")
+  const academies = siteRows.filter((s) => s.siteType === "training")
+
+  // ---- Operational areas (derived) --------------------------------------
+  const capacityRag = rollUpRag(shops.map((s) => s.utilisationRag))
+  const rtbRag = rollUpRag(shops.map((s) => s.rtbRag))
+  const subletRag = ragForSublet(revenue.subletRevenue, revenue.subletTarget)
+  const trainingRag = rollUpRag(academies.map((s) => s.trainingRag))
+
+  const capPct = ragPct(capacityRag)
+  const rtbPct = ragPct(rtbRag)
+  const subletPct =
+    revenue.subletTarget > 0
+      ? Math.round((revenue.subletRevenue / revenue.subletTarget) * 100)
+      : ragPct(subletRag)
+  const trainingPct = ragPct(trainingRag)
+
+  const opAreas: AreaScore[] = [
+    {
+      key: "Capacity",
+      label: "Capacity & Utilisation",
+      icon: "Armchair",
+      ownerRole: "Operations",
+      weight: AREA_WEIGHTS.Capacity,
+      rag: capacityRag,
+      pct: capPct,
+      source: "operational",
+      detail: `${shops.reduce((a, s) => a + s.activeBarbers, 0)} barbers across ${shops.reduce((a, s) => a + s.chairCapacity, 0)} chairs`,
+      kpis: [],
+    },
+    {
+      key: "RTB",
+      label: "Revenue To Business",
+      icon: "Banknote",
+      ownerRole: "Finance",
+      weight: AREA_WEIGHTS.RTB,
+      rag: rtbRag,
+      pct: rtbPct,
+      source: "operational",
+      detail: `${fmtGBP(shops.reduce((a, s) => a + s.rtbActual, 0))} rent vs ${fmtGBP(shops.reduce((a, s) => a + s.rtbExpected, 0))} expected`,
+      kpis: [],
+    },
+    {
+      key: "Subletting",
+      label: "Subletting",
+      icon: "Building2",
+      ownerRole: "Operations",
+      weight: AREA_WEIGHTS.Subletting,
+      rag: subletRag,
+      pct: subletPct,
+      source: "operational",
+      detail: `${fmtGBP(revenue.subletRevenue)} vs ${fmtGBP(revenue.subletTarget)} target`,
+      kpis: [],
+    },
+    {
+      key: "Training",
+      label: "Training & Academy",
+      icon: "GraduationCap",
+      ownerRole: "Training Lead",
+      weight: AREA_WEIGHTS.Training,
+      rag: trainingRag,
+      pct: trainingPct,
+      source: "operational",
+      detail: `${fmtGBP(revenue.trainingRevenue)} training income`,
+      kpis: [],
+    },
+  ]
+
+  // ---- Manual KPI areas (HR, Marketing) ---------------------------------
+  const manualAreas: AreaScore[] = []
+  for (const areaKey of ["HR", "Marketing"]) {
+    const kpiResults = await getManualKpiResults(areaKey, week)
+    const entered = kpiResults.filter((k) => k.entered)
+    const roll = rollUpWeighted(
+      entered.map((k) => ({ item: k.rag, weight: k.weight }) as WeightedRag),
+    )
+    const allEntered = kpiResults.length > 0 && entered.length === kpiResults.length
+    const areaCfg = FUNCTION_AREAS.find((a) => a.key === areaKey)
+    manualAreas.push({
+      key: areaKey,
+      label: areaCfg?.label ?? areaKey,
+      icon: areaCfg?.icon ?? "Activity",
+      ownerRole: areaCfg?.ownerRole ?? "",
+      weight: AREA_WEIGHTS[areaKey] ?? 1,
+      // If no data entered yet this week, the area is red (not reported).
+      rag: entered.length === 0 ? "red" : roll.rag,
+      pct: entered.length === 0 ? 0 : roll.pct,
+      source: "manual",
+      detail: allEntered
+        ? `${entered.length}/${kpiResults.length} KPIs reported`
+        : `${entered.length}/${kpiResults.length} KPIs reported — awaiting input`,
+      kpis: kpiResults,
+    })
+  }
+
+  const areas = [...opAreas, ...manualAreas]
+
+  // ---- Overall business RAG (weighted score band) -----------------------
+  const overall = rollUpWeighted(
+    areas.map((a) => ({ item: a.rag, weight: a.weight }) as WeightedRag),
+  )
+
+  return {
+    week,
+    overallRag: overall.rag,
+    overallPct: overall.pct,
+    areas,
+  }
+}
+
+/** Approximate a percentage from a RAG band, for areas scored qualitatively. */
+function ragPct(rag: Rag): number {
+  return rag === "green" ? 100 : rag === "amber" ? 70 : 35
 }
 
 /** Company users who can be assigned as a risk/action owner. */

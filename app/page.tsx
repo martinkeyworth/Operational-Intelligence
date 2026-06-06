@@ -9,6 +9,7 @@ import {
   getGroupTrend,
   getBarberWeek,
   getActions,
+  getBusinessScorecard,
 } from "@/lib/data"
 
 export default async function Page({
@@ -32,13 +33,15 @@ export default async function Page({
     )
   }
 
-  const [summary, sites, trend, barbers, actions] = await Promise.all([
-    getGroupSummary(week),
-    getSiteWeek(week),
-    getGroupTrend(),
-    getBarberWeek(week),
-    getActions(),
-  ])
+  const [summary, sites, trend, barbers, actions, scorecard] =
+    await Promise.all([
+      getGroupSummary(week),
+      getSiteWeek(week),
+      getGroupTrend(),
+      getBarberWeek(week),
+      getActions(),
+      getBusinessScorecard(week),
+    ])
 
   return (
     <AppShell user={user}>
@@ -49,6 +52,7 @@ export default async function Page({
         trend={trend}
         barbers={barbers}
         actions={actions}
+        scorecard={scorecard}
       />
     </AppShell>
   )

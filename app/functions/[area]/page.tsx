@@ -4,9 +4,17 @@ import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
+import { KpiScorecard } from "@/components/kpi-scorecard"
 import { RagBadge } from "@/components/rag"
-import { getFunctionAreaActions, getAssignableOwners } from "@/lib/data"
+import {
+  getFunctionAreaActions,
+  getAssignableOwners,
+  getManualKpiResults,
+  getLatestWeek,
+  fmtWeekLong,
+} from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
+import { kpisForArea } from "@/lib/kpi-config"
 import { ArrowLeft } from "lucide-react"
 
 export default async function FunctionAreaPage({
@@ -20,9 +28,14 @@ export default async function FunctionAreaPage({
   if (!area) notFound()
 
   const user = await requireDashboard()
-  const [actions, owners] = await Promise.all([
+  const week = await getLatestWeek()
+  const hasKpis = kpisForArea(area.key).length > 0
+  const [actions, owners, kpis] = await Promise.all([
     getFunctionAreaActions(area.key),
     getAssignableOwners(),
+    hasKpis && week
+      ? getManualKpiResults(area.key, week)
+      : Promise.resolve([]),
   ])
 
   const open = actions.filter((a) => a.status !== "Closed")
@@ -54,6 +67,29 @@ export default async function FunctionAreaPage({
           <StatCard label="At Risk (Amber)" value={amber} />
           <StatCard label="Total Logged" value={actions.length} />
         </div>
+
+        {hasKpis && (
+          <div>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold text-foreground">
+                Weekly KPIs
+              </h2>
+              {week && (
+                <p className="text-xs text-muted-foreground">
+                  W/E {fmtWeekLong(week)}
+                </p>
+              )}
+            </div>
+            {kpis.length > 0 ? (
+              <KpiScorecard kpis={kpis} />
+            ) : (
+              <p className="rounded-lg border border-border p-4 text-xs text-muted-foreground">
+                No KPI data yet. Enter this area&apos;s weekly KPIs in the
+                Weekly Input page.
+              </p>
+            )}
+          </div>
+        )}
 
         <div>
           <h2 className="mb-3 text-sm font-semibold text-foreground">
