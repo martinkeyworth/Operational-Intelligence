@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
 import { getActions, getAssignableOwners } from "@/lib/data"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
 import { CalendarClock } from "lucide-react"
 
 export default async function ActionsPage() {
@@ -22,12 +21,13 @@ export default async function ActionsPage() {
         title="Action Register"
         subtitle="Owned, tracked and escalated actions across all functions. Assign an owner and flag risks to feed the weekly operational meeting. Update status inline as work progresses."
       >
-        <Button asChild variant="outline" size="sm" className="gap-1.5">
-          <Link href="/operations">
-            <CalendarClock className="h-4 w-4" />
-            Operational meeting
-          </Link>
-        </Button>
+        <Link
+          href="/operations"
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+        >
+          <CalendarClock className="h-4 w-4" />
+          Operational meeting
+        </Link>
       </PageHeader>
       <div className="px-5 py-6 md:px-8">
         <ActionsTable actions={actions} owners={owners} />
