@@ -312,7 +312,10 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
 
     // Capacity / RTB (barbershops).
     const chairCapacity = s.chairCapacity ?? 0
-    const utilisationRag = ragForUtilisation(activeBarbers, chairCapacity)
+    // Headcount-confirmed sites (e.g. F.AF) have no per-barber rows, so treat
+    // the confirmed headcount as staffed chairs when it is higher.
+    const staffedChairs = Math.max(activeBarbers, s.headcount ?? 0)
+    const utilisationRag = ragForUtilisation(staffedChairs, chairCapacity)
     const rtbActual = Number(rev?.rent ?? 0)
     const rtbExpected = activeBarbers * Number(s.rtbPerBarber ?? 500)
     const rtbReported = Number(rev?.reporting ?? 0) > 0
@@ -362,7 +365,7 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
       confirmedBy: conf?.confirmedBy ?? null,
       siteType,
       chairCapacity,
-      activeBarbers,
+      activeBarbers: staffedChairs,
       utilisationRag,
       rtbExpected,
       rtbActual,
@@ -1183,8 +1186,12 @@ export async function getCapacityKpis(
   const activeBarbers = Number(barberAgg?.c ?? 0)
 
   const chairCapacity = site.chairCapacity ?? 0
+  // Sites such as F.AF confirm a headcount rather than entering per-barber
+  // records, so use the greater of barber rows and confirmed headcount as the
+  // number of staffed chairs for utilisation.
+  const staffedChairs = Math.max(activeBarbers, site.headcount ?? 0)
   const utilisationPct =
-    chairCapacity > 0 ? (activeBarbers / chairCapacity) * 100 : 0
+    chairCapacity > 0 ? (staffedChairs / chairCapacity) * 100 : 0
 
   // RTB actual = rent returned to the business this week (cash + card rent).
   const [rentAgg] = await db
@@ -1220,11 +1227,11 @@ export async function getCapacityKpis(
   return {
     siteId,
     siteType: site.siteType ?? "barbershop",
-    activeBarbers,
+    activeBarbers: staffedChairs,
     chairCapacity,
     utilisationPct,
-    utilisationRag: ragForUtilisation(activeBarbers, chairCapacity),
-    vacantChairs: Math.max(0, chairCapacity - activeBarbers),
+    utilisationRag: ragForUtilisation(staffedChairs, chairCapacity),
+    vacantChairs: Math.max(0, chairCapacity - staffedChairs),
     rtbPerBarber,
     rtbExpected,
     rtbActual,
