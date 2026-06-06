@@ -50,7 +50,7 @@ export function GroupDashboard({
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
     .slice(0, 5)
   const reporting = barbers.filter((b) => b.reported)
-  const leaderboard = reporting.slice(0, 6)
+  const leaderboard = reporting.slice(0, 5)
   const wowUp = summary.wowPct >= 0
 
   return (
@@ -133,8 +133,30 @@ export function GroupDashboard({
                 Group Weekly Takings
               </h2>
               <p className="text-xs text-muted-foreground">
-                Total takings per week vs combined target
+                Combined sites, subletting and training income vs target
               </p>
+            </div>
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="text-[11px] text-muted-foreground">Sites (chairs)</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {fmtGBP(summary.revenue.chairRevenue)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="text-[11px] text-muted-foreground">Subletting</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {fmtGBP(summary.revenue.subletRevenue)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="text-[11px] text-muted-foreground">
+                  Training (£92/learner)
+                </p>
+                <p className="text-sm font-semibold text-foreground">
+                  {fmtGBP(summary.revenue.trainingRevenue)}
+                </p>
+              </div>
             </div>
             <RevenueTrendChart data={trend} />
           </Card>
@@ -285,7 +307,7 @@ export function GroupDashboard({
                   Barber Leaderboard
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Top performers this week, group-wide
+                  Top 5 performers this week, group-wide
                 </p>
               </div>
             </div>

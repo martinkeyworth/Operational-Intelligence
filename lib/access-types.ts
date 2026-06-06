@@ -13,12 +13,26 @@ export type AccessUser = {
   name: string
   email: string
   isCompany: boolean
+  isOwner: boolean
 } & Capabilities
 
 export const COMPANY_DOMAIN = "lessthanzerobarbers.com"
 
+// Owners/Directors with access to the secure Split area (set barber/business %).
+export const OWNER_EMAILS = [
+  "martin@lessthanzerobarbers.com",
+  "cosmin@lessthanzerobarbers.com",
+]
+
+// Cosmin chairs the weekly operational meeting (risk register owner view).
+export const OPS_MEETING_CHAIR_EMAIL = "cosmin@lessthanzerobarbers.com"
+
 export function isCompanyEmail(email: string): boolean {
   return email.toLowerCase().endsWith(`@${COMPANY_DOMAIN}`)
+}
+
+export function isOwnerEmail(email: string): boolean {
+  return OWNER_EMAILS.includes(email.toLowerCase())
 }
 
 export const CAPABILITY_LABELS: {

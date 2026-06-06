@@ -101,6 +101,13 @@ export const barbers = pgTable("barbers", {
   targetRevenuePerDay: numeric("target_revenue_per_day").notNull().default("250"),
   targetWeekly: numeric("target_weekly").notNull().default("800"),
   active: boolean("active").notNull().default(true),
+  // Profit-split: the barber's % share of their takings (business takes the
+  // remainder). Set/confirmed by Martin or Cosmin in the secure Split area
+  // once a barber has loaded their first week of data, then reviewed weekly.
+  // Null = not yet set (falls back to the group default).
+  barberPct: numeric("barber_pct"),
+  splitSetBy: text("split_set_by"),
+  splitSetAt: timestamp("split_set_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -183,11 +190,16 @@ export const actions = pgTable("actions", {
   functionArea: text("function_area").notNull(),
   siteId: integer("site_id"),
   owner: text("owner").notNull(),
+  // Optional link to the responsible user account (the assigned owner). Risks
+  // assigned to an owner feed Cosmin's weekly operational meeting view.
+  ownerUserId: text("owner_user_id"),
   priority: text("priority").notNull().default("Medium"),
   status: text("status").notNull().default("Open"),
   rag: text("rag").notNull().default("amber"),
   dueDate: date("due_date"),
   escalated: boolean("escalated").notNull().default(false),
+  // Flags this action as a risk for the weekly operational meeting register.
+  isRisk: boolean("is_risk").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 

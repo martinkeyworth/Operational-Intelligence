@@ -23,6 +23,11 @@ import {
   ragForRtb,
   ragForTraining,
 } from "@/lib/capacity-config"
+import {
+  trainingRevenue as calcTrainingRevenue,
+  trainingRevenueTarget,
+} from "@/lib/training-config"
+import { effectiveBarberPct } from "@/lib/split-config"
 import { trainingWeeks } from "@/lib/db/schema"
 
 export type { Rag }
@@ -72,14 +77,83 @@ export type GroupSummary = {
   openActions: number
   escalatedActions: number
   ragCounts: Record<Rag, number>
+  // Group takings breakdown (chair + sublet + training).
+  revenue: GroupRevenueBreakdown
 }
 
-async function weekRevenueFor(week: string): Promise<number> {
-  const [row] = await db
+// Group weekly takings = chair takings (all sites) + subletting income +
+// training income (private learners x £92). Targets are combined the same way.
+export type GroupRevenueBreakdown = {
+  week: string
+  chairRevenue: number
+  subletRevenue: number
+  trainingRevenue: number
+  total: number
+  chairTarget: number
+  subletTarget: number
+  trainingTarget: number
+  totalTarget: number
+}
+
+async function chairTargetTotal(): Promise<number> {
+  const [t] = await db
+    .select({ t: sql<number>`coalesce(sum(${barbers.targetWeekly}), 0)` })
+    .from(barbers)
+    .where(eq(barbers.active, true))
+  return Number(t?.t ?? 0)
+}
+
+export async function getGroupRevenueBreakdown(
+  week: string,
+): Promise<GroupRevenueBreakdown> {
+  const [chair] = await db
     .select({ total: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)` })
     .from(weeklyTakings)
     .where(eq(weeklyTakings.weekEnding, week))
-  return Number(row?.total ?? 0)
+
+  const [sublet] = await db
+    .select({
+      amount: sql<number>`coalesce(sum(${sublettingTakings.amount}), 0)`,
+      target: sql<number>`coalesce(sum(${sublettingTakings.target}), 0)`,
+    })
+    .from(sublettingTakings)
+    .where(eq(sublettingTakings.weekEnding, week))
+
+  // Training revenue: actual = reported private learners x £92; target =
+  // each academy site's learner capacity x £92.
+  const trainRows = await db
+    .select()
+    .from(trainingWeeks)
+    .where(eq(trainingWeeks.weekEnding, week))
+  const trainingActual = trainRows.reduce(
+    (a, r) => a + calcTrainingRevenue(Number(r.privateLearners)),
+    0,
+  )
+  const academySites = await db
+    .select({ cap: sites.learnerCapacity })
+    .from(sites)
+    .where(eq(sites.siteType, "training"))
+  const trainingTarget = academySites.reduce(
+    (a, s) => a + trainingRevenueTarget(Number(s.cap ?? 0)),
+    0,
+  )
+
+  const chairRevenue = Number(chair?.total ?? 0)
+  const subletRevenue = Number(sublet?.amount ?? 0)
+  const subletTarget = Number(sublet?.target ?? 0)
+  const chairTarget = await chairTargetTotal()
+
+  return {
+    week,
+    chairRevenue,
+    subletRevenue,
+    trainingRevenue: trainingActual,
+    total: chairRevenue + subletRevenue + trainingActual,
+    chairTarget,
+    subletTarget,
+    trainingTarget,
+    totalTarget: chairTarget + subletTarget + trainingTarget,
+  }
 }
 
 export async function getGroupSummary(week: string): Promise<GroupSummary> {
@@ -87,9 +161,14 @@ export async function getGroupSummary(week: string): Promise<GroupSummary> {
   const prevWeek = prevWeekOf(weeks, week)
 
   const siteRows = await getSiteWeek(week)
-  const weekRevenue = siteRows.reduce((a, s) => a + s.weekRevenue, 0)
-  const weekTarget = siteRows.reduce((a, s) => a + s.weekTarget, 0)
-  const prevWeekRevenue = prevWeek ? await weekRevenueFor(prevWeek) : 0
+  const revenue = await getGroupRevenueBreakdown(week)
+  // Group takings = chair + sublet + training (all sites and income streams).
+  const weekRevenue = revenue.total
+  const weekTarget = revenue.totalTarget
+  const prevRevenue = prevWeek
+    ? await getGroupRevenueBreakdown(prevWeek)
+    : null
+  const prevWeekRevenue = prevRevenue?.total ?? 0
   const reportingBarbers = siteRows.reduce((a, s) => a + s.reportingBarbers, 0)
 
   const [barberCount] = await db
@@ -132,6 +211,7 @@ export async function getGroupSummary(week: string): Promise<GroupSummary> {
     openActions: Number(actionAgg?.open ?? 0),
     escalatedActions: Number(actionAgg?.escalated ?? 0),
     ragCounts,
+    revenue,
   }
 }
 
@@ -166,7 +246,14 @@ export type SiteWeekRow = {
 }
 
 export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
-  const siteRows = await db.select().from(sites).orderBy(sites.name)
+  // Training/academy sites always sort last (after the barbershops).
+  const siteRows = await db
+    .select()
+    .from(sites)
+    .orderBy(
+      sql`case when ${sites.siteType} = 'training' then 1 else 0 end`,
+      sites.name,
+    )
 
   const targetAgg = await db
     .select({
@@ -282,7 +369,8 @@ export async function getSite(id: number) {
 export type TrendPoint = { week: string; label: string; revenue: number; target: number }
 
 export async function getGroupTrend(): Promise<TrendPoint[]> {
-  const rows = await db
+  // Chair takings per week.
+  const chairRows = await db
     .select({
       week: weeklyTakings.weekEnding,
       revenue: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)`,
@@ -291,18 +379,64 @@ export async function getGroupTrend(): Promise<TrendPoint[]> {
     .groupBy(weeklyTakings.weekEnding)
     .orderBy(asc(weeklyTakings.weekEnding))
 
-  const [target] = await db
-    .select({ t: sql<number>`coalesce(sum(${barbers.targetWeekly}), 0)` })
-    .from(barbers)
-    .where(eq(barbers.active, true))
-  const weekTarget = Number(target?.t ?? 0)
+  // Subletting income per week.
+  const subletRows = await db
+    .select({
+      week: sublettingTakings.weekEnding,
+      amount: sql<number>`coalesce(sum(${sublettingTakings.amount}), 0)`,
+    })
+    .from(sublettingTakings)
+    .groupBy(sublettingTakings.weekEnding)
 
-  return rows.map((r) => ({
-    week: String(r.week),
-    label: fmtWeek(String(r.week)),
-    revenue: Math.round(Number(r.revenue)),
-    target: weekTarget,
-  }))
+  // Training income per week (private learners x £92).
+  const trainRows = await db
+    .select({
+      week: trainingWeeks.weekEnding,
+      learners: sql<number>`coalesce(sum(${trainingWeeks.privateLearners}), 0)`,
+    })
+    .from(trainingWeeks)
+    .groupBy(trainingWeeks.weekEnding)
+
+  const subletByWeek = new Map(
+    subletRows.map((r) => [String(r.week), Number(r.amount)]),
+  )
+  const trainByWeek = new Map(
+    trainRows.map((r) => [String(r.week), calcTrainingRevenue(Number(r.learners))]),
+  )
+
+  // Combined weekly target: chair targets + sublet targets + training target.
+  const chairTarget = await chairTargetTotal()
+  const [subletTargetRow] = await db
+    .select({
+      t: sql<number>`coalesce(sum(${sublettingTakings.target}), 0)`,
+      weeks: sql<number>`count(distinct ${sublettingTakings.weekEnding})`,
+    })
+    .from(sublettingTakings)
+  const subletTargetWeekly =
+    Number(subletTargetRow?.weeks ?? 0) > 0
+      ? Number(subletTargetRow?.t ?? 0) / Number(subletTargetRow?.weeks)
+      : 0
+  const academySites = await db
+    .select({ cap: sites.learnerCapacity })
+    .from(sites)
+    .where(eq(sites.siteType, "training"))
+  const trainingTargetWeekly = academySites.reduce(
+    (a, s) => a + trainingRevenueTarget(Number(s.cap ?? 0)),
+    0,
+  )
+  const weekTarget = chairTarget + subletTargetWeekly + trainingTargetWeekly
+
+  return chairRows.map((r) => {
+    const wk = String(r.week)
+    const total =
+      Number(r.revenue) + (subletByWeek.get(wk) ?? 0) + (trainByWeek.get(wk) ?? 0)
+    return {
+      week: wk,
+      label: fmtWeek(wk),
+      revenue: Math.round(total),
+      target: Math.round(weekTarget),
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -713,4 +847,74 @@ export async function getCapacityKpis(
       : "red",
     trainingReported: !!tw,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Profit-split (barber vs business %) — secure owner-only area
+// ---------------------------------------------------------------------------
+
+export type BarberSplitRow = {
+  id: number
+  name: string
+  role: string
+  siteId: number
+  siteName: string
+  barberPct: number | null
+  effectiveBarberPct: number
+  businessPct: number
+  splitSetBy: string | null
+  splitSetAt: string | null
+  hasData: boolean
+  weekTakings: number
+  reviewedThisWeek: boolean
+}
+
+/**
+ * All active barbers with their profit-split %, joined to the given week's
+ * takings. `hasData` is true once a barber has loaded takings (so the split
+ * can be set); `reviewedThisWeek` is true when the split was confirmed during
+ * the current reporting week.
+ */
+export async function getBarberSplits(week: string): Promise<BarberSplitRow[]> {
+  const siteRows = await db.select().from(sites)
+  const barberRows = await db
+    .select()
+    .from(barbers)
+    .where(eq(barbers.active, true))
+    .orderBy(asc(barbers.name))
+  const takingRows = await db
+    .select()
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.weekEnding, week))
+
+  // Any week of takings means the barber has loaded data at least once.
+  const everReported = await db
+    .select({ barberId: weeklyTakings.barberId })
+    .from(weeklyTakings)
+    .groupBy(weeklyTakings.barberId)
+  const reportedSet = new Set(everReported.map((r) => r.barberId))
+
+  return barberRows.map((b) => {
+    const pct = b.barberPct == null ? null : Number(b.barberPct)
+    const eff = effectiveBarberPct(pct)
+    const t = takingRows.find((r) => r.barberId === b.id)
+    const setAt = b.splitSetAt ? new Date(b.splitSetAt) : null
+    return {
+      id: b.id,
+      name: b.name,
+      role: b.role,
+      siteId: b.siteId,
+      siteName: siteRows.find((s) => s.id === b.siteId)?.name ?? "—",
+      barberPct: pct,
+      effectiveBarberPct: eff,
+      businessPct: 100 - eff,
+      splitSetBy: b.splitSetBy ?? null,
+      splitSetAt: setAt ? setAt.toISOString() : null,
+      hasData: reportedSet.has(b.id),
+      weekTakings: t ? Number(t.total) : 0,
+      reviewedThisWeek: setAt
+        ? setAt >= new Date(`${week}T00:00:00`)
+        : false,
+    }
+  })
 }

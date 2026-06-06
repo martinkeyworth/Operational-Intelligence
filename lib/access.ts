@@ -8,6 +8,7 @@ import { user as userTable } from "@/lib/db/schema"
 import {
   COMPANY_DOMAIN,
   isCompanyEmail,
+  isOwnerEmail,
   CAPABILITY_LABELS,
   type Capabilities,
   type AccessUser,
@@ -24,7 +25,7 @@ import {
 //    People page: View Dashboard, Barber, Training Lead, HR Lead, Social Media.
 // ---------------------------------------------------------------------------
 
-export { COMPANY_DOMAIN, isCompanyEmail, CAPABILITY_LABELS }
+export { COMPANY_DOMAIN, isCompanyEmail, isOwnerEmail, CAPABILITY_LABELS }
 export type { Capabilities, AccessUser }
 
 /** Load the current signed-in user with capability flags, or null. */
@@ -43,6 +44,7 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     name: row.name,
     email: row.email,
     isCompany: isCompanyEmail(row.email),
+    isOwner: isOwnerEmail(row.email),
     canViewDashboard: row.canViewDashboard,
     isBarber: row.isBarber,
     isTrainingLead: row.isTrainingLead,
@@ -79,6 +81,13 @@ export async function requireAdmin(): Promise<AccessUser> {
   return user
 }
 
+/** Owners only (Martin & Cosmin). Gates the secure Split area. */
+export async function requireOwner(): Promise<AccessUser> {
+  const user = await requireUser()
+  if (!user.isOwner) redirect("/no-access")
+  return user
+}
+
 /** List every user with capability flags, for the admin People page. */
 export async function getAllUsers(): Promise<AccessUser[]> {
   const rows = await db.select().from(userTable).orderBy(userTable.email)
@@ -87,6 +96,7 @@ export async function getAllUsers(): Promise<AccessUser[]> {
     name: row.name,
     email: row.email,
     isCompany: isCompanyEmail(row.email),
+    isOwner: isOwnerEmail(row.email),
     canViewDashboard: row.canViewDashboard,
     isBarber: row.isBarber,
     isTrainingLead: row.isTrainingLead,
