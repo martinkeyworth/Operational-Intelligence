@@ -18,6 +18,7 @@ import {
   fmtWeekLong,
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
+import { getCurrentYearBarberTargets } from "@/lib/vision"
 import {
   ragForUtilisation,
   ragForRtb,
@@ -524,12 +525,18 @@ export async function getBarberWeek(
         .where(eq(weeklyTakings.weekEnding, prevWeek))
     : []
 
+  // Per-barber weekly RTB targets derived from the £5m-by-2030 glide path
+  // (this year's milestone), keyed by site. Links each barber's RAG to the
+  // wider growth vision.
+  const visionTargets = await getCurrentYearBarberTargets()
+
   return barberRows
     .map((b) => {
       const t = takingRows.find((r) => r.barberId === b.id)
       const p = prevRows.find((r) => r.barberId === b.id)
       const revenue = t ? Number(t.total) : 0
-      const target = Number(b.targetWeekly)
+      const visionTarget = visionTargets.get(b.siteId) ?? 0
+      const target = visionTarget > 0 ? visionTarget : Number(b.targetWeekly)
       const attainmentPct = target > 0 ? (revenue / target) * 100 : 0
       return {
         id: b.id,

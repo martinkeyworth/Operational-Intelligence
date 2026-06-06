@@ -143,3 +143,33 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     totalChairs,
   }
 }
+
+/**
+ * Current-year per-barber WEEKLY RTB target by site, derived from the glide
+ * path. This is the realistic, growing target for the year we're in (clamped
+ * to the modelled range) — not the 2030 endpoint — so barber RAGs reflect
+ * progress against this year's milestone on the way to £5m / £2.5m.
+ *
+ * Returns a Map of siteId -> weekly RTB target per barber.
+ */
+export async function getCurrentYearBarberTargets(
+  now: Date = new Date(),
+): Promise<Map<number, number>> {
+  const path = await getVisionGlidePath()
+  const year = Math.min(
+    Math.max(now.getFullYear(), path.baseYear),
+    path.targetYear,
+  )
+  const yearRow =
+    path.years.find((y) => y.year === year) ?? path.years[path.years.length - 1]
+
+  // This year's RTB target as a fraction of the 2030 RTB goal, applied to each
+  // site's per-barber 2030 weekly target.
+  const ratio = path.rtbGoal > 0 ? yearRow.rtbTarget / path.rtbGoal : 0
+
+  const map = new Map<number, number>()
+  for (const s of path.sites) {
+    map.set(s.siteId, Math.round(s.rtbPerBarberWeekly * ratio))
+  }
+  return map
+}
