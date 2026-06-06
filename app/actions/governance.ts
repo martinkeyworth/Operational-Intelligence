@@ -17,6 +17,7 @@ export async function createSite(formData: FormData) {
   await requireUser()
   const name = String(formData.get("name") ?? "").trim()
   const location = String(formData.get("location") ?? "").trim()
+  const brand = String(formData.get("brand") ?? "").trim() || "Less Than Zero"
   const region = String(formData.get("region") ?? "").trim() || null
   const managerName = String(formData.get("managerName") ?? "").trim() || null
   if (!name || !location) throw new Error("Name and location are required")
@@ -24,6 +25,7 @@ export async function createSite(formData: FormData) {
   await db.insert(sites).values({
     name,
     location,
+    brand,
     region,
     managerName,
     monthlyTarget: "0",
@@ -48,6 +50,8 @@ export async function confirmSiteWeek(formData: FormData) {
   const siteId = Number(formData.get("siteId"))
   const weekEnding = String(formData.get("weekEnding"))
   const siteNameConfirmed = String(formData.get("siteNameConfirmed") ?? "").trim()
+  const locationConfirmed = String(formData.get("locationConfirmed") ?? "").trim()
+  const brandConfirmed = String(formData.get("brandConfirmed") ?? "").trim()
   const managerConfirmed = String(formData.get("managerConfirmed") ?? "").trim()
   const headcountRaw = formData.get("headcountConfirmed")
   const headcountConfirmed =
@@ -70,6 +74,8 @@ export async function confirmSiteWeek(formData: FormData) {
     confirmedBy: user.name || user.email,
     confirmedRole: (user as { role?: string }).role ?? "Functional Leader",
     siteNameConfirmed: siteNameConfirmed || null,
+    locationConfirmed: locationConfirmed || null,
+    brandConfirmed: brandConfirmed || null,
     managerConfirmed: managerConfirmed || null,
     headcountConfirmed,
     notes,

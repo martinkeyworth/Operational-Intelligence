@@ -20,9 +20,19 @@ import {
 import { confirmSiteWeek } from "@/app/actions/governance"
 import { fmtWeekLong } from "@/lib/format"
 
+export const SITE_BRANDS = [
+  "Less Than Zero",
+  "F.AF",
+  "Velvet Ash",
+  "LTZ Training Academy",
+  "LTZ Group International",
+] as const
+
 export function ConfirmSiteDialog({
   siteId,
   siteName,
+  location,
+  brand,
   managerName,
   headcount,
   week,
@@ -31,6 +41,8 @@ export function ConfirmSiteDialog({
 }: {
   siteId: number
   siteName: string
+  location: string
+  brand: string
   managerName: string | null
   headcount: number
   week: string
@@ -93,6 +105,32 @@ export function ConfirmSiteDialog({
                 name="siteNameConfirmed"
                 defaultValue={siteName}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="locationConfirmed">Site location</Label>
+                <Input
+                  id="locationConfirmed"
+                  name="locationConfirmed"
+                  defaultValue={location}
+                  placeholder="Town / area"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="brandConfirmed">Site brand</Label>
+                <select
+                  id="brandConfirmed"
+                  name="brandConfirmed"
+                  defaultValue={brand}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {SITE_BRANDS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">

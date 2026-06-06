@@ -92,7 +92,7 @@ export default async function SitesPage({
                         )}
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {s.location}
+                        {s.brand} · {s.location}
                         {s.region ? ` · ${s.region}` : ""} · Manager:{" "}
                         {s.managerName ?? "—"}
                         {s.confirmed && s.confirmedBy
@@ -115,6 +115,8 @@ export default async function SitesPage({
                     <ConfirmSiteDialog
                       siteId={s.id}
                       siteName={s.name}
+                      location={s.location}
+                      brand={s.brand}
                       managerName={s.managerName}
                       headcount={s.totalBarbers}
                       week={week}

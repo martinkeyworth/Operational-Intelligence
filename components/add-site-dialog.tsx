@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { createSite } from "@/app/actions/governance"
+import { SITE_BRANDS } from "@/components/confirm-site-dialog"
 
 export function AddSiteDialog() {
   const [open, setOpen] = useState(false)
@@ -57,6 +58,21 @@ export function AddSiteDialog() {
             <div className="grid gap-2">
               <Label htmlFor="location">Location / town</Label>
               <Input id="location" name="location" placeholder="Coventry" required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="brand">Site brand</Label>
+              <select
+                id="brand"
+                name="brand"
+                defaultValue={SITE_BRANDS[0]}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {SITE_BRANDS.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">

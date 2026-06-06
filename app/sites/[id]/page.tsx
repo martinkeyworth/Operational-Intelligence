@@ -59,7 +59,7 @@ export default async function SiteDetailPage({
           </Link>
         }
         title={site.name}
-        subtitle={`${site.location}${site.region ? ` · ${site.region}` : ""} · Manager: ${site.managerName ?? "—"}`}
+        subtitle={`${site.brand} · ${site.location}${site.region ? ` · ${site.region}` : ""} · Manager: ${site.managerName ?? "—"}`}
       >
         {siteWeek && <RagBadge rag={siteWeek.rag} className="px-3 py-1 text-sm" />}
         {week && <WeekSelector weeks={weeks} current={week} />}
@@ -67,6 +67,8 @@ export default async function SiteDetailPage({
           <ConfirmSiteDialog
             siteId={siteId}
             siteName={site.name}
+            location={site.location}
+            brand={site.brand}
             managerName={site.managerName}
             headcount={siteWeek.totalBarbers}
             week={week}

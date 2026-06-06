@@ -135,6 +135,7 @@ export type SiteWeekRow = {
   id: number
   name: string
   location: string
+  brand: string
   region: string | null
   managerName: string | null
   weekTarget: number
@@ -186,6 +187,7 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
       id: s.id,
       name: s.name,
       location: s.location,
+      brand: s.brand,
       region: s.region,
       managerName: s.managerName,
       weekTarget,
