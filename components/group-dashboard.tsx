@@ -127,7 +127,7 @@ export function GroupDashboard({
     0,
   )
   const totalStaffedChairs = capacityShops.reduce(
-    (a, s) => a + Math.min(s.headcount, s.chairCapacity),
+    (a, s) => a + Math.min(s.activeBarbers, s.chairCapacity),
     0,
   )
   const avgUtilisationPct =

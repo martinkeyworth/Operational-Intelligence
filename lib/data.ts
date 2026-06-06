@@ -330,8 +330,14 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
     // Capacity / RTB (barbershops).
     const chairCapacity = s.chairCapacity ?? 0
     // Headcount-confirmed sites (e.g. F.AF) have no per-barber rows, so treat
-    // the confirmed headcount as staffed chairs when it is higher.
-    const staffedChairs = Math.max(activeBarbers, s.headcount ?? 0)
+    // the confirmed headcount as staffed chairs when it is higher. A site can
+    // never staff more chairs than it physically has, so cap at chairCapacity
+    // (otherwise sites with more barber records than chairs report >100%
+    // utilisation and inflate the group capacity figure).
+    const staffedChairs = Math.min(
+      Math.max(activeBarbers, s.headcount ?? 0),
+      chairCapacity,
+    )
     const utilisationRag = ragForUtilisation(staffedChairs, chairCapacity)
     const rtbActual = Number(rev?.rent ?? 0)
     const rtbExpected = activeBarbers * Number(s.rtbPerBarber ?? 500)
