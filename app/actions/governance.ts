@@ -4,15 +4,66 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   sites,
+  barbers,
   actions,
   siteConfirmations,
   sublettingTakings,
+  trainingWeeks,
+  weeklyTakings,
 } from "@/lib/db/schema"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
-import { fmtWeekLong } from "@/lib/format"
+import { fmtWeekLong, fmtGBP } from "@/lib/format"
+
+/**
+ * Ensure a single open action exists for a given title/function area, or
+ * resolve (close) it when the underlying KPI recovers. Used by the capacity,
+ * RTB, subletting and training KPIs to auto-raise red actions.
+ */
+async function syncKpiAction(opts: {
+  open: boolean
+  title: string
+  functionArea: string
+  siteId: number
+  owner: string
+  description: string
+  priority?: string
+}) {
+  const existing = await db
+    .select({ id: actions.id })
+    .from(actions)
+    .where(
+      and(eq(actions.title, opts.title), eq(actions.functionArea, opts.functionArea)),
+    )
+
+  if (opts.open) {
+    if (existing.length === 0) {
+      await db.insert(actions).values({
+        title: opts.title,
+        description: opts.description,
+        functionArea: opts.functionArea,
+        siteId: opts.siteId,
+        owner: opts.owner,
+        priority: opts.priority ?? "High",
+        status: "Open",
+        rag: "red",
+        escalated: false,
+      })
+    } else {
+      await db
+        .update(actions)
+        .set({ description: opts.description, rag: "red", status: "Open" })
+        .where(eq(actions.id, existing[0].id))
+    }
+  } else if (existing.length > 0) {
+    await db
+      .update(actions)
+      .set({ status: "Closed", rag: "green" })
+      .where(eq(actions.id, existing[0].id))
+  }
+}
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -27,6 +78,10 @@ export async function createSite(formData: FormData) {
   const brand = String(formData.get("brand") ?? "").trim() || "Less Than Zero"
   const region = String(formData.get("region") ?? "").trim() || null
   const managerName = String(formData.get("managerName") ?? "").trim() || null
+  const siteType = String(formData.get("siteType") ?? "barbershop").trim()
+  const chairCapacity = Number(formData.get("chairCapacity") ?? 0) || 0
+  const learnerCapacity = Number(formData.get("learnerCapacity") ?? 0) || 0
+  const apprenticeCapacity = Number(formData.get("apprenticeCapacity") ?? 0) || 0
   if (!name || !location) throw new Error("Name and location are required")
 
   await db.insert(sites).values({
@@ -35,6 +90,10 @@ export async function createSite(formData: FormData) {
     brand,
     region,
     managerName,
+    siteType: siteType === "training" ? "training" : "barbershop",
+    chairCapacity,
+    learnerCapacity,
+    apprenticeCapacity,
     monthlyTarget: "0",
     rag: "green",
   })
@@ -97,8 +156,73 @@ export async function confirmSiteWeek(formData: FormData) {
   } else {
     await db.insert(siteConfirmations).values({ siteId, weekEnding, ...values })
   }
+
+  // On weekly confirmation, sync the capacity (chair utilisation) and
+  // Revenue-To-Business (£/barber) red actions for this site.
+  await syncCapacityActions(siteId, weekEnding, user.name || user.email)
+
   revalidatePath("/sites")
+  revalidatePath(`/sites/${siteId}`)
+  revalidatePath("/actions")
   revalidatePath("/")
+}
+
+/** Recompute chair-utilisation and RTB red actions for a site + week. */
+async function syncCapacityActions(
+  siteId: number,
+  weekEnding: string,
+  owner: string,
+) {
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
+  if (!site) return
+
+  const [barberAgg] = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(barbers)
+    .where(and(eq(barbers.siteId, siteId), eq(barbers.active, true)))
+  const activeBarbers = Number(barberAgg?.c ?? 0)
+
+  // Chair utilisation — barbershops only.
+  if ((site.siteType ?? "barbershop") === "barbershop") {
+    const capacity = site.chairCapacity ?? 0
+    const vacant = Math.max(0, capacity - activeBarbers)
+    await syncKpiAction({
+      open: capacity > 0 && activeBarbers < capacity,
+      title: `Chair capacity underutilised — ${site.name}`,
+      functionArea: "Capacity",
+      siteId,
+      owner,
+      description: `${site.name} is running ${activeBarbers} of ${capacity} chairs (${vacant} vacant). Underutilised — recruit or reallocate to fill capacity.`,
+    })
+
+    // Revenue To Business — expected = barbers x £/barber, vs rent returned.
+    const [rentAgg] = await db
+      .select({
+        rent: sql<number>`coalesce(sum(${weeklyTakings.cashRent} + ${weeklyTakings.cardRent}), 0)`,
+      })
+      .from(weeklyTakings)
+      .where(
+        and(
+          eq(weeklyTakings.siteId, siteId),
+          eq(weeklyTakings.weekEnding, weekEnding),
+        ),
+      )
+    const rtbActual = Number(rentAgg?.rent ?? 0)
+    const perBarber = Number(site.rtbPerBarber ?? 500)
+    const expected = activeBarbers * perBarber
+    await syncKpiAction({
+      open: expected > 0 && rtbActual < expected,
+      title: `Revenue-To-Business below target — ${site.name}`,
+      functionArea: "RTB",
+      siteId,
+      owner,
+      description: `RTB for W/E ${fmtWeekLong(weekEnding)} was ${fmtGBP(
+        rtbActual,
+      )} against an expected ${fmtGBP(expected)} (${activeBarbers} barbers x ${fmtGBP(
+        perBarber,
+      )}). Below the £${perBarber}/barber assumption.`,
+    })
+  }
 }
 
 /** Record a site's weekly subletting (chair/room rent) income.
@@ -147,43 +271,76 @@ export async function saveSubletting(formData: FormData) {
   }
 
   // Below target → ensure an open quarterly review action exists for this site.
-  if (amount < target) {
-    const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
-    const siteName = site?.name ?? "Site"
-    const title = `Subletting below target — ${siteName}`
-    const open = await db
-      .select({ id: actions.id })
-      .from(actions)
-      .where(
-        and(
-          eq(actions.title, title),
-          eq(actions.functionArea, "Subletting"),
-        ),
-      )
-    const description = `Weekly subletting income was below the £${SUBLET_WEEKLY_TARGET} target (W/E ${fmtWeekLong(
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
+  const siteName = site?.name ?? "Site"
+  await syncKpiAction({
+    open: amount < target,
+    title: `Subletting below target — ${siteName}`,
+    functionArea: "Subletting",
+    siteId,
+    owner: recordedBy,
+    description: `Weekly subletting income was below the £${SUBLET_WEEKLY_TARGET} target (W/E ${fmtWeekLong(
       weekEnding,
-    )}). Review quarterly and agree corrective action with the site manager.`
+    )}). Review quarterly and agree corrective action with the site manager.`,
+  })
 
-    if (open.length === 0) {
-      await db.insert(actions).values({
-        title,
-        description,
-        functionArea: "Subletting",
-        siteId,
-        owner: recordedBy,
-        priority: "High",
-        status: "Open",
-        rag: "red",
-        escalated: false,
-      })
-    } else {
-      // Refresh the existing action so it reflects the latest week.
-      await db
-        .update(actions)
-        .set({ description, rag: "red", status: "Open" })
-        .where(eq(actions.id, open[0].id))
-    }
+  revalidatePath("/sites")
+  revalidatePath(`/sites/${siteId}`)
+  revalidatePath("/actions")
+  revalidatePath("/")
+}
+
+/** Record a training academy's weekly throughput (private learners + apprentices).
+ *  Below either weekly capacity is RED and raises a review action. */
+export async function saveTrainingWeek(formData: FormData) {
+  const user = await requireUser()
+  const siteId = Number(formData.get("siteId"))
+  const weekEnding = String(formData.get("weekEnding"))
+  const privateLearners = Number(formData.get("privateLearners") ?? 0) || 0
+  const apprentices = Number(formData.get("apprentices") ?? 0) || 0
+  const notes = String(formData.get("notes") ?? "").trim() || null
+  if (!siteId || !weekEnding) throw new Error("Missing site or week")
+
+  const recordedBy = user.name || user.email
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
+  if (!site) throw new Error("Site not found")
+
+  const existing = await db
+    .select({ id: trainingWeeks.id })
+    .from(trainingWeeks)
+    .where(
+      and(
+        eq(trainingWeeks.siteId, siteId),
+        eq(trainingWeeks.weekEnding, weekEnding),
+      ),
+    )
+
+  const values = { privateLearners, apprentices, recordedBy, notes }
+  if (existing.length > 0) {
+    await db
+      .update(trainingWeeks)
+      .set(values)
+      .where(eq(trainingWeeks.id, existing[0].id))
+  } else {
+    await db.insert(trainingWeeks).values({ siteId, weekEnding, ...values })
   }
+
+  const learnerCap = site.learnerCapacity ?? 0
+  const apprenticeCap = site.apprenticeCapacity ?? 0
+  const below =
+    (learnerCap > 0 && privateLearners < learnerCap) ||
+    (apprenticeCap > 0 && apprentices < apprenticeCap)
+
+  await syncKpiAction({
+    open: below,
+    title: `Training below capacity — ${site.name}`,
+    functionArea: "Training",
+    siteId,
+    owner: recordedBy,
+    description: `Weekly training throughput was below target (W/E ${fmtWeekLong(
+      weekEnding,
+    )}): ${privateLearners}/${learnerCap} private learners, ${apprentices}/${apprenticeCap} apprentices. Underutilised — agree a plan to fill capacity.`,
+  })
 
   revalidatePath("/sites")
   revalidatePath(`/sites/${siteId}`)

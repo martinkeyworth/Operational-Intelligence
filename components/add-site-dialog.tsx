@@ -22,6 +22,9 @@ import { SITE_BRANDS } from "@/components/confirm-site-dialog"
 export function AddSiteDialog() {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const [siteType, setSiteType] = useState<"barbershop" | "training">(
+    "barbershop",
+  )
   const router = useRouter()
 
   async function action(formData: FormData) {
@@ -84,6 +87,63 @@ export function AddSiteDialog() {
                 <Input id="managerName" name="managerName" placeholder="Name" />
               </div>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="siteType">Site type</Label>
+              <select
+                id="siteType"
+                name="siteType"
+                value={siteType}
+                onChange={(e) =>
+                  setSiteType(e.target.value as "barbershop" | "training")
+                }
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="barbershop">Barbershop</option>
+                <option value="training">Training academy</option>
+              </select>
+            </div>
+            {siteType === "barbershop" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="chairCapacity">Chair capacity</Label>
+                <Input
+                  id="chairCapacity"
+                  name="chairCapacity"
+                  type="number"
+                  min={0}
+                  step="1"
+                  placeholder="e.g. 8"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Anything below capacity is flagged red (underutilised). RTB is
+                  assumed at £500/barber/week.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="learnerCapacity">Private learners / wk</Label>
+                  <Input
+                    id="learnerCapacity"
+                    name="learnerCapacity"
+                    type="number"
+                    min={0}
+                    step="1"
+                    placeholder="e.g. 50"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="apprenticeCapacity">Apprentices / wk</Label>
+                  <Input
+                    id="apprenticeCapacity"
+                    name="apprenticeCapacity"
+                    type="number"
+                    min={0}
+                    step="1"
+                    placeholder="e.g. 10"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>

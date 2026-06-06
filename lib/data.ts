@@ -18,6 +18,12 @@ import {
   fmtWeekLong,
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
+import {
+  ragForUtilisation,
+  ragForRtb,
+  ragForTraining,
+} from "@/lib/capacity-config"
+import { trainingWeeks } from "@/lib/db/schema"
 
 export type { Rag }
 export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
@@ -148,6 +154,15 @@ export type SiteWeekRow = {
   totalBarbers: number
   confirmed: boolean
   confirmedBy: string | null
+  // Capacity KPIs (folded into rag).
+  siteType: string
+  chairCapacity: number
+  activeBarbers: number
+  utilisationRag: Rag
+  rtbExpected: number
+  rtbActual: number
+  rtbRag: Rag
+  trainingRag: Rag
 }
 
 export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
@@ -167,6 +182,7 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
     .select({
       siteId: weeklyTakings.siteId,
       revenue: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)`,
+      rent: sql<number>`coalesce(sum(${weeklyTakings.cashRent} + ${weeklyTakings.cardRent}), 0)`,
       reporting: sql<number>`count(distinct ${weeklyTakings.barberId})`,
     })
     .from(weeklyTakings)
@@ -178,6 +194,11 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
     .from(siteConfirmations)
     .where(eq(siteConfirmations.weekEnding, week))
 
+  const trainingRows = await db
+    .select()
+    .from(trainingWeeks)
+    .where(eq(trainingWeeks.weekEnding, week))
+
   return siteRows.map((s) => {
     const t = targetAgg.find((r) => r.siteId === s.id)
     const rev = revAgg.find((r) => r.siteId === s.id)
@@ -185,6 +206,43 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
     const weekTarget = Number(t?.target ?? 0)
     const weekRevenue = Number(rev?.revenue ?? 0)
     const attainmentPct = weekTarget > 0 ? (weekRevenue / weekTarget) * 100 : 0
+    const activeBarbers = Number(t?.total ?? 0)
+    const siteType = s.siteType ?? "barbershop"
+
+    // Capacity / RTB (barbershops).
+    const chairCapacity = s.chairCapacity ?? 0
+    const utilisationRag = ragForUtilisation(activeBarbers, chairCapacity)
+    const rtbActual = Number(rev?.rent ?? 0)
+    const rtbExpected = activeBarbers * Number(s.rtbPerBarber ?? 500)
+    const rtbReported = Number(rev?.reporting ?? 0) > 0
+    const rtbRag = rtbReported ? ragForRtb(rtbActual, rtbExpected) : "red"
+
+    // Training throughput (academy sites).
+    const tw = trainingRows.find((r) => r.siteId === s.id)
+    const trainingRag =
+      siteType === "training"
+        ? tw
+          ? ragForTraining(
+              Number(tw.privateLearners),
+              s.learnerCapacity ?? 0,
+              Number(tw.apprentices),
+              s.apprenticeCapacity ?? 0,
+            )
+          : "red"
+        : "green"
+
+    // Overall site RAG = worst of revenue attainment + capacity KPIs.
+    const revenueRag: Rag =
+      siteType === "training"
+        ? "green"
+        : weekRevenue === 0
+          ? "red"
+          : ragFromAttainment(attainmentPct)
+    const componentRags: Rag[] =
+      siteType === "training"
+        ? [trainingRag]
+        : [revenueRag, utilisationRag, rtbRag]
+
     return {
       id: s.id,
       name: s.name,
@@ -195,11 +253,19 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
       weekTarget,
       weekRevenue,
       attainmentPct,
-      rag: weekRevenue === 0 ? "red" : ragFromAttainment(attainmentPct),
+      rag: rollUpRag(componentRags),
       reportingBarbers: Number(rev?.reporting ?? 0),
-      totalBarbers: Number(t?.total ?? 0),
+      totalBarbers: activeBarbers,
       confirmed: conf?.confirmed ?? false,
       confirmedBy: conf?.confirmedBy ?? null,
+      siteType,
+      chairCapacity,
+      activeBarbers,
+      utilisationRag,
+      rtbExpected,
+      rtbActual,
+      rtbRag,
+      trainingRag,
     }
   })
 }
@@ -534,4 +600,117 @@ export async function getSubletHistory(siteId: number) {
       rag: ragForSublet(amount, target),
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Capacity / utilisation + Revenue-To-Business (£500 per barber) KPIs
+// ---------------------------------------------------------------------------
+
+export type CapacityKpis = {
+  siteId: number
+  siteType: string
+  // Chair utilisation
+  activeBarbers: number
+  chairCapacity: number
+  utilisationPct: number
+  utilisationRag: Rag
+  vacantChairs: number
+  // Revenue To Business (barbers x £500)
+  rtbPerBarber: number
+  rtbExpected: number
+  rtbActual: number
+  rtbAttainmentPct: number
+  rtbRag: Rag
+  rtbReported: boolean
+  // Training (academy sites)
+  learnerCapacity: number
+  apprenticeCapacity: number
+  privateLearners: number
+  apprentices: number
+  trainingRag: Rag
+  trainingReported: boolean
+}
+
+/**
+ * Capacity-based KPIs for a single site + week:
+ *  - chair utilisation (active barbers vs capacity)
+ *  - Revenue-To-Business (sum of rent returned vs barbers x £500)
+ *  - training throughput (learners/apprentices vs weekly capacity)
+ */
+export async function getCapacityKpis(
+  siteId: number,
+  week: string,
+): Promise<CapacityKpis | null> {
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
+  if (!site) return null
+
+  const [barberAgg] = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(barbers)
+    .where(and(eq(barbers.siteId, siteId), eq(barbers.active, true)))
+  const activeBarbers = Number(barberAgg?.c ?? 0)
+
+  const chairCapacity = site.chairCapacity ?? 0
+  const utilisationPct =
+    chairCapacity > 0 ? (activeBarbers / chairCapacity) * 100 : 0
+
+  // RTB actual = rent returned to the business this week (cash + card rent).
+  const [rentAgg] = await db
+    .select({
+      rent: sql<number>`coalesce(sum(${weeklyTakings.cashRent} + ${weeklyTakings.cardRent}), 0)`,
+      reporting: sql<number>`count(distinct ${weeklyTakings.barberId})`,
+    })
+    .from(weeklyTakings)
+    .where(
+      and(
+        eq(weeklyTakings.siteId, siteId),
+        eq(weeklyTakings.weekEnding, week),
+      ),
+    )
+  const rtbActual = Number(rentAgg?.rent ?? 0)
+  const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
+  const rtbPerBarber = Number(site.rtbPerBarber ?? 500)
+  const rtbExpected = activeBarbers * rtbPerBarber
+
+  // Training throughput for the week (academy sites only).
+  const [tw] = await db
+    .select()
+    .from(trainingWeeks)
+    .where(
+      and(
+        eq(trainingWeeks.siteId, siteId),
+        eq(trainingWeeks.weekEnding, week),
+      ),
+    )
+  const privateLearners = tw ? Number(tw.privateLearners) : 0
+  const apprentices = tw ? Number(tw.apprentices) : 0
+
+  return {
+    siteId,
+    siteType: site.siteType ?? "barbershop",
+    activeBarbers,
+    chairCapacity,
+    utilisationPct,
+    utilisationRag: ragForUtilisation(activeBarbers, chairCapacity),
+    vacantChairs: Math.max(0, chairCapacity - activeBarbers),
+    rtbPerBarber,
+    rtbExpected,
+    rtbActual,
+    rtbAttainmentPct: rtbExpected > 0 ? (rtbActual / rtbExpected) * 100 : 0,
+    rtbRag: ragForRtb(rtbActual, rtbExpected),
+    rtbReported,
+    learnerCapacity: site.learnerCapacity ?? 0,
+    apprenticeCapacity: site.apprenticeCapacity ?? 0,
+    privateLearners,
+    apprentices,
+    trainingRag: tw
+      ? ragForTraining(
+          privateLearners,
+          site.learnerCapacity ?? 0,
+          apprentices,
+          site.apprenticeCapacity ?? 0,
+        )
+      : "red",
+    trainingReported: !!tw,
+  }
 }

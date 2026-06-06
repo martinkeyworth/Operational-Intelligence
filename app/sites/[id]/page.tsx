@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/table"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
 import { SubletCard } from "@/components/sublet-card"
+import { CapacityCard } from "@/components/capacity-card"
+import { TrainingCard } from "@/components/training-card"
 import { WeekSelector } from "@/components/week-selector"
 import {
   getWeeks,
@@ -24,6 +26,7 @@ import {
   getBarberWeek,
   getSubletForSiteWeek,
   getSubletHistory,
+  getCapacityKpis,
   fmtGBP,
   fmtWeekLong,
 } from "@/lib/data"
@@ -58,6 +61,10 @@ export default async function SiteDetailPage({
   const sublet =
     hasSubletting && week ? await getSubletForSiteWeek(siteId, week) : null
   const subletHistory = hasSubletting ? await getSubletHistory(siteId) : []
+
+  // Capacity / RTB / training KPIs.
+  const capacity = week ? await getCapacityKpis(siteId, week) : null
+  const isTraining = site.siteType === "training"
 
   return (
     <AppShell user={user}>
@@ -118,6 +125,14 @@ export default async function SiteDetailPage({
                 )}
               />
             </div>
+
+            {capacity && isTraining && (
+              <TrainingCard week={week} kpis={capacity} />
+            )}
+
+            {capacity && !isTraining && (
+              <CapacityCard week={week} kpis={capacity} />
+            )}
 
             {sublet && (
               <SubletCard sublet={sublet} history={subletHistory} />

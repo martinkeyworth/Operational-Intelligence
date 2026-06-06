@@ -81,6 +81,15 @@ export const sites = pgTable("sites", {
   openedDate: date("opened_date"),
   monthlyTarget: numeric("monthly_target").notNull().default("0"),
   rag: text("rag").notNull().default("green"),
+  // Site type drives which capacity KPIs apply.
+  siteType: text("site_type").notNull().default("barbershop"), // barbershop | training
+  // Barbershop capacity: number of chairs the site can run.
+  chairCapacity: integer("chair_capacity").notNull().default(0),
+  // Weekly Revenue-To-Business assumption per barber (£).
+  rtbPerBarber: numeric("rtb_per_barber").notNull().default("500"),
+  // Training capacity: weekly private learners and apprentices.
+  learnerCapacity: integer("learner_capacity").notNull().default(0),
+  apprenticeCapacity: integer("apprentice_capacity").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -192,6 +201,19 @@ export const sublettingTakings = pgTable("subletting_takings", {
   amount: numeric("amount").notNull().default("0"),
   // Weekly target for this site's subletting income.
   target: numeric("target").notNull().default("950"),
+  recordedBy: text("recorded_by"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Weekly training throughput for academy sites. Targets come from the site's
+// learnerCapacity / apprenticeCapacity; below either is red.
+export const trainingWeeks = pgTable("training_weeks", {
+  id: serial("id").primaryKey(),
+  siteId: integer("site_id").notNull(),
+  weekEnding: date("week_ending").notNull(),
+  privateLearners: integer("private_learners").notNull().default(0),
+  apprentices: integer("apprentices").notNull().default(0),
   recordedBy: text("recorded_by"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

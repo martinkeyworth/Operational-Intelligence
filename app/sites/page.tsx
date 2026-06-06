@@ -119,11 +119,14 @@ export default async function SitesPage({
                   <div className="flex items-center gap-6">
                     <div className="text-right">
                       <p className="text-sm font-semibold text-foreground">
-                        {fmtGBP(s.weekRevenue)}
+                        {s.siteType === "training"
+                          ? "Academy"
+                          : fmtGBP(s.weekRevenue)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {s.attainmentPct.toFixed(0)}% · {s.reportingBarbers}/
-                        {s.totalBarbers} reporting
+                        {s.siteType === "training"
+                          ? "Training site"
+                          : `${s.attainmentPct.toFixed(0)}% · ${s.activeBarbers}/${s.chairCapacity} chairs`}
                       </p>
                     </div>
                     <ConfirmSiteDialog
