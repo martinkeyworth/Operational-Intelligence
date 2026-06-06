@@ -82,7 +82,41 @@ export const barbers = pgTable("barbers", {
   siteId: integer("site_id").notNull(),
   role: text("role").notNull().default("Barber"),
   targetRevenuePerDay: numeric("target_revenue_per_day").notNull().default("250"),
+  targetWeekly: numeric("target_weekly").notNull().default("800"),
   active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Weekly barber takings (Saturday-to-Saturday). The core operating data.
+export const weeklyTakings = pgTable("weekly_takings", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull(),
+  siteId: integer("site_id").notNull(),
+  weekEnding: date("week_ending").notNull(),
+  total: numeric("total").notNull().default("0"),
+  cash: numeric("cash").notNull().default("0"),
+  card: numeric("card").notNull().default("0"),
+  cashRent: numeric("cash_rent").notNull().default("0"),
+  cardRent: numeric("card_rent").notNull().default("0"),
+  manager: text("manager").notNull().default(""),
+  transferCompleted: boolean("transfer_completed").notNull().default(true),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Weekly functional-leader confirmation of each site's details.
+export const siteConfirmations = pgTable("site_confirmations", {
+  id: serial("id").primaryKey(),
+  siteId: integer("site_id").notNull(),
+  weekEnding: date("week_ending").notNull(),
+  confirmed: boolean("confirmed").notNull().default(false),
+  confirmedBy: text("confirmed_by"),
+  confirmedRole: text("confirmed_role"),
+  siteNameConfirmed: text("site_name_confirmed"),
+  managerConfirmed: text("manager_confirmed"),
+  headcountConfirmed: integer("headcount_confirmed"),
+  notes: text("notes"),
+  confirmedAt: timestamp("confirmed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 

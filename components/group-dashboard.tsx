@@ -5,74 +5,90 @@ import { RagBadge, RagDot } from "@/components/rag"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RevenueTrendChart } from "@/components/revenue-trend-chart"
 import { AiCommentary } from "@/components/ai-commentary"
+import { WeekSelector } from "@/components/week-selector"
+import { fmtGBP, fmtWeekLong } from "@/lib/data"
 import type {
   GroupSummary,
-  SiteRow,
-  RevenueTrendPoint,
-  KpiScorecard,
-  DepartmentRow,
+  SiteWeekRow,
+  TrendPoint,
+  BarberWeekRow,
   ActionRow,
 } from "@/lib/data"
-import { AlertTriangle, ArrowRight, TrendingUp } from "lucide-react"
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+} from "lucide-react"
 
-const GBP = new Intl.NumberFormat("en-GB", {
-  style: "currency",
-  currency: "GBP",
-  maximumFractionDigits: 0,
-})
-
-function fmtKpi(value: number, unit: string) {
-  if (unit === "GBP") return GBP.format(value)
-  if (unit === "%") return `${value.toFixed(0)}%`
-  if (unit === "/5") return `${value.toFixed(1)}/5`
-  return value.toFixed(1)
+function barFill(rag: "green" | "amber" | "red") {
+  return rag === "green"
+    ? "bg-rag-green"
+    : rag === "amber"
+      ? "bg-rag-amber"
+      : "bg-rag-red"
 }
 
 export function GroupDashboard({
   summary,
+  weeks,
   sites,
   trend,
-  scorecards,
-  departments,
+  barbers,
   actions,
 }: {
   summary: GroupSummary
-  sites: SiteRow[]
-  trend: RevenueTrendPoint[]
-  scorecards: KpiScorecard[]
-  departments: DepartmentRow[]
+  weeks: string[]
+  sites: SiteWeekRow[]
+  trend: TrendPoint[]
+  barbers: BarberWeekRow[]
   actions: ActionRow[]
 }) {
-  const period = new Date().toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-  })
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
     .slice(0, 5)
+  const reporting = barbers.filter((b) => b.reported)
+  const leaderboard = reporting.slice(0, 6)
+  const wowUp = summary.wowPct >= 0
 
   return (
     <div>
       <PageHeader
         meta="Group Executive View"
         title="Operational Intelligence & Governance"
-        subtitle="Weekly group performance, RAG status and key risks across all LTZ sites. Worst-status roll-up applied at every level."
+        subtitle="Weekly group performance, RAG status and key risks across all LTZ sites. Saturday-to-Saturday reporting with worst-status roll-up at every level."
       >
         <RagBadge rag={summary.groupRag} className="px-3 py-1 text-sm" />
+        <WeekSelector weeks={weeks} current={summary.week} />
       </PageHeader>
 
       <div className="space-y-8 px-5 py-6 md:px-8">
         {/* Top stats */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
-            label={`Revenue · ${period}`}
-            value={GBP.format(summary.monthRevenue)}
+            label={`Takings · W/E ${fmtWeekLong(summary.week)}`}
+            value={fmtGBP(summary.weekRevenue)}
             sub={
-              <span className="flex items-center gap-1 text-rag-green">
-                <TrendingUp className="h-3 w-3" />
-                {summary.attainmentPct.toFixed(0)}% of{" "}
-                {GBP.format(summary.monthTarget)} target
-              </span>
+              summary.prevWeek ? (
+                <span
+                  className={
+                    wowUp
+                      ? "flex items-center gap-1 text-rag-green"
+                      : "flex items-center gap-1 text-rag-red"
+                  }
+                >
+                  {wowUp ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  {Math.abs(summary.wowPct).toFixed(0)}% vs last week
+                </span>
+              ) : (
+                "First reported week"
+              )
             }
           />
           <StatCard
@@ -86,40 +102,39 @@ export function GroupDashboard({
             }
           />
           <StatCard
-            label="Active Barbers"
-            value={summary.activeBarbers}
-            sub={`Across ${summary.siteCount} sites · ${GBP.format(
-              summary.avgRevPerBarberDay,
-            )} avg / day`}
+            label="Reporting Barbers"
+            value={`${summary.reportingBarbers}/${summary.activeBarbers}`}
+            sub={`${fmtGBP(summary.avgPerBarber)} avg this week`}
           />
           <StatCard
-            label="Open Actions"
-            value={summary.openActions}
+            label="Sites Confirmed"
+            value={`${summary.confirmedSites}/${summary.siteCount}`}
             sub={
-              summary.escalatedActions > 0 ? (
-                <span className="flex items-center gap-1 text-rag-red">
-                  <AlertTriangle className="h-3 w-3" />
-                  {summary.escalatedActions} escalated to CEO
+              summary.confirmedSites < summary.siteCount ? (
+                <span className="flex items-center gap-1 text-rag-amber">
+                  <Clock className="h-3 w-3" />
+                  Awaiting confirmation
                 </span>
               ) : (
-                "No escalations"
+                <span className="flex items-center gap-1 text-rag-green">
+                  <CheckCircle2 className="h-3 w-3" />
+                  All confirmed
+                </span>
               )
             }
           />
         </div>
 
-        {/* Revenue trend + RAG distribution */}
+        {/* Trend + RAG distribution / commentary */}
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="p-5 lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">
-                  Group Revenue Trend
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Daily group revenue, last 30 days
-                </p>
-              </div>
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-foreground">
+                Group Weekly Takings
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Total takings per week vs combined target
+              </p>
             </div>
             <RevenueTrendChart data={trend} />
           </Card>
@@ -128,9 +143,7 @@ export function GroupDashboard({
             <h2 className="text-sm font-semibold text-foreground">
               Site RAG Distribution
             </h2>
-            <p className="text-xs text-muted-foreground">
-              Status roll-up by site
-            </p>
+            <p className="text-xs text-muted-foreground">Status roll-up by site</p>
             <div className="mt-4 flex flex-col gap-3">
               {(["green", "amber", "red"] as const).map((rag) => {
                 const count = summary.ragCounts[rag]
@@ -141,7 +154,7 @@ export function GroupDashboard({
                     <div className="flex items-center justify-between text-xs">
                       <span className="flex items-center gap-2 text-foreground">
                         <RagDot rag={rag} />
-                        <span className="capitalize">
+                        <span>
                           {rag === "green"
                             ? "On track"
                             : rag === "amber"
@@ -155,13 +168,7 @@ export function GroupDashboard({
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className={
-                          rag === "green"
-                            ? "h-full rounded-full bg-rag-green"
-                            : rag === "amber"
-                              ? "h-full rounded-full bg-rag-amber"
-                              : "h-full rounded-full bg-rag-red"
-                        }
+                        className={`h-full rounded-full ${barFill(rag)}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -170,7 +177,7 @@ export function GroupDashboard({
               })}
             </div>
             <div className="mt-auto pt-5">
-              <AiCommentary summary={summary} sites={sites} risks={risks} />
+              <AiCommentary summary={summary} sites={sites} barbers={barbers} />
             </div>
           </Card>
         </div>
@@ -183,14 +190,14 @@ export function GroupDashboard({
                 Site Performance
               </h2>
               <p className="text-xs text-muted-foreground">
-                Month-to-date revenue vs target, by site
+                Weekly takings vs target, by site
               </p>
             </div>
             <Link
               href="/sites"
               className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
             >
-              View all sites
+              All sites
               <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
@@ -198,7 +205,7 @@ export function GroupDashboard({
             {sites.map((s) => (
               <Link
                 key={s.id}
-                href={`/sites/${s.id}`}
+                href={`/sites/${s.id}?week=${summary.week}`}
                 className="group rounded-lg border border-border bg-background p-4 transition-colors hover:border-primary/40"
               >
                 <div className="flex items-start justify-between">
@@ -208,10 +215,14 @@ export function GroupDashboard({
                       <p className="truncate text-sm font-medium text-foreground">
                         {s.name}
                       </p>
+                      {s.confirmed ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-rag-green" />
+                      ) : (
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-rag-amber" />
+                      )}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {s.location} · {s.activeBarbers} barbers ·{" "}
-                      {s.managerName}
+                      {s.location} · {s.reportingBarbers}/{s.totalBarbers} reporting
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-foreground">
@@ -220,57 +231,67 @@ export function GroupDashboard({
                 </div>
                 <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className={
-                      s.rag === "green"
-                        ? "h-full rounded-full bg-rag-green"
-                        : s.rag === "amber"
-                          ? "h-full rounded-full bg-rag-amber"
-                          : "h-full rounded-full bg-rag-red"
-                    }
+                    className={`h-full rounded-full ${barFill(s.rag)}`}
                     style={{ width: `${Math.min(s.attainmentPct, 100)}%` }}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{GBP.format(s.monthRevenue)}</span>
-                  <span>Target {GBP.format(s.monthlyTarget)}</span>
+                  <span>{fmtGBP(s.weekRevenue)}</span>
+                  <span>Target {fmtGBP(s.weekTarget)}</span>
                 </div>
               </Link>
             ))}
           </div>
         </Card>
 
-        {/* Departments + Risks */}
+        {/* Barber leaderboard + Risks */}
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
-            <h2 className="text-sm font-semibold text-foreground">
-              Functional Governance
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Department RAG roll-up across KPIs and actions
-            </p>
-            <div className="mt-4 flex flex-col divide-y divide-border">
-              {departments.map((d) => (
-                <div
-                  key={d.functionArea}
-                  className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <RagDot rag={d.rag} />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {d.functionArea}
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">
+                  Barber Leaderboard
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Top performers this week, group-wide
+                </p>
+              </div>
+            </div>
+            {leaderboard.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No takings reported for this week yet.
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {leaderboard.map((b, i) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                  >
+                    <span className="w-5 text-center text-xs font-semibold text-muted-foreground">
+                      {i + 1}
+                    </span>
+                    <RagDot rag={b.rag} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {b.name}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {d.kpiCount} KPI{d.kpiCount === 1 ? "" : "s"} ·{" "}
-                        {d.openActions} open action
-                        {d.openActions === 1 ? "" : "s"}
+                        {b.role} · {b.siteName}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">
+                        {fmtGBP(b.revenue)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {b.attainmentPct.toFixed(0)}% of target
                       </p>
                     </div>
                   </div>
-                  <RagBadge rag={d.rag} />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card className="p-5">
@@ -307,7 +328,8 @@ export function GroupDashboard({
                         {r.title}
                       </p>
                       {r.escalated && (
-                        <span className="shrink-0 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                          <AlertTriangle className="h-3 w-3" />
                           Escalated
                         </span>
                       )}
@@ -323,53 +345,6 @@ export function GroupDashboard({
             )}
           </Card>
         </div>
-
-        {/* KPI scorecard */}
-        <Card className="p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">
-                Group KPI Scorecard
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Latest reported period, group-level roll-up
-              </p>
-            </div>
-            <Link
-              href="/kpis"
-              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              KPI Register
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {scorecards.map((k) => (
-              <div
-                key={k.kpiId}
-                className="rounded-lg border border-border bg-background p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {k.code} · {k.functionArea}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-foreground">
-                      {k.name}
-                    </p>
-                  </div>
-                  <RagDot rag={k.rag} className="mt-1" />
-                </div>
-                <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-                  {fmtKpi(k.groupValue, k.unit)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Owner: {k.ownerRole}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
       </div>
     </div>
   )

@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
   Store,
-  Target,
   ListChecks,
   LogOut,
 } from "lucide-react"
@@ -16,7 +15,6 @@ import {
 const NAV = [
   { href: "/", label: "Group Overview", icon: LayoutDashboard },
   { href: "/sites", label: "Sites", icon: Store },
-  { href: "/kpis", label: "KPI Register", icon: Target },
   { href: "/actions", label: "Action Register", icon: ListChecks },
 ]
 

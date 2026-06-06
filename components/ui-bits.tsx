@@ -8,7 +8,7 @@ export function PageHeader({
 }: {
   title: string
   subtitle?: string
-  meta?: string
+  meta?: React.ReactNode
   children?: React.ReactNode
 }) {
   return (

@@ -4,6 +4,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   XAxis,
   YAxis,
 } from "recharts"
@@ -12,25 +13,19 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import type { RevenueTrendPoint } from "@/lib/data"
+import type { TrendPoint } from "@/lib/data"
 
-export function RevenueTrendChart({ data }: { data: RevenueTrendPoint[] }) {
-  const formatted = data.map((d) => ({
-    ...d,
-    label: new Date(d.date).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-    }),
-  }))
+export function RevenueTrendChart({ data }: { data: TrendPoint[] }) {
+  const target = data[0]?.target ?? 0
 
   return (
     <ChartContainer
       config={{
-        revenue: { label: "Revenue", color: "var(--chart-1)" },
+        revenue: { label: "Takings", color: "var(--chart-1)" },
       }}
-      className="h-[240px] w-full"
+      className="h-[260px] w-full"
     >
-      <AreaChart data={formatted} margin={{ left: 4, right: 12, top: 8 }}>
+      <AreaChart data={data} margin={{ left: 4, right: 12, top: 8 }}>
         <defs>
           <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-revenue)" stopOpacity={0.35} />
@@ -43,7 +38,7 @@ export function RevenueTrendChart({ data }: { data: RevenueTrendPoint[] }) {
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          minTickGap={28}
+          minTickGap={20}
           className="text-[11px]"
         />
         <YAxis
@@ -54,10 +49,23 @@ export function RevenueTrendChart({ data }: { data: RevenueTrendPoint[] }) {
           tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`}
           className="text-[11px]"
         />
+        {target > 0 && (
+          <ReferenceLine
+            y={target}
+            stroke="var(--muted-foreground)"
+            strokeDasharray="4 4"
+            label={{
+              value: "Target",
+              position: "insideTopRight",
+              fill: "var(--muted-foreground)",
+              fontSize: 10,
+            }}
+          />
+        )}
         <ChartTooltip
           content={
             <ChartTooltipContent
-              formatter={(value) => [`£${Number(value).toLocaleString()}`, " Revenue"]}
+              formatter={(value) => [`£${Number(value).toLocaleString()}`, " Takings"]}
             />
           }
         />

@@ -3,145 +3,91 @@ import { db } from "@/lib/db"
 import {
   sites,
   barbers,
-  revenueEntries,
-  kpis,
-  kpiValues,
+  weeklyTakings,
+  siteConfirmations,
   actions,
 } from "@/lib/db/schema"
-import { and, desc, eq, gte, sql } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
+import {
+  type Rag,
+  rollUpRag,
+  ragFromAttainment,
+  fmtGBP,
+  fmtWeek,
+  fmtWeekLong,
+} from "@/lib/format"
 
-export type Rag = "green" | "amber" | "red"
+export type { Rag }
+export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
 
-const RAG_ORDER: Record<Rag, number> = { red: 0, amber: 1, green: 2 }
+// ---------------------------------------------------------------------------
+// Weeks
+// ---------------------------------------------------------------------------
 
-/** Worst (most severe) RAG wins when rolling up. */
-export function rollUpRag(values: Rag[]): Rag {
-  if (values.length === 0) return "green"
-  return values.reduce((worst, v) =>
-    RAG_ORDER[v] < RAG_ORDER[worst] ? v : worst,
-  )
+export async function getWeeks(): Promise<string[]> {
+  const rows = await db
+    .select({ week: weeklyTakings.weekEnding })
+    .from(weeklyTakings)
+    .groupBy(weeklyTakings.weekEnding)
+    .orderBy(desc(weeklyTakings.weekEnding))
+  return rows.map((r) => String(r.week))
 }
 
-/** Compute a RAG given a value, thresholds and direction. */
-export function computeRag(
-  value: number,
-  green: number | null,
-  amber: number | null,
-  direction: string,
-): Rag {
-  if (green === null || amber === null) return "green"
-  if (direction === "lower_better") {
-    if (value <= green) return "green"
-    if (value <= amber) return "amber"
-    return "red"
-  }
-  if (value >= green) return "green"
-  if (value >= amber) return "amber"
-  return "red"
+export async function getLatestWeek(): Promise<string | null> {
+  const weeks = await getWeeks()
+  return weeks[0] ?? null
 }
 
-export type SiteRow = {
-  id: number
-  name: string
-  location: string
-  region: string | null
-  managerName: string | null
-  monthlyTarget: number
-  rag: Rag
-  monthRevenue: number
-  attainmentPct: number
-  activeBarbers: number
-  avgRevPerDay: number
+function prevWeekOf(weeks: string[], week: string): string | null {
+  const i = weeks.indexOf(week)
+  return i >= 0 && i + 1 < weeks.length ? weeks[i + 1] : null
 }
 
-export async function getSites(): Promise<SiteRow[]> {
-  const monthStart = new Date()
-  monthStart.setDate(1)
-  const monthStartStr = monthStart.toISOString().slice(0, 10)
-
-  const siteRows = await db.select().from(sites).orderBy(sites.name)
-
-  const revAgg = await db
-    .select({
-      siteId: revenueEntries.siteId,
-      total: sql<number>`coalesce(sum(${revenueEntries.revenue}), 0)`,
-      days: sql<number>`count(distinct ${revenueEntries.entryDate})`,
-      entries: sql<number>`count(*)`,
-    })
-    .from(revenueEntries)
-    .where(gte(revenueEntries.entryDate, monthStartStr))
-    .groupBy(revenueEntries.siteId)
-
-  const barberAgg = await db
-    .select({
-      siteId: barbers.siteId,
-      count: sql<number>`count(*)`,
-    })
-    .from(barbers)
-    .where(eq(barbers.active, true))
-    .groupBy(barbers.siteId)
-
-  return siteRows.map((s) => {
-    const rev = revAgg.find((r) => r.siteId === s.id)
-    const barberCount = Number(
-      barberAgg.find((b) => b.siteId === s.id)?.count ?? 0,
-    )
-    const monthRevenue = Number(rev?.total ?? 0)
-    const days = Number(rev?.days ?? 0)
-    const entries = Number(rev?.entries ?? 0)
-    const target = Number(s.monthlyTarget)
-    const attainmentPct = target > 0 ? (monthRevenue / target) * 100 : 0
-    const avgRevPerDay = entries > 0 ? monthRevenue / entries : 0
-    return {
-      id: s.id,
-      name: s.name,
-      location: s.location,
-      region: s.region,
-      managerName: s.managerName,
-      monthlyTarget: target,
-      rag: s.rag as Rag,
-      monthRevenue,
-      attainmentPct,
-      activeBarbers: barberCount,
-      avgRevPerDay,
-    }
-  })
-}
+// ---------------------------------------------------------------------------
+// Group summary for a given week
+// ---------------------------------------------------------------------------
 
 export type GroupSummary = {
+  week: string
+  prevWeek: string | null
   groupRag: Rag
-  monthRevenue: number
-  monthTarget: number
+  weekRevenue: number
+  prevWeekRevenue: number
+  weekTarget: number
   attainmentPct: number
+  wowPct: number
   activeBarbers: number
+  reportingBarbers: number
   siteCount: number
-  avgRevPerBarberDay: number
+  confirmedSites: number
+  avgPerBarber: number
   openActions: number
   escalatedActions: number
   ragCounts: Record<Rag, number>
 }
 
-export async function getGroupSummary(): Promise<GroupSummary> {
-  const siteRows = await getSites()
-  const monthStart = new Date()
-  monthStart.setDate(1)
-  const monthStartStr = monthStart.toISOString().slice(0, 10)
+async function weekRevenueFor(week: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)` })
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.weekEnding, week))
+  return Number(row?.total ?? 0)
+}
 
-  const monthRevenue = siteRows.reduce((a, s) => a + s.monthRevenue, 0)
-  const monthTarget = siteRows.reduce((a, s) => a + s.monthlyTarget, 0)
-  const activeBarbers = siteRows.reduce((a, s) => a + s.activeBarbers, 0)
+export async function getGroupSummary(week: string): Promise<GroupSummary> {
+  const weeks = await getWeeks()
+  const prevWeek = prevWeekOf(weeks, week)
 
-  const [revTotals] = await db
-    .select({
-      total: sql<number>`coalesce(sum(${revenueEntries.revenue}), 0)`,
-      entries: sql<number>`count(*)`,
-    })
-    .from(revenueEntries)
-    .where(gte(revenueEntries.entryDate, monthStartStr))
+  const siteRows = await getSiteWeek(week)
+  const weekRevenue = siteRows.reduce((a, s) => a + s.weekRevenue, 0)
+  const weekTarget = siteRows.reduce((a, s) => a + s.weekTarget, 0)
+  const prevWeekRevenue = prevWeek ? await weekRevenueFor(prevWeek) : 0
+  const reportingBarbers = siteRows.reduce((a, s) => a + s.reportingBarbers, 0)
 
-  const totalEntries = Number(revTotals?.entries ?? 0)
-  const avgRevPerBarberDay =
-    totalEntries > 0 ? Number(revTotals?.total ?? 0) / totalEntries : 0
+  const [barberCount] = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(barbers)
+    .where(eq(barbers.active, true))
 
   const [actionAgg] = await db
     .select({
@@ -150,137 +96,243 @@ export async function getGroupSummary(): Promise<GroupSummary> {
     })
     .from(actions)
 
+  const confirmedSites = siteRows.filter((s) => s.confirmed).length
+
   const ragCounts: Record<Rag, number> = { green: 0, amber: 0, red: 0 }
   for (const s of siteRows) ragCounts[s.rag]++
 
+  const attainmentPct = weekTarget > 0 ? (weekRevenue / weekTarget) * 100 : 0
+  const wowPct =
+    prevWeekRevenue > 0
+      ? ((weekRevenue - prevWeekRevenue) / prevWeekRevenue) * 100
+      : 0
+
   return {
+    week,
+    prevWeek,
     groupRag: rollUpRag(siteRows.map((s) => s.rag)),
-    monthRevenue,
-    monthTarget,
-    attainmentPct: monthTarget > 0 ? (monthRevenue / monthTarget) * 100 : 0,
-    activeBarbers,
+    weekRevenue,
+    prevWeekRevenue,
+    weekTarget,
+    attainmentPct,
+    wowPct,
+    activeBarbers: Number(barberCount?.c ?? 0),
+    reportingBarbers,
     siteCount: siteRows.length,
-    avgRevPerBarberDay,
+    confirmedSites,
+    avgPerBarber: reportingBarbers > 0 ? weekRevenue / reportingBarbers : 0,
     openActions: Number(actionAgg?.open ?? 0),
     escalatedActions: Number(actionAgg?.escalated ?? 0),
     ragCounts,
   }
 }
 
-export type RevenueTrendPoint = { date: string; revenue: number }
+// ---------------------------------------------------------------------------
+// Site-level weekly performance
+// ---------------------------------------------------------------------------
 
-export async function getGroupRevenueTrend(): Promise<RevenueTrendPoint[]> {
-  const start = new Date()
-  start.setDate(start.getDate() - 29)
-  const startStr = start.toISOString().slice(0, 10)
-
-  const rows = await db
-    .select({
-      date: revenueEntries.entryDate,
-      revenue: sql<number>`coalesce(sum(${revenueEntries.revenue}), 0)`,
-    })
-    .from(revenueEntries)
-    .where(gte(revenueEntries.entryDate, startStr))
-    .groupBy(revenueEntries.entryDate)
-    .orderBy(revenueEntries.entryDate)
-
-  return rows.map((r) => ({
-    date: String(r.date),
-    revenue: Math.round(Number(r.revenue)),
-  }))
-}
-
-export type KpiRow = {
+export type SiteWeekRow = {
   id: number
-  code: string
   name: string
-  category: string
-  functionArea: string
-  unit: string
-  ownerRole: string
-  greenThreshold: number | null
-  amberThreshold: number | null
-  direction: string
-  frequency: string
-  escalationRule: string | null
-}
-
-export async function getKpis(): Promise<KpiRow[]> {
-  const rows = await db.select().from(kpis).orderBy(kpis.code)
-  return rows.map((k) => ({
-    id: k.id,
-    code: k.code,
-    name: k.name,
-    category: k.category,
-    functionArea: k.functionArea,
-    unit: k.unit,
-    ownerRole: k.ownerRole,
-    greenThreshold: k.greenThreshold === null ? null : Number(k.greenThreshold),
-    amberThreshold: k.amberThreshold === null ? null : Number(k.amberThreshold),
-    direction: k.direction,
-    frequency: k.frequency,
-    escalationRule: k.escalationRule,
-  }))
-}
-
-export type KpiScorecard = {
-  kpiId: number
-  code: string
-  name: string
-  category: string
-  functionArea: string
-  unit: string
-  ownerRole: string
-  groupValue: number
+  location: string
+  region: string | null
+  managerName: string | null
+  weekTarget: number
+  weekRevenue: number
+  attainmentPct: number
   rag: Rag
-  perSite: { siteId: number | null; siteName: string; value: number; rag: Rag }[]
+  reportingBarbers: number
+  totalBarbers: number
+  confirmed: boolean
+  confirmedBy: string | null
 }
 
-/** Latest period KPI values rolled up to group level. */
-export async function getKpiScorecards(): Promise<KpiScorecard[]> {
-  const kpiRows = await getKpis()
-  const siteRows = await db.select().from(sites)
-  const valueRows = await db.select().from(kpiValues)
+export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
+  const siteRows = await db.select().from(sites).orderBy(sites.name)
 
-  return kpiRows.map((k) => {
-    const vals = valueRows.filter((v) => v.kpiId === k.id)
-    // pick latest period present for this KPI
-    const latestPeriod = vals
-      .map((v) => v.period)
-      .sort()
-      .at(-1)
-    const latest = vals.filter((v) => v.period === latestPeriod)
-
-    const perSite = latest.map((v) => {
-      const site = siteRows.find((s) => s.id === v.siteId)
-      return {
-        siteId: v.siteId,
-        siteName: site ? site.name : "Group",
-        value: Number(v.value),
-        rag: v.rag as Rag,
-      }
+  const targetAgg = await db
+    .select({
+      siteId: barbers.siteId,
+      target: sql<number>`coalesce(sum(${barbers.targetWeekly}), 0)`,
+      total: sql<number>`count(*)`,
     })
+    .from(barbers)
+    .where(eq(barbers.active, true))
+    .groupBy(barbers.siteId)
 
-    const groupValue =
-      perSite.length > 0
-        ? perSite.reduce((a, p) => a + p.value, 0) / perSite.length
-        : 0
-    const rag = rollUpRag(perSite.map((p) => p.rag))
+  const revAgg = await db
+    .select({
+      siteId: weeklyTakings.siteId,
+      revenue: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)`,
+      reporting: sql<number>`count(distinct ${weeklyTakings.barberId})`,
+    })
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.weekEnding, week))
+    .groupBy(weeklyTakings.siteId)
 
+  const confirmRows = await db
+    .select()
+    .from(siteConfirmations)
+    .where(eq(siteConfirmations.weekEnding, week))
+
+  return siteRows.map((s) => {
+    const t = targetAgg.find((r) => r.siteId === s.id)
+    const rev = revAgg.find((r) => r.siteId === s.id)
+    const conf = confirmRows.find((c) => c.siteId === s.id)
+    const weekTarget = Number(t?.target ?? 0)
+    const weekRevenue = Number(rev?.revenue ?? 0)
+    const attainmentPct = weekTarget > 0 ? (weekRevenue / weekTarget) * 100 : 0
     return {
-      kpiId: k.id,
-      code: k.code,
-      name: k.name,
-      category: k.category,
-      functionArea: k.functionArea,
-      unit: k.unit,
-      ownerRole: k.ownerRole,
-      groupValue,
-      rag,
-      perSite,
+      id: s.id,
+      name: s.name,
+      location: s.location,
+      region: s.region,
+      managerName: s.managerName,
+      weekTarget,
+      weekRevenue,
+      attainmentPct,
+      rag: weekRevenue === 0 ? "red" : ragFromAttainment(attainmentPct),
+      reportingBarbers: Number(rev?.reporting ?? 0),
+      totalBarbers: Number(t?.total ?? 0),
+      confirmed: conf?.confirmed ?? false,
+      confirmedBy: conf?.confirmedBy ?? null,
     }
   })
 }
+
+export async function getSite(id: number) {
+  const [s] = await db.select().from(sites).where(eq(sites.id, id))
+  return s ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Group revenue trend (per week)
+// ---------------------------------------------------------------------------
+
+export type TrendPoint = { week: string; label: string; revenue: number; target: number }
+
+export async function getGroupTrend(): Promise<TrendPoint[]> {
+  const rows = await db
+    .select({
+      week: weeklyTakings.weekEnding,
+      revenue: sql<number>`coalesce(sum(${weeklyTakings.total}), 0)`,
+    })
+    .from(weeklyTakings)
+    .groupBy(weeklyTakings.weekEnding)
+    .orderBy(asc(weeklyTakings.weekEnding))
+
+  const [target] = await db
+    .select({ t: sql<number>`coalesce(sum(${barbers.targetWeekly}), 0)` })
+    .from(barbers)
+    .where(eq(barbers.active, true))
+  const weekTarget = Number(target?.t ?? 0)
+
+  return rows.map((r) => ({
+    week: String(r.week),
+    label: fmtWeek(String(r.week)),
+    revenue: Math.round(Number(r.revenue)),
+    target: weekTarget,
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Barber leaderboard for a week (group-wide)
+// ---------------------------------------------------------------------------
+
+export type BarberWeekRow = {
+  id: number
+  name: string
+  role: string
+  siteName: string
+  targetWeekly: number
+  revenue: number
+  prevRevenue: number
+  attainmentPct: number
+  rag: Rag
+  cash: number
+  card: number
+  manager: string
+  comments: string | null
+  reported: boolean
+}
+
+export async function getBarberWeek(
+  week: string,
+  siteId?: number,
+): Promise<BarberWeekRow[]> {
+  const weeks = await getWeeks()
+  const prevWeek = prevWeekOf(weeks, week)
+
+  const barberRows = await db
+    .select()
+    .from(barbers)
+    .where(
+      siteId
+        ? and(eq(barbers.active, true), eq(barbers.siteId, siteId))
+        : eq(barbers.active, true),
+    )
+
+  const siteRows = await db.select().from(sites)
+
+  const takingRows = await db
+    .select()
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.weekEnding, week))
+
+  const prevRows = prevWeek
+    ? await db
+        .select()
+        .from(weeklyTakings)
+        .where(eq(weeklyTakings.weekEnding, prevWeek))
+    : []
+
+  return barberRows
+    .map((b) => {
+      const t = takingRows.find((r) => r.barberId === b.id)
+      const p = prevRows.find((r) => r.barberId === b.id)
+      const revenue = t ? Number(t.total) : 0
+      const target = Number(b.targetWeekly)
+      const attainmentPct = target > 0 ? (revenue / target) * 100 : 0
+      return {
+        id: b.id,
+        name: b.name,
+        role: b.role,
+        siteName: siteRows.find((s) => s.id === b.siteId)?.name ?? "—",
+        targetWeekly: target,
+        revenue,
+        prevRevenue: p ? Number(p.total) : 0,
+        attainmentPct,
+        rag: !t ? "red" : ragFromAttainment(attainmentPct),
+        cash: t ? Number(t.cash) : 0,
+        card: t ? Number(t.card) : 0,
+        manager: t?.manager ?? "",
+        comments: t?.comments ?? null,
+        reported: !!t,
+      }
+    })
+    .sort((a, b) => b.revenue - a.revenue)
+}
+
+/** A barber's full weekly history. */
+export async function getBarberHistory(barberId: number) {
+  const rows = await db
+    .select()
+    .from(weeklyTakings)
+    .where(eq(weeklyTakings.barberId, barberId))
+    .orderBy(asc(weeklyTakings.weekEnding))
+  return rows.map((r) => ({
+    week: String(r.weekEnding),
+    label: fmtWeek(String(r.weekEnding)),
+    total: Number(r.total),
+    cash: Number(r.cash),
+    card: Number(r.card),
+    comments: r.comments,
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
 
 export type ActionRow = {
   id: number
@@ -298,10 +350,7 @@ export type ActionRow = {
 
 export async function getActions(): Promise<ActionRow[]> {
   const siteRows = await db.select().from(sites)
-  const rows = await db
-    .select()
-    .from(actions)
-    .orderBy(desc(actions.escalated), actions.dueDate)
+  const rows = await db.select().from(actions).orderBy(desc(actions.escalated))
 
   const ragRank: Record<Rag, number> = { red: 0, amber: 1, green: 2 }
   return rows
@@ -325,42 +374,4 @@ export async function getActions(): Promise<ActionRow[]> {
       if (b.status === "Closed" && a.status !== "Closed") return -1
       return ragRank[a.rag] - ragRank[b.rag]
     })
-}
-
-export type DepartmentRow = {
-  functionArea: string
-  rag: Rag
-  kpiCount: number
-  openActions: number
-}
-
-export async function getDepartments(): Promise<DepartmentRow[]> {
-  const scorecards = await getKpiScorecards()
-  const actionRows = await getActions()
-
-  const areas = new Map<string, { rags: Rag[]; kpiCount: number; open: number }>()
-  for (const s of scorecards) {
-    const entry = areas.get(s.functionArea) ?? { rags: [], kpiCount: 0, open: 0 }
-    entry.rags.push(s.rag)
-    entry.kpiCount++
-    areas.set(s.functionArea, entry)
-  }
-  for (const a of actionRows) {
-    const entry = areas.get(a.functionArea) ?? { rags: [], kpiCount: 0, open: 0 }
-    if (a.status !== "Closed") entry.open++
-    areas.set(a.functionArea, entry)
-  }
-
-  return Array.from(areas.entries())
-    .map(([functionArea, v]) => ({
-      functionArea,
-      rag: rollUpRag(v.rags),
-      kpiCount: v.kpiCount,
-      openActions: v.open,
-    }))
-    .sort((a, b) => RAG_ORDER[a.rag] - RAG_ORDER[b.rag])
-}
-
-export async function updateActionStatus(id: number, status: string) {
-  await db.update(actions).set({ status }).where(eq(actions.id, id))
 }

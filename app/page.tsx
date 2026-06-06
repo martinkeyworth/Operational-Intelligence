@@ -4,36 +4,53 @@ import { auth } from "@/lib/auth"
 import { AppShell } from "@/components/app-shell"
 import { GroupDashboard } from "@/components/group-dashboard"
 import {
+  getWeeks,
+  getLatestWeek,
   getGroupSummary,
-  getSites,
-  getGroupRevenueTrend,
-  getKpiScorecards,
-  getDepartments,
+  getSiteWeek,
+  getGroupTrend,
+  getBarberWeek,
   getActions,
 } from "@/lib/data"
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect("/sign-in")
 
-  const [summary, sites, trend, scorecards, departments, actions] =
-    await Promise.all([
-      getGroupSummary(),
-      getSites(),
-      getGroupRevenueTrend(),
-      getKpiScorecards(),
-      getDepartments(),
-      getActions(),
-    ])
+  const { week: weekParam } = await searchParams
+  const weeks = await getWeeks()
+  const week = weekParam && weeks.includes(weekParam) ? weekParam : (await getLatestWeek())
+
+  if (!week) {
+    return (
+      <AppShell user={session.user as never}>
+        <div className="p-8 text-sm text-muted-foreground">
+          No takings have been reported yet.
+        </div>
+      </AppShell>
+    )
+  }
+
+  const [summary, sites, trend, barbers, actions] = await Promise.all([
+    getGroupSummary(week),
+    getSiteWeek(week),
+    getGroupTrend(),
+    getBarberWeek(week),
+    getActions(),
+  ])
 
   return (
     <AppShell user={session.user as never}>
       <GroupDashboard
         summary={summary}
+        weeks={weeks}
         sites={sites}
         trend={trend}
-        scorecards={scorecards}
-        departments={departments}
+        barbers={barbers}
         actions={actions}
       />
     </AppShell>
