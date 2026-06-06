@@ -4,20 +4,27 @@ import { eq, desc } from "drizzle-orm"
 
 /**
  * Long-term vision: £5m overall annual sales revenue by 2030, with RTB
- * (rent-to-business) at 50% = £2.5m. We are in 2026 in steep growth, so this
- * models a compound glide path from the current annualised run-rate up to the
- * 2030 goal, then cascades the per-year sales/RTB target down to each site (by
- * chair capacity) and to each barber's weekly RTB.
+ * (rent-to-business) at 50% = £2.5m.
+ *
+ * The key driver is HEADCOUNT, not per-barber revenue. RTB is assumed at a
+ * fixed £500 per barber per week regardless of their personal split %, which
+ * (at the 50% rent-to-business ratio) implies ~£1,000 gross per barber per
+ * week. The £2.5m RTB goal therefore backs out the number of barbers we need
+ * on the floor by 2030 — roughly 100 barbers. This file models the headcount
+ * glide path from today up to that 2030 target.
  */
 export const VISION = {
   targetYear: 2030,
   baseYear: 2026,
   salesGoal: 5_000_000,
   rtbRatio: 0.5, // RTB is 50% of sales => £2.5m
+  rtbPerBarberWeekly: 500, // fixed RTB contribution per barber per week
+  weeksPerYear: 52,
 } as const
 
 export type VisionYear = {
   year: number
+  headcountTarget: number
   salesTarget: number
   rtbTarget: number
   isGoal: boolean
@@ -27,9 +34,9 @@ export type VisionSite = {
   siteId: number
   name: string
   chairs: number
+  headcountTarget: number // 2030 barbers needed at this site
   salesTarget: number // 2030 site sales target
   rtbTarget: number // 2030 site RTB target
-  rtbPerBarberWeekly: number // 2030 per-chair weekly RTB target
 }
 
 export type VisionGlidePath = {
@@ -37,14 +44,19 @@ export type VisionGlidePath = {
   rtbGoal: number
   baseYear: number
   targetYear: number
+  rtbPerBarberWeekly: number
+  grossPerBarberWeekly: number
+  rtbPerBarberAnnual: number
+  barbersNeeded: number // headcount required by 2030 to hit £2.5m RTB
+  currentHeadcount: number
   currentAnnualisedSales: number
-  cagrPct: number // implied annual growth rate to hit the goal
+  headcountCagrPct: number // implied annual headcount growth to hit the goal
   years: VisionYear[]
   sites: VisionSite[]
   totalChairs: number
 }
 
-/** Annualise the trailing weeks of takings to anchor the glide path start. */
+/** Annualise the trailing weeks of takings to anchor today's run-rate. */
 async function currentAnnualisedSales(): Promise<number> {
   const rows = await db
     .select({ weekEnding: weeklyTakings.weekEnding, total: weeklyTakings.total })
@@ -52,7 +64,6 @@ async function currentAnnualisedSales(): Promise<number> {
     .orderBy(desc(weeklyTakings.weekEnding))
     .limit(56)
 
-  // Group to weekly totals, take the most recent up-to-8 weeks.
   const byWeek = new Map<string, number>()
   for (const r of rows) {
     const k = String(r.weekEnding)
@@ -65,69 +76,91 @@ async function currentAnnualisedSales(): Promise<number> {
 
   if (weekTotals.length === 0) return 0
   const avgWeek = weekTotals.reduce((s, v) => s + v, 0) / weekTotals.length
-  return Math.round(avgWeek * 52)
+  return Math.round(avgWeek * VISION.weeksPerYear)
 }
 
 /**
- * Build the full vision glide path: per-year sales/RTB targets and the per-site
- * / per-barber breakdown for the 2030 goal.
+ * Build the headcount-driven vision glide path: the number of barbers required
+ * by 2030 to reach £2.5m RTB at £500/barber/week, the per-year headcount
+ * milestones, and the per-site breakdown.
  */
 export async function getVisionGlidePath(): Promise<VisionGlidePath> {
   const salesGoal = VISION.salesGoal
   const rtbGoal = Math.round(salesGoal * VISION.rtbRatio)
 
+  const rtbPerBarberAnnual = VISION.rtbPerBarberWeekly * VISION.weeksPerYear // £26,000
+  const grossPerBarberWeekly = Math.round(
+    VISION.rtbPerBarberWeekly / VISION.rtbRatio,
+  ) // ~£1,000
+
+  // Headcount required by 2030 = £2.5m RTB / £26k RTB per barber/year.
+  const barbersNeeded = Math.ceil(rtbGoal / rtbPerBarberAnnual)
+
+  // Current total barbershop headcount anchors the start of the glide path.
+  const [hc] = await db
+    .select({
+      headcount: sitesTable.headcount,
+      chairs: sitesTable.chairCapacity,
+      siteType: sitesTable.siteType,
+    })
+    .from(sitesTable)
+    .where(eq(sitesTable.siteType, "barbershop"))
+    .limit(1)
+  void hc // (typing guard; aggregate below)
+
+  const barbershops = await db
+    .select({
+      id: sitesTable.id,
+      name: sitesTable.name,
+      chairs: sitesTable.chairCapacity,
+      headcount: sitesTable.headcount,
+    })
+    .from(sitesTable)
+    .where(eq(sitesTable.siteType, "barbershop"))
+    .orderBy(sitesTable.name)
+
+  const currentHeadcount = barbershops.reduce(
+    (s, b) => s + (b.headcount ?? 0),
+    0,
+  )
+  const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
   const baseSales = await currentAnnualisedSales()
   const span = VISION.targetYear - VISION.baseYear // 4 years
 
-  // Implied compound annual growth rate from current run-rate to the goal.
-  const cagr =
-    baseSales > 0 && span > 0
-      ? Math.pow(salesGoal / baseSales, 1 / span) - 1
+  // Compound growth in HEADCOUNT from today to the barbers we need by 2030.
+  const startHc = Math.max(currentHeadcount, 1)
+  const headcountCagr =
+    barbersNeeded > 0 && span > 0
+      ? Math.pow(barbersNeeded / startHc, 1 / span) - 1
       : 0
 
   const years: VisionYear[] = []
   for (let i = 0; i <= span; i++) {
     const year = VISION.baseYear + i
     const isGoal = year === VISION.targetYear
-    // Last year is pinned exactly to the goal to avoid rounding drift.
-    const salesTarget = isGoal
-      ? salesGoal
-      : Math.round(baseSales * Math.pow(1 + cagr, i))
-    years.push({
-      year,
-      salesTarget,
-      rtbTarget: Math.round(salesTarget * VISION.rtbRatio),
-      isGoal,
-    })
+    const headcountTarget = isGoal
+      ? barbersNeeded
+      : Math.round(startHc * Math.pow(1 + headcountCagr, i))
+    const rtbTarget = headcountTarget * rtbPerBarberAnnual
+    const salesTarget = Math.round(rtbTarget / VISION.rtbRatio)
+    years.push({ year, headcountTarget, salesTarget, rtbTarget, isGoal })
   }
 
-  // Allocate the 2030 goal across barbershop sites by chair capacity.
-  const barbershops = await db
-    .select({
-      id: sitesTable.id,
-      name: sitesTable.name,
-      chairs: sitesTable.chairCapacity,
-    })
-    .from(sitesTable)
-    .where(eq(sitesTable.siteType, "barbershop"))
-    .orderBy(sitesTable.name)
-
-  const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
-
+  // Allocate the 2030 headcount across sites by chair capacity (indicative;
+  // hitting ~100 barbers will require growing chairs/sites too).
   const sites: VisionSite[] = barbershops.map((b) => {
     const chairs = b.chairs ?? 0
     const share = totalChairs > 0 ? chairs / totalChairs : 0
-    const siteSales = Math.round(salesGoal * share)
-    const siteRtb = Math.round(siteSales * VISION.rtbRatio)
-    const perBarberWeekly =
-      chairs > 0 ? Math.round(siteRtb / chairs / 52) : 0
+    const headcountTarget = Math.round(barbersNeeded * share)
+    const rtbTarget = headcountTarget * rtbPerBarberAnnual
+    const salesTarget = Math.round(rtbTarget / VISION.rtbRatio)
     return {
       siteId: b.id,
       name: b.name,
       chairs,
-      salesTarget: siteSales,
-      rtbTarget: siteRtb,
-      rtbPerBarberWeekly: perBarberWeekly,
+      headcountTarget,
+      salesTarget,
+      rtbTarget,
     }
   })
 
@@ -136,40 +169,15 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     rtbGoal,
     baseYear: VISION.baseYear,
     targetYear: VISION.targetYear,
+    rtbPerBarberWeekly: VISION.rtbPerBarberWeekly,
+    grossPerBarberWeekly,
+    rtbPerBarberAnnual,
+    barbersNeeded,
+    currentHeadcount,
     currentAnnualisedSales: baseSales,
-    cagrPct: Math.round(cagr * 1000) / 10,
+    headcountCagrPct: Math.round(headcountCagr * 1000) / 10,
     years,
     sites,
     totalChairs,
   }
-}
-
-/**
- * Current-year per-barber WEEKLY RTB target by site, derived from the glide
- * path. This is the realistic, growing target for the year we're in (clamped
- * to the modelled range) — not the 2030 endpoint — so barber RAGs reflect
- * progress against this year's milestone on the way to £5m / £2.5m.
- *
- * Returns a Map of siteId -> weekly RTB target per barber.
- */
-export async function getCurrentYearBarberTargets(
-  now: Date = new Date(),
-): Promise<Map<number, number>> {
-  const path = await getVisionGlidePath()
-  const year = Math.min(
-    Math.max(now.getFullYear(), path.baseYear),
-    path.targetYear,
-  )
-  const yearRow =
-    path.years.find((y) => y.year === year) ?? path.years[path.years.length - 1]
-
-  // This year's RTB target as a fraction of the 2030 RTB goal, applied to each
-  // site's per-barber 2030 weekly target.
-  const ratio = path.rtbGoal > 0 ? yearRow.rtbTarget / path.rtbGoal : 0
-
-  const map = new Map<number, number>()
-  for (const s of path.sites) {
-    map.set(s.siteId, Math.round(s.rtbPerBarberWeekly * ratio))
-  }
-  return map
 }

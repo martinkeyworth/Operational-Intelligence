@@ -18,7 +18,7 @@ import {
   fmtWeekLong,
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
-import { getCurrentYearBarberTargets } from "@/lib/vision"
+import { VISION } from "@/lib/vision"
 import {
   ragForUtilisation,
   ragForRtb,
