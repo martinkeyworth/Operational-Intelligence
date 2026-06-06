@@ -27,6 +27,7 @@ import {
   trainingRevenue as calcTrainingRevenue,
   trainingRevenueTarget,
 } from "@/lib/training-config"
+import { perBarberWeeklyRtbTarget, currentTargetYear } from "@/lib/targets"
 import { effectiveBarberPct } from "@/lib/split-config"
 import {
   trainingWeeks,
@@ -1227,8 +1228,23 @@ export async function getCapacityKpis(
     )
   const rtbActual = Number(rentAgg?.rent ?? 0)
   const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
-  const rtbPerBarber = Number(site.rtbPerBarber ?? 500)
-  const rtbExpected = activeBarbers * rtbPerBarber
+  // Per-barber weekly RTB target is worked back from the £2.5m-by-2030
+  // glidepath (site share by chairs / chairs / 52). Falls back to the site's
+  // stored figure only if the glidepath can't be computed.
+  const [totalChairsAgg] = await db
+    .select({ c: sql<number>`coalesce(sum(${sites.chairCapacity}), 0)` })
+    .from(sites)
+    .where(eq(sites.siteType, "barbershop"))
+  const totalChairs = Number(totalChairsAgg?.c ?? 0)
+  const glidepathPerBarber = perBarberWeeklyRtbTarget(
+    currentTargetYear(),
+    chairCapacity,
+    totalChairs,
+  )
+  const rtbPerBarber = glidepathPerBarber > 0
+    ? glidepathPerBarber
+    : Number(site.rtbPerBarber ?? 500)
+  const rtbExpected = staffedChairs * rtbPerBarber
 
   // Training throughput for the week (academy sites only).
   const [tw] = await db

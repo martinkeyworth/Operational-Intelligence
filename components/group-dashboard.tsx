@@ -4,6 +4,7 @@ import { Progress } from "@/components/ui/progress"
 import { RagBadge, RagDot } from "@/components/rag"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RevenueTrendChart } from "@/components/revenue-trend-chart"
+import { VisionPanel } from "@/components/vision-panel"
 import { AiCommentary } from "@/components/ai-commentary"
 import { WeekSelector } from "@/components/week-selector"
 import { fmtGBP, fmtWeekLong } from "@/lib/data"
@@ -15,6 +16,7 @@ import type {
   ActionRow,
   BusinessScorecard,
 } from "@/lib/data"
+import type { VisionGlidePath } from "@/lib/vision"
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -40,6 +42,7 @@ export function GroupDashboard({
   barbers,
   actions,
   scorecard,
+  vision,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -48,6 +51,7 @@ export function GroupDashboard({
   barbers: BarberWeekRow[]
   actions: ActionRow[]
   scorecard: BusinessScorecard
+  vision: VisionGlidePath
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -278,6 +282,9 @@ export function GroupDashboard({
             </div>
           </Card>
         </div>
+
+        {/* 2030 vision glide path */}
+        <VisionPanel vision={vision} />
 
         {/* Site performance */}
         <Card className="p-5">
