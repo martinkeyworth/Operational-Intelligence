@@ -72,6 +72,21 @@ export function GroupDashboard({
   const planRag = ragFromAttainment(planAttainmentPct)
   const planDelta = summary.weekRevenue - planWeeklyTarget
 
+  // Headcount variance: the site manager's stated headcount vs the number of
+  // barbers who actually submitted takings this week. Any discrepancy is a
+  // manager action to chase the missing reporters (or correct the headcount).
+  const headcountVariances = sites
+    .filter((s) => s.siteType !== "training" && s.headcount > 0)
+    .map((s) => ({
+      site: s.name,
+      manager: s.managerName,
+      headcount: s.headcount,
+      reported: s.reportingBarbers,
+      variance: s.headcount - s.reportingBarbers,
+    }))
+    .filter((v) => v.variance !== 0)
+    .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
+
   return (
     <div>
       <PageHeader
@@ -445,6 +460,59 @@ export function GroupDashboard({
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">
+                  Headcount Variance
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Manager headcount vs barbers who reported · W/E{" "}
+                  {fmtWeekLong(summary.week)}
+                </p>
+              </div>
+            </div>
+            {headcountVariances.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                All sites reconciled. Every barber on headcount reported.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {headcountVariances.map((v) => {
+                  const missing = v.variance > 0
+                  return (
+                    <div
+                      key={v.site}
+                      className="rounded-lg border border-border bg-background p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-medium text-foreground">
+                          {v.site}
+                        </p>
+                        <span
+                          className={
+                            missing
+                              ? "flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red"
+                              : "flex shrink-0 items-center gap-1 rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber"
+                          }
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          {missing
+                            ? `${v.variance} not reporting`
+                            : `${Math.abs(v.variance)} over headcount`}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Headcount {v.headcount} · Reported {v.reported} · Action:{" "}
+                        {v.manager ?? "Site Manager"}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </Card>
