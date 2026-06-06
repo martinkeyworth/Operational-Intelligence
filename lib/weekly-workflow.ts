@@ -4,6 +4,8 @@ import { db } from "@/lib/db"
 import { weeklyReports } from "@/lib/db/schema"
 import { fmtWeekLong } from "@/lib/data"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
+import { getSubmissionStatus } from "@/lib/submissions"
+import { OWNER_EMAILS } from "@/lib/access-types"
 import {
   currentWeekEnding,
   getOrCreateReport,
@@ -18,6 +20,7 @@ import {
  * Saturday workflow steps. Each is idempotent and keyed off weekly_reports so
  * the cron can call them at the right times (UK):
  *  - 17:00 remindUsers          → nudge everyone to update their section
+ *  - 18:00 submissionAlert       → email leadership who is still outstanding
  *  - 18:50 runAnalysis          → AI week-on-week KPI analysis
  *  - 19:00 requestCosminNarrative → email COO for a narrative
  *  - 20:00 sendBoardReport      → RAG + AI review to all @company users
@@ -75,6 +78,88 @@ export async function remindUsers(weekEnding = currentWeekEnding()) {
     .set({ remindersSentAt: new Date() })
     .where(eq(weeklyReports.weekEnding, weekEnding))
   return { sent, total: recipients.length }
+}
+
+// 18:00 — email leadership (owners) a chase of who is still outstanding.
+export async function submissionAlert(weekEnding = currentWeekEnding()) {
+  const report = await getOrCreateReport(weekEnding)
+  if (report.submissionAlertSentAt) return { skipped: true, reason: "already sent" }
+
+  const status = await getSubmissionStatus(weekEnding)
+  const url = appBaseUrl()
+
+  // Only the owners (Martin + Cosmin) receive the chase. Match against the
+  // registered company users so we use their actual names/casing.
+  const recipients = await getCompanyRecipients()
+  const leaders = recipients.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+  if (leaders.length === 0) return { skipped: true, reason: "no owners found" }
+
+  const summaryRag = status.complete ? "green" : status.pct >= 75 ? "amber" : "red"
+
+  const outstandingHtml = status.complete
+    ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">All weekly submissions are in for w/e ${fmtWeekLong(
+        weekEnding,
+      )}. Nothing outstanding ahead of tonight's board report.</p>`
+    : `<p style="margin:0 0 12px;">The following <strong>${status.outstandingCount}</strong> ${
+        status.outstandingCount === 1 ? "item is" : "items are"
+      } still outstanding ahead of tonight's 20:00 board report:</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
+         <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
+           <th style="padding:0 0 6px;">Outstanding</th>
+           <th style="padding:0 0 6px;">Owner</th>
+           <th style="padding:0 0 6px;text-align:right;">Status</th>
+         </tr></thead>
+         <tbody>${status.outstanding
+           .map(
+             (i) =>
+               `<tr>
+                 <td style="padding:7px 8px 7px 0;border-bottom:1px solid #f0f0f0;">${esc(
+                   i.label,
+                 )}</td>
+                 <td style="padding:7px 8px 7px 0;border-bottom:1px solid #f0f0f0;color:#6b7280;">${esc(
+                   i.ownerRole,
+                 )}</td>
+                 <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:#6b7280;">${esc(
+                   i.detail,
+                 )}</td>
+               </tr>`,
+           )
+           .join("")}</tbody>
+       </table>`
+
+  const html = emailShell(
+    `Submission status · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 8px;">Submission readiness: ${ragChip(summaryRag)} <strong>${
+      status.submittedCount
+    }/${status.total}</strong> in (${status.pct}%).</p>
+     ${outstandingHtml}
+     <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>
+     <p style="margin:0;color:#6b7280;">Sent at 18:00 so there's time to chase before the board report.</p>`,
+  )
+
+  let sent = 0
+  for (const leader of leaders) {
+    const res = await sendEmail({
+      to: leader.email,
+      subject: status.complete
+        ? `Submissions complete (w/e ${fmtWeekLong(weekEnding)})`
+        : `${status.outstandingCount} submissions outstanding (w/e ${fmtWeekLong(
+            weekEnding,
+          )})`,
+      html,
+      kind: "submission_alert",
+      weekEnding,
+    })
+    if (res.ok) sent++
+  }
+
+  await db
+    .update(weeklyReports)
+    .set({ submissionAlertSentAt: new Date() })
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  return { sent, total: leaders.length, outstanding: status.outstandingCount }
 }
 
 // 18:50 — run the AI week-on-week analysis across all KPI areas.
@@ -256,6 +341,7 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
 
 export const STEPS = {
   reminders: remindUsers,
+  "submission-alert": submissionAlert,
   analysis: runAnalysis,
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,

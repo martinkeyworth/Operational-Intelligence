@@ -5,6 +5,15 @@
 // ---------------------------------------------------------------------------
 
 import type { Rag } from "@/lib/format"
+import { PLAN_ASSUMPTIONS } from "@/lib/plan"
+
+// Marketing budget derived from the plan: £2k/yr per brand across the active
+// brands, expressed as a weekly group budget for KPI scoring.
+export const MARKETING_BRAND_COUNT = 3
+export const MARKETING_WEEKLY_BUDGET = Math.round(
+  (PLAN_ASSUMPTIONS.marketingAnnualPerBrand * MARKETING_BRAND_COUNT) /
+    PLAN_ASSUMPTIONS.weeksPerYear,
+)
 
 export type KpiDirection = "higher_better" | "lower_better"
 
@@ -104,6 +113,20 @@ export const KPI_CATALOGUE: KpiDef[] = [
     ownerRole: "Social Media",
     weight: 1,
     help: "Leads/bookings attributed to campaigns this week.",
+  },
+  {
+    code: "mkt_spend",
+    name: "Marketing spend this week (£)",
+    functionArea: "Marketing",
+    unit: "£",
+    // Plan budget: £2k/yr per brand. Weekly group budget is set in kpi-config
+    // from PLAN_ASSUMPTIONS so the threshold tracks the board-approved plan.
+    green: MARKETING_WEEKLY_BUDGET,
+    amber: Math.round(MARKETING_WEEKLY_BUDGET * 1.3),
+    direction: "lower_better",
+    ownerRole: "Social Media",
+    weight: 1,
+    help: `Total marketing spend this week vs the plan budget of £${PLAN_ASSUMPTIONS.marketingAnnualPerBrand.toLocaleString()}/yr per brand (${MARKETING_BRAND_COUNT} brands ≈ £${MARKETING_WEEKLY_BUDGET}/week). On/under budget is green.`,
   },
 ]
 

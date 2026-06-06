@@ -22,6 +22,7 @@ import type {
   ExpansionRecommendation,
   PlanBoardSummary,
 } from "@/lib/vision"
+import type { SubmissionSummary } from "@/lib/submissions"
 import {
   AlertTriangle,
   ArrowRight,
@@ -52,6 +53,7 @@ export function GroupDashboard({
   monthly,
   expansion,
   planProgress,
+  submissions,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -64,6 +66,7 @@ export function GroupDashboard({
   monthly: VisionMonthlyPlan
   expansion: ExpansionRecommendation
   planProgress: PlanBoardSummary
+  submissions: SubmissionSummary
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -156,6 +159,23 @@ export function GroupDashboard({
           </span>
           <RagBadge rag={scorecard.overallRag} className="px-3 py-1 text-sm" />
         </div>
+        <Link href="/reports/submissions" aria-label="View weekly submissions">
+          <RagBadge
+            rag={
+              submissions.complete
+                ? "green"
+                : submissions.pct >= 75
+                  ? "amber"
+                  : "red"
+            }
+            label={
+              submissions.complete
+                ? "All submissions in"
+                : `${submissions.outstandingCount} submissions outstanding`
+            }
+            className="px-3 py-1 text-sm"
+          />
+        </Link>
         <WeekSelector weeks={weeks} current={summary.week} />
       </PageHeader>
 

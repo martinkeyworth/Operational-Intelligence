@@ -252,6 +252,8 @@ export const weeklyReports = pgTable("weekly_reports", {
   martinResponseAt: timestamp("martin_response_at"),
   // Workflow timestamps.
   remindersSentAt: timestamp("reminders_sent_at"),
+  // 18:00 leadership "who hasn't submitted yet" alert.
+  submissionAlertSentAt: timestamp("submission_alert_sent_at"),
   analysisRunAt: timestamp("analysis_run_at"),
   reportSentAt: timestamp("report_sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

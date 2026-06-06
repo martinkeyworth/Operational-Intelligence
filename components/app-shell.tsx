@@ -16,6 +16,8 @@ import {
   Percent,
   ShieldAlert,
   LayoutGrid,
+  ClipboardCheck,
+  CalendarRange,
   LogOut,
 } from "lucide-react"
 
@@ -44,6 +46,8 @@ export function AppShell({
         { href: "/", label: "Group Overview", icon: LayoutDashboard },
         { href: "/sites", label: "Sites", icon: Store },
         { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
+        { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
+        { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
         { href: "/actions", label: "Action Register", icon: ListChecks },
         { href: "/operations", label: "Risk Register", icon: ShieldAlert },
       ]

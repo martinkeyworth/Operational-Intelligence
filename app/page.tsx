@@ -17,6 +17,7 @@ import {
   getExpansionPlan,
   getPlanProgress,
 } from "@/lib/vision"
+import { getSubmissionStatus } from "@/lib/submissions"
 
 export default async function Page({
   searchParams,
@@ -50,6 +51,7 @@ export default async function Page({
     monthly,
     expansion,
     planProgress,
+    submissions,
   ] = await Promise.all([
     getGroupSummary(week),
     getSiteWeek(week),
@@ -61,6 +63,7 @@ export default async function Page({
     getVisionMonthlyPlan(),
     getExpansionPlan(),
     getPlanProgress(),
+    getSubmissionStatus(week),
   ])
 
   return (
@@ -77,6 +80,7 @@ export default async function Page({
         monthly={monthly}
         expansion={expansion}
         planProgress={planProgress}
+        submissions={submissions}
       />
     </AppShell>
   )
