@@ -16,12 +16,17 @@ import type {
   ActionRow,
   BusinessScorecard,
 } from "@/lib/data"
-import type { VisionGlidePath, VisionMonthlyPlan } from "@/lib/vision"
+import type {
+  VisionGlidePath,
+  VisionMonthlyPlan,
+  ExpansionRecommendation,
+} from "@/lib/vision"
 import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Clock,
+  Store,
 } from "lucide-react"
 
 function barFill(rag: "green" | "amber" | "red") {
@@ -42,6 +47,7 @@ export function GroupDashboard({
   scorecard,
   vision,
   monthly,
+  expansion,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -52,6 +58,7 @@ export function GroupDashboard({
   scorecard: BusinessScorecard
   vision: VisionGlidePath
   monthly: VisionMonthlyPlan
+  expansion: ExpansionRecommendation
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -520,8 +527,78 @@ export function GroupDashboard({
           <Card className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Store className="h-4 w-4 text-muted-foreground" />
+                  Expansion Plan
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  New shops needed vs 5×5 headcount plan ·{" "}
+                  {expansion.leadTimeMonths}-month fit-out lead time
+                </p>
+              </div>
+              {expansion.needed && <RagBadge rag={expansion.rag} />}
+            </div>
+            {!expansion.needed ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {expansion.headline} {expansion.currentChairs} chairs cover the
+                projected headcount.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div
+                  className={
+                    expansion.rag === "red"
+                      ? "rounded-lg border border-rag-red/30 bg-rag-red/10 p-3"
+                      : "rounded-lg border border-rag-amber/30 bg-rag-amber/10 p-3"
+                  }
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {expansion.headline}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Capacity breached {expansion.breachMonthLabel} ·{" "}
+                    {expansion.projectedHeadcountAtBreach} barbers projected vs{" "}
+                    {expansion.currentChairs} chairs
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-border bg-background p-3 text-center">
+                    <p className="text-lg font-semibold text-foreground">
+                      {expansion.shopsToOpen}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Shop{expansion.shopsToOpen > 1 ? "s" : ""} to open
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background p-3 text-center">
+                    <p className="text-lg font-semibold text-foreground">
+                      +{expansion.chairShortfall}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Chairs short
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background p-3 text-center">
+                    <p className="text-lg font-semibold text-foreground">
+                      {expansion.startByMonthLabel}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {expansion.monthsUntilStart !== null &&
+                      expansion.monthsUntilStart <= 0
+                        ? "Start now"
+                        : "Start by"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
                 <h2 className="text-sm font-semibold text-foreground">
-                  Key Risks & Escalations
+                  Key Risks &amp; Escalations
                 </h2>
                 <p className="text-xs text-muted-foreground">
                   Critical and escalated items requiring attention

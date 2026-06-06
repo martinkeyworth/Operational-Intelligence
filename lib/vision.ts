@@ -81,6 +81,114 @@ export type VisionMonthlyPlan = {
   months: VisionMonth[]
 }
 
+export type ExpansionRecommendation = {
+  needed: boolean
+  rag: Rag
+  // The month capacity is first breached on the glide path.
+  breachMonthLabel: string | null
+  // 3-month lead time: the month a new shop must be STARTED to be open in time.
+  startByMonthLabel: string | null
+  monthsUntilStart: number | null
+  leadTimeMonths: number
+  currentChairs: number
+  currentHeadcount: number
+  projectedHeadcountAtBreach: number
+  chairShortfall: number
+  avgChairsPerShop: number
+  shopsToOpen: number
+  headline: string
+}
+
+/** Number of whole months between two year/month points. */
+function monthIndex(year: number, month1to12: number) {
+  return year * 12 + (month1to12 - 1)
+}
+
+/**
+ * Decide whether (and when) to open another shop. Capacity is the total chairs
+ * across barbershops; demand is the headcount the 5x5 glide path requires. We
+ * project headcount forward month-by-month (interpolating the annual
+ * milestones) and find the first month projected headcount exceeds chair
+ * capacity. Because fitting out a new shop has a ~3 month lead time, the
+ * "start by" month is set 3 months earlier so the shop is open before the
+ * crunch. The chair shortfall is converted into shops to open using the
+ * average chairs per existing shop.
+ */
+export async function getExpansionPlan(
+  now: Date = new Date(),
+  leadTimeMonths = 3,
+): Promise<ExpansionRecommendation> {
+  const path = await getVisionGlidePath()
+  const shopCount = path.sites.length
+  const currentChairs = path.totalChairs
+  const avgChairsPerShop =
+    shopCount > 0 ? Math.round(currentChairs / shopCount) : 0
+
+  const base: ExpansionRecommendation = {
+    needed: false,
+    rag: "green",
+    breachMonthLabel: null,
+    startByMonthLabel: null,
+    monthsUntilStart: null,
+    leadTimeMonths,
+    currentChairs,
+    currentHeadcount: path.currentHeadcount,
+    projectedHeadcountAtBreach: 0,
+    chairShortfall: 0,
+    avgChairsPerShop,
+    shopsToOpen: 0,
+    headline: "Capacity is sufficient on the current glide path.",
+  }
+
+  if (currentChairs <= 0 || path.years.length < 2) return base
+
+  const nowIdx = monthIndex(now.getFullYear(), now.getMonth() + 1)
+
+  // Walk every month from the start of the glide path to 2030, interpolating
+  // headcount between the annual milestones, and find the first capacity breach.
+  for (let y = 0; y < path.years.length - 1; y++) {
+    const a = path.years[y]
+    const b = path.years[y + 1]
+    for (let m = 0; m < 12; m++) {
+      const frac = (m + 1) / 12 // end-of-month headcount
+      const projected = a.headcountTarget + (b.headcountTarget - a.headcountTarget) * frac
+      if (projected > currentChairs) {
+        const breachIdx = monthIndex(a.year, 1) + m
+        const startIdx = breachIdx - leadTimeMonths
+        const monthsUntilStart = startIdx - nowIdx
+        const chairShortfall = Math.ceil(projected - currentChairs)
+        const shopsToOpen =
+          avgChairsPerShop > 0 ? Math.ceil(chairShortfall / avgChairsPerShop) : 1
+
+        // RAG by urgency: overdue/started => red, within lead time => amber.
+        const rag: Rag =
+          monthsUntilStart <= 0 ? "red" : monthsUntilStart <= leadTimeMonths ? "amber" : "green"
+
+        const breachMonthLabel = `${MONTH_LABELS[breachIdx % 12]} ${Math.floor(breachIdx / 12)}`
+        const startByMonthLabel = `${MONTH_LABELS[((startIdx % 12) + 12) % 12]} ${Math.floor(startIdx / 12)}`
+
+        return {
+          ...base,
+          needed: true,
+          rag,
+          breachMonthLabel,
+          startByMonthLabel,
+          monthsUntilStart,
+          projectedHeadcountAtBreach: Math.round(projected),
+          chairShortfall,
+          shopsToOpen,
+          headline:
+            monthsUntilStart <= 0
+              ? `Capacity breach imminent — start ${shopsToOpen} new shop${shopsToOpen > 1 ? "s" : ""} now (3-month fit-out lead time).`
+              : `Open ${shopsToOpen} new shop${shopsToOpen > 1 ? "s" : ""} by ${startByMonthLabel} to stay ahead of the 5×5 headcount plan.`,
+        }
+      }
+    }
+  }
+
+  return base
+}
+
 /** Annualise the trailing weeks of takings to anchor today's run-rate. */
 async function currentAnnualisedSales(): Promise<number> {
   const rows = await db
