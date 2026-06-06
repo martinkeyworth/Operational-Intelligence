@@ -156,6 +156,22 @@ export async function setActionRisk(formData: FormData) {
   revalidatePath("/")
 }
 
+/**
+ * Amend an action's RAG status. Used in the action register and live during
+ * the weekly operational meeting — the change writes straight back to the
+ * shared action register.
+ */
+export async function setActionRag(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  const rag = String(formData.get("rag"))
+  if (!id || !["red", "amber", "green"].includes(rag)) return
+  await db.update(actions).set({ rag }).where(eq(actions.id, id))
+  revalidatePath("/actions")
+  revalidatePath("/operations")
+  revalidatePath("/")
+}
+
 export async function confirmSiteWeek(formData: FormData) {
   const user = await requireUser()
   const siteId = Number(formData.get("siteId"))

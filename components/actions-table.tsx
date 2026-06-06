@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
-import { RagBadge } from "@/components/rag"
+import { RagSelect } from "@/components/rag-select"
 import {
   Table,
   TableBody,
@@ -216,7 +216,7 @@ export function ActionsTable({
                   </span>
                 </TableCell>
                 <TableCell>
-                  <RagBadge rag={a.rag} />
+                  <RagSelect id={a.id} rag={a.rag} />
                 </TableCell>
                 <TableCell>
                   <StatusSelect id={a.id} status={a.status} />

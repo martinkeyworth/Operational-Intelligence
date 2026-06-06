@@ -4,7 +4,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  ReferenceLine,
+  Line,
   XAxis,
   YAxis,
 } from "recharts"
@@ -12,16 +12,17 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
 } from "@/components/ui/chart"
 import type { TrendPoint } from "@/lib/data"
 
 export function RevenueTrendChart({ data }: { data: TrendPoint[] }) {
-  const target = data[0]?.target ?? 0
-
   return (
     <ChartContainer
       config={{
-        revenue: { label: "Takings", color: "var(--chart-1)" },
+        revenue: { label: "Actual takings", color: "var(--chart-1)" },
+        target: { label: "Target (capacity)", color: "var(--chart-2)" },
       }}
       className="h-[260px] w-full"
     >
@@ -49,32 +50,33 @@ export function RevenueTrendChart({ data }: { data: TrendPoint[] }) {
           tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`}
           className="text-[11px]"
         />
-        {target > 0 && (
-          <ReferenceLine
-            y={target}
-            stroke="var(--muted-foreground)"
-            strokeDasharray="4 4"
-            label={{
-              value: "Target",
-              position: "insideTopRight",
-              fill: "var(--muted-foreground)",
-              fontSize: 10,
-            }}
-          />
-        )}
         <ChartTooltip
           content={
             <ChartTooltipContent
-              formatter={(value) => [`£${Number(value).toLocaleString()}`, " Takings"]}
+              formatter={(value, name) => [
+                `£${Number(value).toLocaleString()}`,
+                name === "revenue" ? " Actual" : " Target",
+              ]}
             />
           }
         />
+        <ChartLegend content={<ChartLegendContent />} />
         <Area
           type="monotone"
           dataKey="revenue"
+          name="revenue"
           stroke="var(--color-revenue)"
           strokeWidth={2}
           fill="url(#revFill)"
+        />
+        <Line
+          type="monotone"
+          dataKey="target"
+          name="target"
+          stroke="var(--color-target)"
+          strokeWidth={2}
+          strokeDasharray="5 4"
+          dot={false}
         />
       </AreaChart>
     </ChartContainer>

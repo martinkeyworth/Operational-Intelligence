@@ -609,7 +609,7 @@ export async function getAssignableOwners(): Promise<AssignableOwner[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Risk register — weekly operational meeting (Cosmin)
+// Operational meeting register (Cosmin) — every action being undertaken
 // ---------------------------------------------------------------------------
 
 export type RiskOwnerGroup = {
@@ -622,21 +622,25 @@ export type RiskRegister = {
   total: number
   open: number
   unassigned: number
+  riskCount: number
   groups: RiskOwnerGroup[]
 }
 
 /**
- * All risks (flagged actions) grouped by their assigned owner, for Cosmin's
- * weekly operational meeting. Unassigned risks are grouped last.
+ * Every live action (anything not closed) grouped by its assigned owner — the
+ * working agenda for Cosmin's weekly operational meeting. Each item is editable
+ * (owner, RAG, status, risk flag) and writes back to the shared action
+ * register. Unassigned actions are grouped last.
  */
 export async function getRiskRegister(): Promise<RiskRegister> {
   const all = await getActions()
-  const risks = all.filter((a) => a.isRisk)
-  const open = risks.filter((r) => r.status !== "Closed").length
-  const unassigned = risks.filter((r) => !r.ownerUserId).length
+  const live = all.filter((a) => a.status !== "Closed")
+  const open = live.filter((r) => r.status === "Open").length
+  const unassigned = live.filter((r) => !r.ownerUserId).length
+  const riskCount = live.filter((r) => r.isRisk).length
 
   const byOwner = new Map<string, RiskOwnerGroup>()
-  for (const r of risks) {
+  for (const r of live) {
     const key = r.ownerUserId ?? "__unassigned__"
     const name = r.ownerUserId ? (r.ownerName ?? r.owner) : "Unassigned"
     if (!byOwner.has(key)) {
@@ -655,7 +659,7 @@ export async function getRiskRegister(): Promise<RiskRegister> {
     return a.ownerName.localeCompare(b.ownerName)
   })
 
-  return { total: risks.length, open, unassigned, groups }
+  return { total: live.length, open, unassigned, riskCount, groups }
 }
 
 // ---------------------------------------------------------------------------
