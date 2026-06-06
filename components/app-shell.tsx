@@ -15,6 +15,7 @@ import {
   Users,
   Percent,
   ShieldAlert,
+  LayoutGrid,
   LogOut,
 } from "lucide-react"
 
@@ -42,6 +43,7 @@ export function AppShell({
     ? [
         { href: "/", label: "Group Overview", icon: LayoutDashboard },
         { href: "/sites", label: "Sites", icon: Store },
+        { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
         { href: "/actions", label: "Action Register", icon: ListChecks },
         { href: "/operations", label: "Risk Register", icon: ShieldAlert },
       ]

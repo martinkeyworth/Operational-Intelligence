@@ -29,6 +29,7 @@ import {
 } from "@/lib/training-config"
 import { effectiveBarberPct } from "@/lib/split-config"
 import { trainingWeeks, user as userTable } from "@/lib/db/schema"
+import { FUNCTION_AREAS, canonicalAreaKey } from "@/lib/function-areas"
 
 export type { Rag }
 export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
@@ -589,6 +590,76 @@ export async function getActions(): Promise<ActionRow[]> {
       if (b.status === "Closed" && a.status !== "Closed") return -1
       return ragRank[a.rag] - ragRank[b.rag]
     })
+}
+
+// ---------------------------------------------------------------------------
+// Functional area reporting
+// ---------------------------------------------------------------------------
+
+export type FunctionAreaSummary = {
+  key: string
+  label: string
+  description: string
+  ownerRole: string
+  icon: string
+  rag: Rag
+  total: number
+  open: number
+  red: number
+  amber: number
+  escalated: number
+  risks: number
+  // The single worst open action title, for an at-a-glance headline.
+  topIssue: string | null
+}
+
+/** Roll up the action register into the canonical functional areas. */
+export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]> {
+  const all = await getActions()
+  const ragRank: Record<Rag, number> = { red: 0, amber: 1, green: 2 }
+
+  return FUNCTION_AREAS.map((area) => {
+    const items = all.filter(
+      (a) => canonicalAreaKey(a.functionArea) === area.key,
+    )
+    const open = items.filter((a) => a.status !== "Closed")
+    const red = open.filter((a) => a.rag === "red")
+    const amber = open.filter((a) => a.rag === "amber")
+    const escalated = open.filter((a) => a.escalated)
+    const risks = open.filter((a) => a.isRisk)
+
+    // Worst-status roll-up across open items; no open items = green.
+    const rag: Rag =
+      red.length > 0 ? "red" : amber.length > 0 ? "amber" : "green"
+
+    const topIssue =
+      [...open].sort((a, b) => ragRank[a.rag] - ragRank[b.rag])[0]?.title ??
+      null
+
+    return {
+      key: area.key,
+      label: area.label,
+      description: area.description,
+      ownerRole: area.ownerRole,
+      icon: area.icon,
+      rag,
+      total: items.length,
+      open: open.length,
+      red: red.length,
+      amber: amber.length,
+      escalated: escalated.length,
+      risks: risks.length,
+      topIssue,
+    }
+  })
+}
+
+/** All actions belonging to a single functional area (for the detail page). */
+export async function getFunctionAreaActions(
+  areaKey: string,
+): Promise<ActionRow[]> {
+  const all = await getActions()
+  return all.filter((a) => canonicalAreaKey(a.functionArea) === areaKey)
 }
 
 /** Company users who can be assigned as a risk/action owner. */
