@@ -7,7 +7,7 @@ import { RevenueTrendChart } from "@/components/revenue-trend-chart"
 import { VisionPanel } from "@/components/vision-panel"
 import { AiCommentary } from "@/components/ai-commentary"
 import { WeekSelector } from "@/components/week-selector"
-import { fmtGBP, fmtWeekLong } from "@/lib/data"
+import { fmtGBP, fmtWeekLong, ragFromAttainment } from "@/lib/data"
 import type {
   GroupSummary,
   SiteWeekRow,
@@ -19,9 +19,7 @@ import type {
 import type { VisionGlidePath, VisionMonthlyPlan } from "@/lib/vision"
 import {
   AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   CheckCircle2,
   Clock,
 } from "lucide-react"
@@ -60,7 +58,19 @@ export function GroupDashboard({
     .slice(0, 5)
   const reporting = barbers.filter((b) => b.reported)
   const leaderboard = reporting.slice(0, 5)
-  const wowUp = summary.wowPct >= 0
+
+  // 5x5 plan weekly target: this month's required chair takings spread across
+  // the ~4.33 weeks in a month. Compares actual takings to the £5m glide path.
+  const weekMonth = new Date(summary.week + "T00:00:00").getMonth() + 1
+  const planMonth =
+    monthly.months.find((m) => m.month === weekMonth) ?? monthly.months[0]
+  const planWeeklyTarget = planMonth
+    ? Math.round(planMonth.requiredTakings / (52 / 12))
+    : 0
+  const planAttainmentPct =
+    planWeeklyTarget > 0 ? (summary.weekRevenue / planWeeklyTarget) * 100 : 0
+  const planRag = ragFromAttainment(planAttainmentPct)
+  const planDelta = summary.weekRevenue - planWeeklyTarget
 
   return (
     <div>
@@ -85,23 +95,30 @@ export function GroupDashboard({
             label={`Takings · W/E ${fmtWeekLong(summary.week)}`}
             value={fmtGBP(summary.weekRevenue)}
             sub={
-              summary.prevWeek ? (
-                <span
-                  className={
-                    wowUp
-                      ? "flex items-center gap-1 text-rag-green"
-                      : "flex items-center gap-1 text-rag-red"
-                  }
-                >
-                  {wowUp ? (
-                    <ArrowUpRight className="h-3 w-3" />
-                  ) : (
-                    <ArrowDownRight className="h-3 w-3" />
-                  )}
-                  {Math.abs(summary.wowPct).toFixed(0)}% vs last week
+              planWeeklyTarget > 0 ? (
+                <span className="flex flex-col gap-1">
+                  <span className="flex items-center gap-2">
+                    <RagBadge rag={planRag} />
+                    <span
+                      className={
+                        planRag === "green"
+                          ? "text-rag-green"
+                          : planRag === "amber"
+                            ? "text-rag-amber"
+                            : "text-rag-red"
+                      }
+                    >
+                      {planDelta >= 0 ? "+" : "-"}
+                      {fmtGBP(Math.abs(planDelta))} vs 5×5 plan
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Target {fmtGBP(planWeeklyTarget)} ·{" "}
+                    {planAttainmentPct.toFixed(0)}%
+                  </span>
                 </span>
               ) : (
-                "First reported week"
+                "No 5×5 target set"
               )
             }
           />
