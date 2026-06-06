@@ -785,12 +785,16 @@ export async function getBusinessScorecard(
   const academies = siteRows.filter((s) => s.siteType === "training")
 
   // ---- Operational areas (derived) --------------------------------------
-  const capacityRag = rollUpRag(shops.map((s) => s.utilisationRag))
+  // Group capacity = total headcount across all shops / total chair capacity.
+  // RAG: green at/above capacity, amber within 10% under, red below.
+  const groupHeadcount = shops.reduce((a, s) => a + s.activeBarbers, 0)
+  const groupChairs = shops.reduce((a, s) => a + s.chairCapacity, 0)
+  const capacityRag = ragForUtilisation(groupHeadcount, groupChairs)
   const rtbRag = rollUpRag(shops.map((s) => s.rtbRag))
   const subletRag = ragForSublet(revenue.subletRevenue, revenue.subletTarget)
   const trainingRag = rollUpRag(academies.map((s) => s.trainingRag))
 
-  const capPct = ragPct(capacityRag)
+  const capPct = groupChairs > 0 ? Math.round((groupHeadcount / groupChairs) * 100) : 0
   const rtbPct = ragPct(rtbRag)
   const subletPct =
     revenue.subletTarget > 0
@@ -808,7 +812,7 @@ export async function getBusinessScorecard(
       rag: capacityRag,
       pct: capPct,
       source: "operational",
-      detail: `${shops.reduce((a, s) => a + s.activeBarbers, 0)} barbers across ${shops.reduce((a, s) => a + s.chairCapacity, 0)} chairs`,
+      detail: `${groupHeadcount} headcount across ${groupChairs} chairs (${capPct}%)`,
       kpis: [],
     },
     {
