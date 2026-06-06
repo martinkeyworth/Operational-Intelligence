@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
-import { sites as sitesTable, weeklyTakings } from "@/lib/db/schema"
-import { eq, desc, sql } from "drizzle-orm"
+import { sites as sitesTable, weeklyTakings, barbers } from "@/lib/db/schema"
+import { eq, desc, sql, count } from "drizzle-orm"
 import { ragFromAttainment, type Rag } from "@/lib/format"
 
 /**
@@ -122,30 +122,31 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
   const barbersNeeded = Math.ceil(rtbGoal / rtbPerBarberAnnual)
 
   // Current total barbershop headcount anchors the start of the glide path.
-  const [hc] = await db
-    .select({
-      headcount: sitesTable.headcount,
-      chairs: sitesTable.chairCapacity,
-      siteType: sitesTable.siteType,
-    })
-    .from(sitesTable)
-    .where(eq(sitesTable.siteType, "barbershop"))
-    .limit(1)
-  void hc // (typing guard; aggregate below)
-
   const barbershops = await db
     .select({
       id: sitesTable.id,
       name: sitesTable.name,
       chairs: sitesTable.chairCapacity,
-      headcount: sitesTable.headcount,
     })
     .from(sitesTable)
     .where(eq(sitesTable.siteType, "barbershop"))
     .orderBy(sitesTable.name)
 
+  // Headcount comes from the actual ACTIVE barber records, not the stale
+  // sites.headcount column (which was hand-entered and out of date).
+  const activeBySite = await db
+    .select({
+      siteId: barbers.siteId,
+      n: count(),
+    })
+    .from(barbers)
+    .where(eq(barbers.active, true))
+    .groupBy(barbers.siteId)
+  const headcountFor = (siteId: number) =>
+    Number(activeBySite.find((r) => r.siteId === siteId)?.n ?? 0)
+
   const currentHeadcount = barbershops.reduce(
-    (s, b) => s + (b.headcount ?? 0),
+    (s, b) => s + headcountFor(b.id),
     0,
   )
   const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
