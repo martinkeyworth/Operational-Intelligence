@@ -12,6 +12,18 @@ import { COMPANY_DOMAIN } from "@/lib/access-types"
 
 const MODEL = "openai/gpt-5.4-mini"
 
+/** Public base URL for links in emails. */
+export function appBaseUrl(): string {
+  return (
+    process.env.BETTER_AUTH_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.V0_RUNTIME_URL || "")
+  )
+}
+
 /** The Saturday (YYYY-MM-DD) for the current reporting week, in UK time. */
 export function currentWeekEnding(now = new Date()): string {
   // Work in Europe/London local date.
