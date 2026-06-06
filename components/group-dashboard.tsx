@@ -20,6 +20,7 @@ import type {
   VisionGlidePath,
   VisionMonthlyPlan,
   ExpansionRecommendation,
+  PlanBoardSummary,
 } from "@/lib/vision"
 import {
   AlertTriangle,
@@ -27,6 +28,7 @@ import {
   CheckCircle2,
   Clock,
   Store,
+  Target,
   UserPlus,
 } from "lucide-react"
 
@@ -49,6 +51,7 @@ export function GroupDashboard({
   vision,
   monthly,
   expansion,
+  planProgress,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -60,6 +63,7 @@ export function GroupDashboard({
   vision: VisionGlidePath
   monthly: VisionMonthlyPlan
   expansion: ExpansionRecommendation
+  planProgress: PlanBoardSummary
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -640,6 +644,84 @@ export function GroupDashboard({
                 ))}
               </div>
             )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  Board Summary — {planProgress.quarterLabel}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Tracking vs the LTZ 2025–2030 plan milestones
+                </p>
+              </div>
+              <RagBadge rag={planProgress.barberingRag} />
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-lg border border-border bg-background p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Barbering turnover
+                  </p>
+                  <RagDot rag={planProgress.barberingRag} />
+                </div>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {fmtGBP(planProgress.barberingAnnualised)}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {planProgress.barberingAttainmentPct}% of{" "}
+                  {fmtGBP(planProgress.barberingMilestone)} {planProgress.year}{" "}
+                  milestone
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Shops open
+                  </p>
+                  <RagDot rag={planProgress.shopsRag} />
+                </div>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {planProgress.shopsOpen} / {planProgress.shopsPlanned}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  open vs planned by now
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Headcount
+                  </p>
+                  <RagDot rag={planProgress.headcountRag} />
+                </div>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {planProgress.headcountActual} / {planProgress.headcountPlanned}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  barbers vs plan (4/shop)
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Academy income target {planProgress.year}:{" "}
+                <span className="font-medium text-foreground">
+                  {fmtGBP(planProgress.academyMilestone)}
+                </span>{" "}
+                (on top of barbering)
+              </span>
+              {planProgress.nextOpeningLabel && (
+                <span>
+                  Next opening:{" "}
+                  <span className="font-medium text-foreground">
+                    {planProgress.nextOpeningLabel}
+                  </span>
+                </span>
+              )}
+            </div>
           </Card>
 
           <Card className="p-5">

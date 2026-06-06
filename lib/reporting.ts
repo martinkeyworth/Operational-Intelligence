@@ -6,8 +6,10 @@ import { weeklyReports, user as userTable } from "@/lib/db/schema"
 import {
   getBusinessScorecard,
   fmtWeekLong,
+  fmtGBP,
   type BusinessScorecard,
 } from "@/lib/data"
+import { getPlanProgress } from "@/lib/vision"
 import { COMPANY_DOMAIN } from "@/lib/access-types"
 
 const MODEL = "openai/gpt-5.4-mini"
@@ -128,6 +130,22 @@ export async function runWeeklyAnalysis(weekEnding: string): Promise<{
   await getOrCreateReport(weekEnding)
   const { current, previous, rows } = await buildComparison(weekEnding)
 
+  // Pull plan-progress context so the board report tracks vs the LTZ
+  // 2025–2030 milestones (turnover, shops, headcount), not just week-on-week.
+  let planLines = ""
+  try {
+    const plan = await getPlanProgress(new Date(weekEnding + "T00:00:00Z"))
+    planLines = `Plan tracking (${plan.quarterLabel}, vs LTZ 2025–2030 plan):
+- Barbering turnover: ${fmtGBP(plan.barberingAnnualised)} annualised = ${plan.barberingAttainmentPct}% of the ${fmtGBP(plan.barberingMilestone)} ${plan.year} milestone (${plan.barberingRag}).
+- Shops open: ${plan.shopsOpen} vs ${plan.shopsPlanned} planned by now (${plan.shopsRag}).
+- Headcount: ${plan.headcountActual} barbers vs ${plan.headcountPlanned} planned (4/shop) (${plan.headcountRag}).
+- Academy income target ${plan.year}: ${fmtGBP(plan.academyMilestone)} (on top of barbering).${
+      plan.nextOpeningLabel ? `\n- Next planned opening: ${plan.nextOpeningLabel}.` : ""
+    }`
+  } catch {
+    planLines = ""
+  }
+
   const tableLines = rows
     .map(
       (r) =>
@@ -145,12 +163,13 @@ Analyse this week's KPI performance week-on-week. The overall business RAG is ${
 
 Area scores (this week vs last week):
 ${tableLines}
-
-Write a concise board-ready analysis with three clearly headed sections:
+${planLines ? `\n${planLines}\n` : ""}
+Write a concise board-ready analysis with these clearly headed sections:
 1. Improving — areas getting better, with the % movement.
 2. Static — areas holding steady.
 3. Declining — areas getting worse, with the % movement and the likely operational impact.
-End with a one-line bottom line. Be specific, use the numbers, no fluff, max ~220 words.`
+4. Plan tracking — how the group is pacing against the LTZ 2025–2030 milestones (turnover, shops, headcount) and any opening due soon.
+End with a one-line bottom line. Be specific, use the numbers, no fluff, max ~260 words.`
 
   let analysis = ""
   try {

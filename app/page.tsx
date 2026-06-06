@@ -15,6 +15,7 @@ import {
   getVisionGlidePath,
   getVisionMonthlyPlan,
   getExpansionPlan,
+  getPlanProgress,
 } from "@/lib/vision"
 
 export default async function Page({
@@ -48,6 +49,7 @@ export default async function Page({
     vision,
     monthly,
     expansion,
+    planProgress,
   ] = await Promise.all([
     getGroupSummary(week),
     getSiteWeek(week),
@@ -58,6 +60,7 @@ export default async function Page({
     getVisionGlidePath(),
     getVisionMonthlyPlan(),
     getExpansionPlan(),
+    getPlanProgress(),
   ])
 
   return (
@@ -73,6 +76,7 @@ export default async function Page({
         vision={vision}
         monthly={monthly}
         expansion={expansion}
+        planProgress={planProgress}
       />
     </AppShell>
   )
