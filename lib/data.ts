@@ -525,18 +525,19 @@ export async function getBarberWeek(
         .where(eq(weeklyTakings.weekEnding, prevWeek))
     : []
 
-  // Per-barber weekly RTB targets derived from the £5m-by-2030 glide path
-  // (this year's milestone), keyed by site. Links each barber's RAG to the
-  // wider growth vision.
-  const visionTargets = await getCurrentYearBarberTargets()
+  // Each barber is assumed to contribute a fixed £500/week RTB regardless of
+  // their personal split %, which at the 50% rent-to-business ratio implies
+  // ~£1,000 gross takings per barber per week. This is the vision target that
+  // rolls up to £5m sales / £2.5m RTB by 2030. A barber's own stored target
+  // overrides it only if it is higher.
+  const visionGrossTarget = VISION.rtbPerBarberWeekly / VISION.rtbRatio
 
   return barberRows
     .map((b) => {
       const t = takingRows.find((r) => r.barberId === b.id)
       const p = prevRows.find((r) => r.barberId === b.id)
       const revenue = t ? Number(t.total) : 0
-      const visionTarget = visionTargets.get(b.siteId) ?? 0
-      const target = visionTarget > 0 ? visionTarget : Number(b.targetWeekly)
+      const target = Math.max(visionGrossTarget, Number(b.targetWeekly))
       const attainmentPct = target > 0 ? (revenue / target) * 100 : 0
       return {
         id: b.id,

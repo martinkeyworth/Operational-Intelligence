@@ -31,6 +31,7 @@ export function VisionGlideChart({
       config={{
         salesTarget: { label: "Sales target", color: "var(--chart-1)" },
         rtbTarget: { label: "RTB target", color: "var(--chart-2)" },
+        headcountTarget: { label: "Barbers needed", color: "var(--chart-3)" },
       }}
       className="h-[280px] w-full"
     >
@@ -44,6 +45,7 @@ export function VisionGlideChart({
           className="text-[11px]"
         />
         <YAxis
+          yAxisId="money"
           tickLine={false}
           axisLine={false}
           tickMargin={8}
@@ -51,18 +53,33 @@ export function VisionGlideChart({
           tickFormatter={(v) => `£${(v / 1_000_000).toFixed(1)}m`}
           className="text-[11px]"
         />
+        <YAxis
+          yAxisId="headcount"
+          orientation="right"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          width={36}
+          tickFormatter={(v) => String(v)}
+          className="text-[11px]"
+        />
         <ChartTooltip
           content={
             <ChartTooltipContent
-              formatter={(value, name) => [
-                `£${Number(value).toLocaleString()}`,
-                name === "salesTarget" ? " Sales" : " RTB",
-              ]}
+              formatter={(value, name) =>
+                name === "headcountTarget"
+                  ? [`${Number(value)} barbers`, ""]
+                  : [
+                      `£${Number(value).toLocaleString()}`,
+                      name === "salesTarget" ? " Sales" : " RTB",
+                    ]
+              }
             />
           }
         />
         <ChartLegend content={<ChartLegendContent />} />
         <ReferenceLine
+          yAxisId="money"
           y={salesGoal}
           stroke="var(--color-salesTarget)"
           strokeDasharray="6 4"
@@ -75,6 +92,7 @@ export function VisionGlideChart({
           }}
         />
         <Bar
+          yAxisId="money"
           dataKey="salesTarget"
           name="salesTarget"
           fill="var(--color-salesTarget)"
@@ -82,11 +100,22 @@ export function VisionGlideChart({
           maxBarSize={48}
         />
         <Line
+          yAxisId="money"
           type="monotone"
           dataKey="rtbTarget"
           name="rtbTarget"
           stroke="var(--color-rtbTarget)"
           strokeWidth={2}
+          dot={{ r: 3 }}
+        />
+        <Line
+          yAxisId="headcount"
+          type="monotone"
+          dataKey="headcountTarget"
+          name="headcountTarget"
+          stroke="var(--color-headcountTarget)"
+          strokeWidth={2}
+          strokeDasharray="5 3"
           dot={{ r: 3 }}
         />
       </ComposedChart>

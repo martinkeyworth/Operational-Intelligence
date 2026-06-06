@@ -8,15 +8,18 @@ export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
     salesGoal,
     rtbGoal,
     targetYear,
-    currentAnnualisedSales,
-    cagrPct,
+    barbersNeeded,
+    currentHeadcount,
+    rtbPerBarberWeekly,
+    grossPerBarberWeekly,
+    headcountCagrPct,
     years,
     sites,
   } = vision
 
   const progressPct =
-    salesGoal > 0
-      ? Math.min(100, Math.round((currentAnnualisedSales / salesGoal) * 100))
+    barbersNeeded > 0
+      ? Math.min(100, Math.round((currentHeadcount / barbersNeeded) * 100))
       : 0
 
   return (
@@ -24,35 +27,48 @@ export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            {targetYear} Vision · {fmtGBP(salesGoal)} sales
+            {targetYear} Vision · {fmtGBP(salesGoal)} chair sales
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
-            Glide path to {fmtGBP(salesGoal)} annual sales and{" "}
-            {fmtGBP(rtbGoal)} RTB by {targetYear}, worked back to per-site and
-            per-barber weekly RTB targets.
+            {fmtGBP(salesGoal)} barbershop sales / {fmtGBP(rtbGoal)} RTB by{" "}
+            {targetYear} at a fixed {fmtGBP(rtbPerBarberWeekly)}/barber/week RTB
+            (~{fmtGBP(grossPerBarberWeekly)} gross). That backs out{" "}
+            <span className="font-medium text-foreground">
+              ~{barbersNeeded} barbers
+            </span>{" "}
+            on the floor. Training &amp; subletting income sit on top and are
+            excluded from this goal.
           </p>
         </div>
         <div className="rounded-md bg-muted px-3 py-1.5 text-right">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            Implied growth
+            Implied headcount growth
           </p>
           <p className="text-sm font-semibold text-foreground">
-            {cagrPct}% / yr
+            {headcountCagrPct}% / yr
           </p>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <Stat label="Current run-rate" value={fmtGBP(currentAnnualisedSales)} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <Stat label="Barbers today" value={String(currentHeadcount)} />
+        <Stat
+          label={`${targetYear} barbers needed`}
+          value={`~${barbersNeeded}`}
+        />
         <Stat label={`${targetYear} sales goal`} value={fmtGBP(salesGoal)} />
         <Stat label={`${targetYear} RTB goal`} value={fmtGBP(rtbGoal)} />
       </div>
 
-      {/* Progress to goal */}
+      {/* Progress to headcount goal */}
       <div className="mt-4">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Progress to goal</span>
-          <span className="font-medium text-foreground">{progressPct}%</span>
+          <span className="text-muted-foreground">
+            Headcount progress to goal
+          </span>
+          <span className="font-medium text-foreground">
+            {currentHeadcount} / {barbersNeeded} ({progressPct}%)
+          </span>
         </div>
         <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
@@ -77,9 +93,11 @@ export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
               <tr>
                 <th className="px-3 py-2 font-medium">Site</th>
                 <th className="px-3 py-2 text-right font-medium">Chairs</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  Barbers needed
+                </th>
                 <th className="px-3 py-2 text-right font-medium">Sales</th>
                 <th className="px-3 py-2 text-right font-medium">RTB</th>
-                <th className="px-3 py-2 text-right font-medium">RTB / barber / wk</th>
               </tr>
             </thead>
             <tbody>
@@ -91,20 +109,25 @@ export function VisionPanel({ vision }: { vision: VisionGlidePath }) {
                   <td className="px-3 py-2 text-right text-muted-foreground">
                     {s.chairs}
                   </td>
+                  <td className="px-3 py-2 text-right font-medium text-foreground">
+                    {s.headcountTarget}
+                  </td>
                   <td className="px-3 py-2 text-right text-foreground">
                     {fmtGBP(s.salesTarget)}
                   </td>
                   <td className="px-3 py-2 text-right text-foreground">
                     {fmtGBP(s.rtbTarget)}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium text-foreground">
-                    {fmtGBP(s.rtbPerBarberWeekly)}
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[11px] text-muted-foreground text-pretty">
+          Reaching ~{barbersNeeded} barbers will require growing chairs and/or
+          opening new sites — allocation above is indicative, scaled to today&apos;s
+          chair mix.
+        </p>
       </div>
     </Card>
   )
