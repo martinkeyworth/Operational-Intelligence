@@ -222,22 +222,54 @@ export function GroupDashboard({
                       )}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {s.location} · {s.reportingBarbers}/{s.totalBarbers} reporting
+                      {s.siteType === "training"
+                        ? `${s.location} · Academy`
+                        : `${s.location} · ${s.activeBarbers}/${s.chairCapacity} chairs`}
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-foreground">
-                    {s.attainmentPct.toFixed(0)}%
+                    {s.siteType === "training"
+                      ? s.trainingRag === "green"
+                        ? "On track"
+                        : "Below"
+                      : `${s.attainmentPct.toFixed(0)}%`}
                   </span>
                 </div>
                 <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
                     className={`h-full rounded-full ${barFill(s.rag)}`}
-                    style={{ width: `${Math.min(s.attainmentPct, 100)}%` }}
+                    style={{
+                      width:
+                        s.siteType === "training"
+                          ? "100%"
+                          : `${Math.min(s.attainmentPct, 100)}%`,
+                    }}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{fmtGBP(s.weekRevenue)}</span>
-                  <span>Target {fmtGBP(s.weekTarget)}</span>
+                  {s.siteType === "training" ? (
+                    <>
+                      <span>Training academy</span>
+                      <span className="flex items-center gap-1">
+                        <RagDot rag={s.trainingRag} />
+                        Capacity
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{fmtGBP(s.weekRevenue)}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-1">
+                          <RagDot rag={s.utilisationRag} />
+                          Chairs
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <RagDot rag={s.rtbRag} />
+                          RTB
+                        </span>
+                      </span>
+                    </>
+                  )}
                 </div>
               </Link>
             ))}
