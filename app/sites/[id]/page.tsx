@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { SubletCard } from "@/components/sublet-card"
 import { WeekSelector } from "@/components/week-selector"
 import {
   getWeeks,
@@ -21,6 +22,8 @@ import {
   getSite,
   getSiteWeek,
   getBarberWeek,
+  getSubletForSiteWeek,
+  getSubletHistory,
   fmtGBP,
   fmtWeekLong,
 } from "@/lib/data"
@@ -49,6 +52,12 @@ export default async function SiteDetailPage({
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
   const barbers = week ? await getBarberWeek(week, siteId) : []
   const reporting = barbers.filter((b) => b.reported)
+
+  // Subletting KPI applies to F.AF sites (Cavendish and any F.AF site).
+  const hasSubletting = site.brand === "F.AF"
+  const sublet =
+    hasSubletting && week ? await getSubletForSiteWeek(siteId, week) : null
+  const subletHistory = hasSubletting ? await getSubletHistory(siteId) : []
 
   return (
     <AppShell user={user}>
@@ -109,6 +118,10 @@ export default async function SiteDetailPage({
                 )}
               />
             </div>
+
+            {sublet && (
+              <SubletCard sublet={sublet} history={subletHistory} />
+            )}
 
             <Card className="p-5">
               <div className="mb-4">
