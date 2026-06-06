@@ -650,7 +650,7 @@ export function GroupDashboard({
                   Expansion Plan
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  New shops needed vs 5×5 headcount plan ·{" "}
+                  Next opening on the LTZ plan schedule ·{" "}
                   {expansion.leadTimeMonths}-month fit-out lead time
                 </p>
               </div>
@@ -658,8 +658,7 @@ export function GroupDashboard({
             </div>
             {!expansion.needed ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                {expansion.headline} {expansion.currentChairs} chairs cover the
-                projected headcount.
+                {expansion.headline} {expansion.actualShopsOpen} shops open.
               </p>
             ) : (
               <div className="flex flex-col gap-3">
@@ -674,27 +673,25 @@ export function GroupDashboard({
                     {expansion.headline}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Capacity breached {expansion.breachMonthLabel} ·{" "}
-                    {expansion.projectedHeadcountAtBreach} barbers projected vs{" "}
-                    {expansion.currentChairs} chairs
+                    {expansion.actualShopsOpen}/{expansion.plannedShopsByNow}{" "}
+                    shops open vs plan · {expansion.currentChairs} chairs across
+                    the estate
                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-lg border border-border bg-background p-3 text-center">
                     <p className="text-lg font-semibold text-foreground">
-                      {expansion.shopsToOpen}
+                      {expansion.nextOpeningTier ?? "—"}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      Shop{expansion.shopsToOpen > 1 ? "s" : ""} to open
+                      {expansion.nextOpeningLocation ?? "Next brand"}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-background p-3 text-center">
                     <p className="text-lg font-semibold text-foreground">
-                      +{expansion.chairShortfall}
+                      {expansion.nextOpeningMonthLabel}
                     </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Chairs short
-                    </p>
+                    <p className="text-[11px] text-muted-foreground">Opens</p>
                   </div>
                   <div className="rounded-lg border border-border bg-background p-3 text-center">
                     <p className="text-lg font-semibold text-foreground">

@@ -37,14 +37,16 @@ export function VisionPanel({
             {targetYear} Vision · {fmtGBP(salesGoal)} chair sales
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
-            {fmtGBP(salesGoal)} barbershop sales / {fmtGBP(rtbGoal)} RTB by{" "}
-            {targetYear} at a fixed {fmtGBP(rtbPerBarberWeekly)}/barber/week RTB
-            (~{fmtGBP(grossPerBarberWeekly)} gross). That backs out{" "}
+            {fmtGBP(salesGoal)} barbering turnover by {targetYear} (per the LTZ
+            2025–2030 plan), with RTB at the 50% house split (
+            {fmtGBP(rtbGoal)}). Per-barber targets follow the brand tier (~
+            {fmtGBP(grossPerBarberWeekly)} gross / {fmtGBP(rtbPerBarberWeekly)}{" "}
+            RTB per week today), and the plan opens 15 shops to put{" "}
             <span className="font-medium text-foreground">
               ~{barbersNeeded} barbers
             </span>{" "}
-            on the floor. Training &amp; subletting income sit on top and are
-            excluded from this goal.
+            on the floor. Training Academy income sits on top and is excluded
+            from this goal.
           </p>
         </div>
         <div className="rounded-md bg-muted px-3 py-1.5 text-right">

@@ -19,6 +19,7 @@ import {
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { VISION } from "@/lib/vision"
+import { perBarberWeeklyRevenue, tierForBrand } from "@/lib/plan"
 import {
   ragForUtilisation,
   ragForRtb,
@@ -524,17 +525,22 @@ export async function getBarberWeek(
         .where(eq(weeklyTakings.weekEnding, prevWeek))
     : []
 
-  // Each barber is assumed to contribute a fixed £500/week RTB. At the 50%
-  // site yield on chair takings this implies ~£1,000 gross takings per barber
-  // per week. This is the vision target that rolls up to £5m sales / £2.5m RTB
-  // by 2030. A barber's own stored target overrides it only if it is higher.
-  const visionGrossTarget = VISION.rtbPerBarberWeekly / VISION.rtbRatio
+  // Per-barber weekly gross target comes from the plan's brand tier (Mid £50k /
+  // Youth £40k / Elite £60k per year, +10%/yr), resolved from the barber's site
+  // brand and the current plan year. RTB is the 50% house share. A barber's own
+  // stored target overrides it only if it is higher.
+  const planYear = new Date(week).getFullYear()
 
   return barberRows
     .map((b) => {
       const t = takingRows.find((r) => r.barberId === b.id)
       const p = prevRows.find((r) => r.barberId === b.id)
       const revenue = t ? Number(t.total) : 0
+      const barberSite = siteRows.find((s) => s.id === b.siteId)
+      const visionGrossTarget = perBarberWeeklyRevenue(
+        tierForBrand(barberSite?.brand),
+        planYear,
+      )
       const target = Math.max(visionGrossTarget, Number(b.targetWeekly))
       const attainmentPct = target > 0 ? (revenue / target) * 100 : 0
       return {
@@ -1234,11 +1240,15 @@ export async function getCapacityKpis(
     )
   const rtbActual = Number(rentAgg?.rent ?? 0)
   const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
-  // RTB per barber is a fixed £500/week (the 50% site yield assumption). The
-  // £2.5m-by-2030 RTB goal is reached by growing HEADCOUNT, not this figure.
-  // A site's stored figure overrides it only if explicitly set higher.
+  // RTB per barber per week = 50% house share of the plan's brand-tier gross
+  // target for this site (Mid/Youth/Elite, +10%/yr). A site's stored figure
+  // overrides it only if explicitly set higher.
+  const tierGrossWeekly = perBarberWeeklyRevenue(
+    tierForBrand(site.brand),
+    new Date(week).getFullYear(),
+  )
   const rtbPerBarber = Math.max(
-    VISION.rtbPerBarberWeekly,
+    Math.round(tierGrossWeekly * VISION.rtbRatio),
     Number(site.rtbPerBarber ?? 0),
   )
   const rtbExpected = staffedChairs * rtbPerBarber

@@ -2,27 +2,38 @@ import { db } from "@/lib/db"
 import { sites as sitesTable, weeklyTakings } from "@/lib/db/schema"
 import { eq, desc, sql } from "drizzle-orm"
 import { ragFromAttainment, type Rag } from "@/lib/format"
+import {
+  PLAN_MILESTONES,
+  PLAN_BASE_YEAR,
+  PLAN_TARGET_YEAR,
+  PLAN_SALES_GOAL,
+  PLAN_ASSUMPTIONS,
+  barberingTargetForMonth,
+  cumulativeShopsByMonth,
+  nextPlannedOpening,
+  milestoneFor,
+  perBarberRevenue,
+  tierForBrand,
+} from "@/lib/plan"
 
 /**
- * Long-term vision: £5m overall annual chair-sales revenue by 2030, with RTB
- * (rent-to-business) at a 50% SITE yield = £2.5m. The 50% is the site's yield
- * on chair takings, not an individual barber's personal split.
+ * Long-term vision: £5m barbering turnover by 2029–2030, taken directly from
+ * the Less Than Zero Group 2025–2030 business plan (see `lib/plan.ts`, the
+ * single source of truth). The glide path is anchored on the plan's actual
+ * annual turnover MILESTONES rather than a flat per-barber assumption.
  *
- * The key driver is HEADCOUNT, not per-barber revenue. RTB is assumed at a
- * fixed £500 per barber per week, which at the 50% site yield implies ~£1,000
- * gross chair takings per barber per week. The £2.5m RTB goal therefore backs
- * out the number of barbers we need on the floor by 2030 — roughly 100
- * barbers. This file models the headcount glide path from today up to that
- * 2030 target. Training and subletting income sit on top as the "fat" and are
- * excluded from the £5m.
+ * RTB (revenue-to-business) is the house share at the 50% split and is kept as
+ * a derived sub-metric (= 50% of barbering turnover). Headcount follows the
+ * plan's shop roll-out: 4 barbers + 1 manager per shop, so the barbers needed
+ * each period = (shops open) × 4. Training Academy income sits on top and is
+ * excluded from the £5m barbering goal.
  */
 export const VISION = {
-  targetYear: 2030,
-  baseYear: 2026,
-  salesGoal: 5_000_000,
-  rtbRatio: 0.5, // 50% site yield => £2.5m RTB
-  rtbPerBarberWeekly: 500, // fixed RTB contribution per barber per week
-  weeksPerYear: 52,
+  targetYear: PLAN_TARGET_YEAR,
+  baseYear: PLAN_BASE_YEAR,
+  salesGoal: PLAN_SALES_GOAL,
+  rtbRatio: PLAN_ASSUMPTIONS.revenueSplit, // 50% house split => RTB
+  weeksPerYear: PLAN_ASSUMPTIONS.weeksPerYear,
 } as const
 
 export type VisionYear = {
@@ -30,6 +41,8 @@ export type VisionYear = {
   headcountTarget: number
   salesTarget: number
   rtbTarget: number
+  academyTarget: number // Training Academy income (on top of barbering)
+  shops: number // shops open per the plan that year
   isGoal: boolean
 }
 
@@ -97,6 +110,12 @@ export type ExpansionRecommendation = {
   avgChairsPerShop: number
   shopsToOpen: number
   headline: string
+  // Plan-driven next opening (from the LTZ 2025–2030 schedule).
+  nextOpeningLocation: string | null
+  nextOpeningTier: string | null
+  nextOpeningMonthLabel: string | null
+  plannedShopsByNow: number
+  actualShopsOpen: number
 }
 
 /** Number of whole months between two year/month points. */
@@ -105,14 +124,12 @@ function monthIndex(year: number, month1to12: number) {
 }
 
 /**
- * Decide whether (and when) to open another shop. Capacity is the total chairs
- * across barbershops; demand is the headcount the 5x5 glide path requires. We
- * project headcount forward month-by-month (interpolating the annual
- * milestones) and find the first month projected headcount exceeds chair
- * capacity. Because fitting out a new shop has a ~3 month lead time, the
- * "start by" month is set 3 months earlier so the shop is open before the
- * crunch. The chair shortfall is converted into shops to open using the
- * average chairs per existing shop.
+ * Decide whether (and when) to open another shop. This is driven primarily by
+ * the LTZ business plan's fixed opening schedule (`OPENING_SCHEDULE`): we find
+ * the next planned opening and, allowing a ~3-month fit-out lead time, flag
+ * when fit-out must START so the shop opens on schedule. As a secondary signal
+ * we still detect a chair-capacity breach against the headcount glide path so
+ * the team is warned if demand outruns the plan.
  */
 export async function getExpansionPlan(
   now: Date = new Date(),
@@ -123,6 +140,9 @@ export async function getExpansionPlan(
   const currentChairs = path.totalChairs
   const avgChairsPerShop =
     shopCount > 0 ? Math.round(currentChairs / shopCount) : 0
+
+  const plannedShopsByNow = cumulativeShopsByMonth(now)
+  const next = nextPlannedOpening(now)
 
   const base: ExpansionRecommendation = {
     needed: false,
@@ -137,56 +157,43 @@ export async function getExpansionPlan(
     chairShortfall: 0,
     avgChairsPerShop,
     shopsToOpen: 0,
-    headline: "Capacity is sufficient on the current glide path.",
+    headline: "No further openings scheduled on the plan.",
+    nextOpeningLocation: null,
+    nextOpeningTier: null,
+    nextOpeningMonthLabel: null,
+    plannedShopsByNow,
+    actualShopsOpen: shopCount,
   }
 
-  if (currentChairs <= 0 || path.years.length < 2) return base
+  if (!next) return base
 
   const nowIdx = monthIndex(now.getFullYear(), now.getMonth() + 1)
+  const openIdx = monthIndex(next.year, next.month)
+  const startIdx = openIdx - leadTimeMonths
+  const monthsUntilStart = startIdx - nowIdx
+  const openMonthLabel = `${MONTH_LABELS[next.month - 1]} ${next.year}`
+  const startByMonthLabel = `${MONTH_LABELS[((startIdx % 12) + 12) % 12]} ${Math.floor(startIdx / 12)}`
 
-  // Walk every month from the start of the glide path to 2030, interpolating
-  // headcount between the annual milestones, and find the first capacity breach.
-  for (let y = 0; y < path.years.length - 1; y++) {
-    const a = path.years[y]
-    const b = path.years[y + 1]
-    for (let m = 0; m < 12; m++) {
-      const frac = (m + 1) / 12 // end-of-month headcount
-      const projected = a.headcountTarget + (b.headcountTarget - a.headcountTarget) * frac
-      if (projected > currentChairs) {
-        const breachIdx = monthIndex(a.year, 1) + m
-        const startIdx = breachIdx - leadTimeMonths
-        const monthsUntilStart = startIdx - nowIdx
-        const chairShortfall = Math.ceil(projected - currentChairs)
-        const shopsToOpen =
-          avgChairsPerShop > 0 ? Math.ceil(chairShortfall / avgChairsPerShop) : 1
+  // RAG by urgency: fit-out overdue/started => red, within lead time => amber.
+  const rag: Rag =
+    monthsUntilStart <= 0 ? "red" : monthsUntilStart <= leadTimeMonths ? "amber" : "green"
 
-        // RAG by urgency: overdue/started => red, within lead time => amber.
-        const rag: Rag =
-          monthsUntilStart <= 0 ? "red" : monthsUntilStart <= leadTimeMonths ? "amber" : "green"
-
-        const breachMonthLabel = `${MONTH_LABELS[breachIdx % 12]} ${Math.floor(breachIdx / 12)}`
-        const startByMonthLabel = `${MONTH_LABELS[((startIdx % 12) + 12) % 12]} ${Math.floor(startIdx / 12)}`
-
-        return {
-          ...base,
-          needed: true,
-          rag,
-          breachMonthLabel,
-          startByMonthLabel,
-          monthsUntilStart,
-          projectedHeadcountAtBreach: Math.round(projected),
-          chairShortfall,
-          shopsToOpen,
-          headline:
-            monthsUntilStart <= 0
-              ? `Capacity breach imminent — start ${shopsToOpen} new shop${shopsToOpen > 1 ? "s" : ""} now (3-month fit-out lead time).`
-              : `Open ${shopsToOpen} new shop${shopsToOpen > 1 ? "s" : ""} by ${startByMonthLabel} to stay ahead of the 5×5 headcount plan.`,
-        }
-      }
-    }
+  return {
+    ...base,
+    needed: true,
+    rag,
+    breachMonthLabel: openMonthLabel,
+    startByMonthLabel,
+    monthsUntilStart,
+    shopsToOpen: 1,
+    nextOpeningLocation: next.location,
+    nextOpeningTier: next.tier,
+    nextOpeningMonthLabel: openMonthLabel,
+    headline:
+      monthsUntilStart <= 0
+        ? `Fit-out for ${next.tier} Brand ${next.location} must start now to open ${openMonthLabel} (3-month lead time).`
+        : `Open ${next.tier} Brand ${next.location} in ${openMonthLabel} — start fit-out by ${startByMonthLabel} (3-month lead time).`,
   }
-
-  return base
 }
 
 /** Annualise the trailing weeks of takings to anchor today's run-rate. */
@@ -213,27 +220,27 @@ async function currentAnnualisedSales(): Promise<number> {
 }
 
 /**
- * Build the headcount-driven vision glide path: the number of barbers required
- * by 2030 to reach £2.5m RTB at £500/barber/week, the per-year headcount
- * milestones, and the per-site breakdown.
+ * Build the vision glide path straight from the plan's turnover milestones.
+ * Sales targets are the plan's barbering turnover; RTB is the 50% house share;
+ * headcount follows the plan roll-out (shops × 4 barbers); Academy income is
+ * carried for reporting but excluded from the £5m barbering goal.
  */
 export async function getVisionGlidePath(): Promise<VisionGlidePath> {
   const salesGoal = VISION.salesGoal
+  const finalMilestone = PLAN_MILESTONES[PLAN_MILESTONES.length - 1]
   const rtbGoal = Math.round(salesGoal * VISION.rtbRatio)
 
-  const rtbPerBarberAnnual = VISION.rtbPerBarberWeekly * VISION.weeksPerYear // £26,000
-  const grossPerBarberWeekly = Math.round(
-    VISION.rtbPerBarberWeekly / VISION.rtbRatio,
-  ) // ~£1,000
+  // Plan roll-out: 4 barbers per shop. Barbers needed by the target year.
+  const barbersNeeded = finalMilestone.shops * PLAN_ASSUMPTIONS.barbersPerShop
 
-  // Headcount required by 2030 = £2.5m RTB / £26k RTB per barber/year.
-  const barbersNeeded = Math.ceil(rtbGoal / rtbPerBarberAnnual)
-
-  // Current total barbershop headcount anchors the start of the glide path.
+  // Current total barbershop headcount anchors today's progress. Headcount is
+  // the site manager's stated figure (sites.headcount); the weekly variance vs
+  // barbers who actually reported is surfaced separately as a manager action.
   const barbershops = await db
     .select({
       id: sitesTable.id,
       name: sitesTable.name,
+      brand: sitesTable.brand,
       chairs: sitesTable.chairCapacity,
       headcount: sitesTable.headcount,
     })
@@ -241,44 +248,62 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     .where(eq(sitesTable.siteType, "barbershop"))
     .orderBy(sitesTable.name)
 
-  // Headcount is the site manager's stated figure (sites.headcount). This is
-  // the planning number for the £5m model; the weekly variance vs barbers who
-  // actually reported is surfaced separately as a manager action.
   const currentHeadcount = barbershops.reduce(
     (s, b) => s + (b.headcount ?? 0),
     0,
   )
   const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
   const baseSales = await currentAnnualisedSales()
-  const span = VISION.targetYear - VISION.baseYear // 4 years
 
-  // Compound growth in HEADCOUNT from today to the barbers we need by 2030.
+  // Build one row per plan milestone year. Sales/RTB/Academy come straight from
+  // the plan; headcount = shops × 4 barbers.
+  const years: VisionYear[] = PLAN_MILESTONES.map((m) => {
+    const salesTarget = m.barberingTurnover
+    const rtbTarget = Math.round(salesTarget * VISION.rtbRatio)
+    return {
+      year: m.year,
+      headcountTarget: m.shops * PLAN_ASSUMPTIONS.barbersPerShop,
+      salesTarget,
+      rtbTarget,
+      academyTarget: m.academyTurnover,
+      shops: m.shops,
+      isGoal: m.year === VISION.targetYear,
+    }
+  })
+
+  // Blended current-year per-barber economics for headline copy (gross/week and
+  // RTB/week), weighted by today's brand mix.
+  const nowYear = new Date().getFullYear()
+  const tierWeeklyGross =
+    barbershops.length > 0
+      ? Math.round(
+          barbershops.reduce(
+            (s, b) => s + perBarberRevenue(tierForBrand(b.brand), nowYear) / 52,
+            0,
+          ) / barbershops.length,
+        )
+      : Math.round(perBarberRevenue("Mid", nowYear) / 52)
+  const grossPerBarberWeekly = tierWeeklyGross
+  const rtbPerBarberWeekly = Math.round(grossPerBarberWeekly * VISION.rtbRatio)
+  const rtbPerBarberAnnual = rtbPerBarberWeekly * VISION.weeksPerYear
+
+  // Implied headcount growth from today to the plan's target headcount.
+  const span = VISION.targetYear - nowYear
   const startHc = Math.max(currentHeadcount, 1)
   const headcountCagr =
     barbersNeeded > 0 && span > 0
       ? Math.pow(barbersNeeded / startHc, 1 / span) - 1
       : 0
 
-  const years: VisionYear[] = []
-  for (let i = 0; i <= span; i++) {
-    const year = VISION.baseYear + i
-    const isGoal = year === VISION.targetYear
-    const headcountTarget = isGoal
-      ? barbersNeeded
-      : Math.round(startHc * Math.pow(1 + headcountCagr, i))
-    const rtbTarget = headcountTarget * rtbPerBarberAnnual
-    const salesTarget = Math.round(rtbTarget / VISION.rtbRatio)
-    years.push({ year, headcountTarget, salesTarget, rtbTarget, isGoal })
-  }
-
-  // Allocate the 2030 headcount across sites by chair capacity (indicative;
-  // hitting ~100 barbers will require growing chairs/sites too).
+  // Allocate the target-year headcount across today's sites by chair capacity
+  // (indicative — the plan opens new sites to actually reach this headcount).
   const sites: VisionSite[] = barbershops.map((b) => {
     const chairs = b.chairs ?? 0
     const share = totalChairs > 0 ? chairs / totalChairs : 0
     const headcountTarget = Math.round(barbersNeeded * share)
-    const rtbTarget = headcountTarget * rtbPerBarberAnnual
-    const salesTarget = Math.round(rtbTarget / VISION.rtbRatio)
+    const tier = tierForBrand(b.brand)
+    const salesTarget = headcountTarget * perBarberRevenue(tier, VISION.targetYear)
+    const rtbTarget = Math.round(salesTarget * VISION.rtbRatio)
     return {
       siteId: b.id,
       name: b.name,
@@ -294,7 +319,7 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     rtbGoal,
     baseYear: VISION.baseYear,
     targetYear: VISION.targetYear,
-    rtbPerBarberWeekly: VISION.rtbPerBarberWeekly,
+    rtbPerBarberWeekly,
     grossPerBarberWeekly,
     rtbPerBarberAnnual,
     barbersNeeded,
@@ -332,12 +357,11 @@ async function actualTakingsByMonth(year: number): Promise<number[]> {
 }
 
 /**
- * Model the required chair takings for the current calendar year, month by
- * month, along the glide path to the £5m / £2.5m 2030 goal. Required takings
- * ramp from this year's start headcount run-rate up to next year's milestone
- * (the year-end headcount), so each month carries a realistic, growing target.
- * Actuals are compared to required to produce an attainment % and RAG colour,
- * and we surface the barbers ("site numbers") needed each month.
+ * Model the required barbering takings for the current calendar year, month by
+ * month, taken from the plan's turnover milestones (interpolated across the
+ * year and split into months). Barbers needed each month follow the plan's
+ * shop roll-out (cumulative shops × 4 barbers). Actuals are compared to the
+ * required plan figure to produce an attainment % and RAG colour.
  */
 export async function getVisionMonthlyPlan(
   now: Date = new Date(),
@@ -348,35 +372,34 @@ export async function getVisionMonthlyPlan(
     path.targetYear,
   )
 
-  // This year's start and end headcount milestones from the annual glide path.
-  const thisYearRow =
-    path.years.find((y) => y.year === year) ?? path.years[0]
-  const nextYearRow =
-    path.years.find((y) => y.year === year + 1) ?? thisYearRow
-  const startHeadcount = thisYearRow.headcountTarget
-  const endHeadcount = nextYearRow.headcountTarget
-
   const actuals = await actualTakingsByMonth(year)
-  const weeksPerMonth = VISION.weeksPerYear / 12 // ~4.333
-  const grossPerBarberWeekly = path.grossPerBarberWeekly
 
   const currentMonth =
     now.getFullYear() === year ? now.getMonth() + 1 : 12 // 1-12; full year if past
+
+  // Headcount milestones bracketing the year, for the start/end summary.
+  const startHeadcount =
+    cumulativeShopsByMonth(new Date(year, 0, 1)) * PLAN_ASSUMPTIONS.barbersPerShop
+  const endHeadcount =
+    cumulativeShopsByMonth(new Date(year, 11, 1)) * PLAN_ASSUMPTIONS.barbersPerShop
 
   const months: VisionMonth[] = []
   let annualRequired = 0
   let annualActual = 0
 
   for (let i = 0; i < 12; i++) {
-    // Linearly ramp headcount across the 12 months from start -> end.
-    const frac = (i + 0.5) / 12
-    const barbersNeeded = Math.round(
-      startHeadcount + (endHeadcount - startHeadcount) * frac,
-    )
+    const monthNo = i + 1
+    // Required monthly takings = plan's interpolated annual barbering turnover
+    // at this month, divided into 12 months.
     const requiredTakings = Math.round(
-      barbersNeeded * grossPerBarberWeekly * weeksPerMonth,
+      barberingTargetForMonth(year, monthNo) / 12,
     )
-    const isPast = i + 1 <= currentMonth
+    // Barbers expected on the floor = plan shops open that month × 4 barbers.
+    const barbersNeeded =
+      cumulativeShopsByMonth(new Date(year, i, 1)) *
+      PLAN_ASSUMPTIONS.barbersPerShop
+
+    const isPast = monthNo <= currentMonth
     const actualTakings = isPast ? actuals[i] : 0
     const attainmentPct =
       requiredTakings > 0 ? (actualTakings / requiredTakings) * 100 : 0
@@ -385,7 +408,7 @@ export async function getVisionMonthlyPlan(
     if (isPast) annualActual += actualTakings
 
     months.push({
-      month: i + 1,
+      month: monthNo,
       label: MONTH_LABELS[i],
       requiredTakings,
       actualTakings,
@@ -414,5 +437,79 @@ export async function getVisionMonthlyPlan(
     annualAttainmentPct: Math.round(annualAttainmentPct * 10) / 10,
     annualRag: ragFromAttainment(annualAttainmentPct),
     months,
+  }
+}
+
+export type PlanBoardSummary = {
+  year: number
+  quarterLabel: string // e.g. "Q2 2026"
+  // Shops
+  shopsOpen: number
+  shopsPlanned: number // cumulative shops the plan expects open by now
+  shopsRag: Rag
+  // Barbering turnover (annual milestone vs annualised actual run-rate)
+  barberingMilestone: number
+  barberingAnnualised: number
+  barberingAttainmentPct: number
+  barberingRag: Rag
+  // Headcount
+  headcountActual: number
+  headcountPlanned: number // shops planned by now × 4 barbers
+  headcountRag: Rag
+  // Academy (informational; on top of barbering)
+  academyMilestone: number
+  // Next opening (from the plan schedule)
+  nextOpeningLabel: string | null
+}
+
+/**
+ * Board/investor summary: how the group is tracking against the LTZ plan for
+ * the current year/quarter. Shops & headcount compare today's estate to the
+ * plan's cumulative roll-out; barbering turnover compares the annualised actual
+ * run-rate to the year's milestone.
+ */
+export async function getPlanProgress(
+  now: Date = new Date(),
+): Promise<PlanBoardSummary> {
+  const path = await getVisionGlidePath()
+  const year = Math.min(Math.max(now.getFullYear(), PLAN_BASE_YEAR), PLAN_TARGET_YEAR)
+  const m = milestoneFor(year)
+
+  const shopsOpen = path.sites.length
+  const shopsPlanned = cumulativeShopsByMonth(now)
+  const headcountActual = path.currentHeadcount
+  const headcountPlanned = shopsPlanned * PLAN_ASSUMPTIONS.barbersPerShop
+
+  const barberingAnnualised = path.currentAnnualisedSales
+  const barberingAttainmentPct =
+    m.barberingTurnover > 0
+      ? (barberingAnnualised / m.barberingTurnover) * 100
+      : 0
+
+  const ratioRag = (actual: number, planned: number): Rag =>
+    planned <= 0
+      ? "green"
+      : ragFromAttainment((actual / planned) * 100)
+
+  const quarter = Math.floor(now.getMonth() / 3) + 1
+  const next = nextPlannedOpening(now)
+
+  return {
+    year,
+    quarterLabel: `Q${quarter} ${year}`,
+    shopsOpen,
+    shopsPlanned,
+    shopsRag: ratioRag(shopsOpen, shopsPlanned),
+    barberingMilestone: m.barberingTurnover,
+    barberingAnnualised,
+    barberingAttainmentPct: Math.round(barberingAttainmentPct * 10) / 10,
+    barberingRag: ragFromAttainment(barberingAttainmentPct),
+    headcountActual,
+    headcountPlanned,
+    headcountRag: ratioRag(headcountActual, headcountPlanned),
+    academyMilestone: m.academyTurnover,
+    nextOpeningLabel: next
+      ? `${next.tier} Brand ${next.location} · ${MONTH_LABELS[next.month - 1]} ${next.year}`
+      : null,
   }
 }
