@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   Clock,
   Store,
+  UserPlus,
 } from "lucide-react"
 
 function barFill(rag: "green" | "amber" | "red") {
@@ -93,6 +94,21 @@ export function GroupDashboard({
     }))
     .filter((v) => v.variance !== 0)
     .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
+
+  // Recruitment trigger: a barber running at >=95% of their weekly yield
+  // target is effectively at capacity. The site manager and HR should be
+  // actioned to recruit before the barber maxes out and growth stalls.
+  const RECRUIT_YIELD_THRESHOLD = 95
+  const managerBySite = new Map(sites.map((s) => [s.name, s.managerName]))
+  const recruitTriggers = barbers
+    .filter((b) => b.reported && b.attainmentPct >= RECRUIT_YIELD_THRESHOLD)
+    .map((b) => ({
+      barber: b.name,
+      site: b.siteName,
+      manager: managerBySite.get(b.siteName) ?? null,
+      yieldPct: Math.round(b.attainmentPct),
+    }))
+    .sort((a, b) => b.yieldPct - a.yieldPct)
 
   return (
     <div>
@@ -520,6 +536,56 @@ export function GroupDashboard({
                     </div>
                   )
                 })}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <UserPlus className="h-4 w-4 text-muted-foreground" />
+                  Recruitment Triggers
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Barbers at ≥95% yield — action manager &amp; HR to recruit
+                </p>
+              </div>
+              {recruitTriggers.length > 0 && (
+                <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber">
+                  {recruitTriggers.length} at capacity
+                </span>
+              )}
+            </div>
+            {recruitTriggers.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No barbers at capacity. No recruitment action required.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {recruitTriggers.map((r) => (
+                  <div
+                    key={`${r.site}-${r.barber}`}
+                    className="rounded-lg border border-border bg-background p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium text-foreground">
+                        {r.barber}
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {r.site}
+                        </span>
+                      </p>
+                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-green/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-green">
+                        {r.yieldPct}% yield
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      At capacity · Action: {r.manager ?? "Site Manager"} &amp; HR
+                      to recruit
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
           </Card>
