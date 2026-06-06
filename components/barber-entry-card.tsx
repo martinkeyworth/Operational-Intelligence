@@ -2,29 +2,39 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2 } from "lucide-react"
+import { Check, Loader2, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { fmtGBP } from "@/lib/format"
 import { saveWeeklyTakings } from "@/app/data-entry/actions"
-import type { DataEntryBarber } from "@/lib/data"
+import type { DataEntryBarber, SiteOption } from "@/lib/data"
 
 export function BarberEntryCard({
   barber,
   week,
+  siteOptions,
 }: {
   barber: DataEntryBarber
   week: string
+  siteOptions: SiteOption[]
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [cash, setCash] = useState(barber.cash)
   const [card, setCard] = useState(barber.card)
+  const [siteId, setSiteId] = useState(String(barber.siteId))
 
   const total = (Number(cash) || 0) + (Number(card) || 0)
   const attainment =
@@ -48,6 +58,7 @@ export function BarberEntryCard({
       <form action={action}>
         <input type="hidden" name="barberId" value={barber.id} />
         <input type="hidden" name="weekEnding" value={week} />
+        <input type="hidden" name="siteId" value={siteId} />
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -65,6 +76,40 @@ export function BarberEntryCard({
               {attainment.toFixed(0)}% of target
             </p>
           </div>
+        </div>
+
+        <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3">
+          <Label
+            htmlFor={`site-${barber.id}`}
+            className="flex items-center gap-1.5 text-xs font-medium text-foreground"
+          >
+            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+            Confirm working location this week
+          </Label>
+          <Select
+            name="site"
+            value={siteId}
+            onValueChange={(v) => v && setSiteId(v)}
+          >
+            <SelectTrigger
+              id={`site-${barber.id}`}
+              className="mt-2 h-10 w-full text-base sm:max-w-xs"
+            >
+              <SelectValue placeholder="Select a site" />
+            </SelectTrigger>
+            <SelectContent>
+              {siteOptions.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {String(barber.siteId) !== siteId && (
+            <p className="mt-1.5 text-xs text-rag-amber">
+              Base location will be updated to keep site KPIs accurate.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

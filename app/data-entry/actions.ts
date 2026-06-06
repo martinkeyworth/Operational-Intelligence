@@ -11,6 +11,7 @@ export async function saveWeeklyTakings(formData: FormData) {
 
   const barberId = Number(formData.get("barberId"))
   const weekEnding = String(formData.get("weekEnding"))
+  const confirmedSiteId = Number(formData.get("siteId")) || 0
   const cash = Number(formData.get("cash") ?? 0) || 0
   const card = Number(formData.get("card") ?? 0) || 0
   const cashRent = Number(formData.get("cashRent") ?? 0) || 0
@@ -21,17 +22,27 @@ export async function saveWeeklyTakings(formData: FormData) {
 
   if (!barberId || !weekEnding) throw new Error("Barber and week are required")
 
-  // Resolve the barber's site for the denormalised siteId column.
+  // Resolve the barber's site for the denormalised siteId column. The barber
+  // confirms their base/working location each week on submission — if it has
+  // changed, update their base so future site KPIs roll up correctly.
   const [barber] = await db
     .select({ siteId: barbers.siteId })
     .from(barbers)
     .where(eq(barbers.id, barberId))
   if (!barber) throw new Error("Unknown barber")
 
+  const siteId = confirmedSiteId || barber.siteId
+  if (confirmedSiteId && confirmedSiteId !== barber.siteId) {
+    await db
+      .update(barbers)
+      .set({ siteId: confirmedSiteId })
+      .where(eq(barbers.id, barberId))
+  }
+
   const total = cash + card
 
   const values = {
-    siteId: barber.siteId,
+    siteId,
     total: String(total),
     cash: String(cash),
     card: String(card),
@@ -65,4 +76,5 @@ export async function saveWeeklyTakings(formData: FormData) {
   revalidatePath("/data-entry")
   revalidatePath("/")
   revalidatePath("/sites")
+  revalidatePath("/admin/splits")
 }

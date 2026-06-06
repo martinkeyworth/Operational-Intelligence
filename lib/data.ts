@@ -671,6 +671,8 @@ export type DataEntryBarber = {
   name: string
   role: string
   targetWeekly: number
+  // The barber's current base site, confirmed weekly on submission.
+  siteId: number
   cash: number
   card: number
   cashRent: number
@@ -680,6 +682,8 @@ export type DataEntryBarber = {
   comments: string | null
   reported: boolean
 }
+
+export type SiteOption = { id: number; name: string }
 
 export type DataEntrySite = {
   id: number
@@ -714,6 +718,7 @@ export async function getDataEntrySites(week: string): Promise<DataEntrySite[]> 
           name: b.name,
           role: b.role,
           targetWeekly: Number(b.targetWeekly),
+          siteId: b.siteId,
           cash: t ? Number(t.cash) : 0,
           card: t ? Number(t.card) : 0,
           cashRent: t ? Number(t.cashRent) : 0,
@@ -725,6 +730,15 @@ export async function getDataEntrySites(week: string): Promise<DataEntrySite[]> 
         }
       }),
   }))
+}
+
+/** All sites as lightweight options for the weekly location confirmation. */
+export async function getSiteOptions(): Promise<SiteOption[]> {
+  const rows = await db
+    .select({ id: sites.id, name: sites.name })
+    .from(sites)
+    .orderBy(sites.name)
+  return rows
 }
 
 /** Recent week-ending Saturdays for the picker (existing weeks + next upcoming Saturday). */

@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
 import { WeekSelector } from "@/components/week-selector"
 import { BarberEntryCard } from "@/components/barber-entry-card"
-import { getEntryWeeks, getDataEntrySites, fmtWeekLong } from "@/lib/data"
+import { getEntryWeeks, getDataEntrySites, getSiteOptions, fmtWeekLong } from "@/lib/data"
 
 export default async function DataEntryPage({
   searchParams,
@@ -18,6 +18,7 @@ export default async function DataEntryPage({
   const week = weekParam && weeks.includes(weekParam) ? weekParam : weeks[0]
 
   const sites = week ? await getDataEntrySites(week) : []
+  const siteOptions = await getSiteOptions()
 
   return (
     <AppShell user={user}>
@@ -58,7 +59,12 @@ export default async function DataEntryPage({
               ) : (
                 <div className="flex flex-col gap-3">
                   {site.barbers.map((b) => (
-                    <BarberEntryCard key={b.id} barber={b} week={week} />
+                    <BarberEntryCard
+                      key={b.id}
+                      barber={b}
+                      week={week}
+                      siteOptions={siteOptions}
+                    />
                   ))}
                 </div>
               )}
