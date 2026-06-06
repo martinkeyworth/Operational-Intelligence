@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Calendar } from "lucide-react"
-import { fmtWeekLong } from "@/lib/data"
+import { fmtWeekLong } from "@/lib/format"
 
 export function WeekSelector({
   weeks,

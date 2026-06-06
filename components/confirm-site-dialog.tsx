@@ -18,7 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { confirmSiteWeek } from "@/app/actions/governance"
-import { fmtWeekLong } from "@/lib/data"
+import { fmtWeekLong } from "@/lib/format"
 
 export function ConfirmSiteDialog({
   siteId,
