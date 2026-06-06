@@ -6,6 +6,7 @@ import {
   weeklyTakings,
   siteConfirmations,
   actions,
+  sublettingTakings,
 } from "@/lib/db/schema"
 import { and, asc, desc, eq, sql } from "drizzle-orm"
 import {
@@ -16,6 +17,7 @@ import {
   fmtWeek,
   fmtWeekLong,
 } from "@/lib/format"
+import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 
 export type { Rag }
 export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
@@ -461,4 +463,75 @@ export async function getEntryWeeks(): Promise<string[]> {
   }
 
   return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
+}
+
+// ---------------------------------------------------------------------------
+// Subletting KPI (chair/room rent income per site)
+// ---------------------------------------------------------------------------
+
+export type SubletWeek = {
+  siteId: number
+  siteName: string
+  week: string
+  amount: number
+  target: number
+  attainmentPct: number
+  rag: Rag
+  recordedBy: string | null
+  notes: string | null
+  reported: boolean
+}
+
+/** The subletting figure for a single site + week (defaults if none yet). */
+export async function getSubletForSiteWeek(
+  siteId: number,
+  week: string,
+): Promise<SubletWeek | null> {
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
+  if (!site) return null
+
+  const [row] = await db
+    .select()
+    .from(sublettingTakings)
+    .where(
+      and(
+        eq(sublettingTakings.siteId, siteId),
+        eq(sublettingTakings.weekEnding, week),
+      ),
+    )
+
+  const target = row ? Number(row.target) : SUBLET_WEEKLY_TARGET
+  const amount = row ? Number(row.amount) : 0
+  return {
+    siteId,
+    siteName: site.name,
+    week,
+    amount,
+    target,
+    attainmentPct: target > 0 ? (amount / target) * 100 : 0,
+    rag: row ? ragForSublet(amount, target) : "red",
+    recordedBy: row?.recordedBy ?? null,
+    notes: row?.notes ?? null,
+    reported: !!row,
+  }
+}
+
+/** A site's full subletting history, oldest first. */
+export async function getSubletHistory(siteId: number) {
+  const rows = await db
+    .select()
+    .from(sublettingTakings)
+    .where(eq(sublettingTakings.siteId, siteId))
+    .orderBy(asc(sublettingTakings.weekEnding))
+  return rows.map((r) => {
+    const amount = Number(r.amount)
+    const target = Number(r.target)
+    return {
+      week: String(r.weekEnding),
+      label: fmtWeek(String(r.weekEnding)),
+      amount,
+      target,
+      rag: ragForSublet(amount, target),
+    }
+  })
 }

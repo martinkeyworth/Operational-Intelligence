@@ -24,8 +24,6 @@ export const SITE_BRANDS = [
   "Less Than Zero",
   "F.AF",
   "Velvet Ash",
-  "LTZ Training Academy",
-  "LTZ Group International",
 ] as const
 
 export function ConfirmSiteDialog({

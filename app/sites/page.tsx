@@ -1,9 +1,11 @@
 import Link from "next/link"
+import Image from "next/image"
 import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagDot } from "@/components/rag"
 import { Card } from "@/components/ui/card"
+import { brandLogo } from "@/lib/brands"
 import { AddSiteDialog } from "@/components/add-site-dialog"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
 import { WeekSelector } from "@/components/week-selector"
@@ -70,7 +72,19 @@ export default async function SitesPage({
               <Card key={s.id} className="p-4 md:p-5">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
-                    <RagDot rag={s.rag} className="mt-1.5" />
+                    <div className="relative mt-0.5 shrink-0">
+                      <Image
+                        src={brandLogo(s.brand) || "/placeholder.svg"}
+                        alt={`${s.brand} logo`}
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 rounded-md object-cover"
+                      />
+                      <RagDot
+                        rag={s.rag}
+                        className="absolute -right-1 -top-1 ring-2 ring-card"
+                      />
+                    </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link

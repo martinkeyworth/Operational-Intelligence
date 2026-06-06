@@ -181,3 +181,18 @@ export const actions = pgTable("actions", {
   escalated: boolean("escalated").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+// Weekly subletting income (e.g. chair/room rent) per site. Used for the
+// Cavendish subletting KPI: target £950/week, anything below is red and
+// triggers a quarterly review action.
+export const sublettingTakings = pgTable("subletting_takings", {
+  id: serial("id").primaryKey(),
+  siteId: integer("site_id").notNull(),
+  weekEnding: date("week_ending").notNull(),
+  amount: numeric("amount").notNull().default("0"),
+  // Weekly target for this site's subletting income.
+  target: numeric("target").notNull().default("950"),
+  recordedBy: text("recorded_by"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})

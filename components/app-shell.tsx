@@ -1,9 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
+import { GROUP_BRAND } from "@/lib/brands"
 import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
@@ -66,9 +68,14 @@ export function AppShell({
       {/* Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-sidebar">
         <div className="flex items-center gap-3 px-5 h-16 border-b border-border">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground font-mono text-xs font-bold">
-            LTZ
-          </div>
+          <Image
+            src={GROUP_BRAND.logo || "/placeholder.svg"}
+            alt="LTZ Group International"
+            width={36}
+            height={36}
+            className="h-9 w-9 rounded-md object-cover"
+            priority
+          />
           <div className="leading-tight">
             <p className="text-sm font-semibold text-sidebar-foreground">
               LTZ Group
@@ -131,9 +138,13 @@ export function AppShell({
         {/* Mobile top nav */}
         <div className="md:hidden flex items-center justify-between border-b border-border px-4 h-14">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-mono text-xs font-bold">
-              LTZ
-            </div>
+            <Image
+              src={GROUP_BRAND.logo || "/placeholder.svg"}
+              alt="LTZ Group International"
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-md object-cover"
+            />
             <span className="text-sm font-semibold">LTZ Group</span>
           </div>
           <Button
