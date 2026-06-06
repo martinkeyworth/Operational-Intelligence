@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth"
 import { pool } from "@/lib/db"
+// Better Auth server configuration (email + password)
 
 export const auth = betterAuth({
   database: pool,
