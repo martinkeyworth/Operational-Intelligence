@@ -13,6 +13,8 @@ import {
   ListChecks,
   ClipboardEdit,
   Users,
+  Percent,
+  ShieldAlert,
   LogOut,
 } from "lucide-react"
 
@@ -21,6 +23,7 @@ type ShellUser = {
   email: string
   role?: string
   isCompany?: boolean
+  isOwner?: boolean
   canViewDashboard?: boolean
   isBarber?: boolean
 }
@@ -40,6 +43,7 @@ export function AppShell({
         { href: "/", label: "Group Overview", icon: LayoutDashboard },
         { href: "/sites", label: "Sites", icon: Store },
         { href: "/actions", label: "Action Register", icon: ListChecks },
+        { href: "/operations", label: "Risk Register", icon: ShieldAlert },
       ]
     : []
   const nav = [
@@ -47,6 +51,9 @@ export function AppShell({
     { href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit },
     ...(user.isCompany && user.canViewDashboard
       ? [{ href: "/admin/people", label: "People & Access", icon: Users }]
+      : []),
+    ...(user.isOwner
+      ? [{ href: "/admin/splits", label: "Profit Split", icon: Percent }]
       : []),
   ]
 

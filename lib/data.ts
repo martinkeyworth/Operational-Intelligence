@@ -28,7 +28,7 @@ import {
   trainingRevenueTarget,
 } from "@/lib/training-config"
 import { effectiveBarberPct } from "@/lib/split-config"
-import { trainingWeeks } from "@/lib/db/schema"
+import { trainingWeeks, user as userTable } from "@/lib/db/schema"
 
 export type { Rag }
 export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
@@ -545,15 +545,21 @@ export type ActionRow = {
   functionArea: string
   siteName: string | null
   owner: string
+  ownerUserId: string | null
+  ownerName: string | null
   priority: string
   status: string
   rag: Rag
   dueDate: string | null
   escalated: boolean
+  isRisk: boolean
 }
 
 export async function getActions(): Promise<ActionRow[]> {
   const siteRows = await db.select().from(sites)
+  const userRows = await db
+    .select({ id: userTable.id, name: userTable.name })
+    .from(userTable)
   const rows = await db.select().from(actions).orderBy(desc(actions.escalated))
 
   const ragRank: Record<Rag, number> = { red: 0, amber: 1, green: 2 }
@@ -567,17 +573,89 @@ export async function getActions(): Promise<ActionRow[]> {
         ? (siteRows.find((s) => s.id === a.siteId)?.name ?? null)
         : null,
       owner: a.owner,
+      ownerUserId: a.ownerUserId ?? null,
+      ownerName: a.ownerUserId
+        ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
+        : null,
       priority: a.priority,
       status: a.status,
       rag: a.rag as Rag,
       dueDate: a.dueDate ? String(a.dueDate) : null,
       escalated: a.escalated,
+      isRisk: a.isRisk,
     }))
     .sort((a, b) => {
       if (a.status === "Closed" && b.status !== "Closed") return 1
       if (b.status === "Closed" && a.status !== "Closed") return -1
       return ragRank[a.rag] - ragRank[b.rag]
     })
+}
+
+/** Company users who can be assigned as a risk/action owner. */
+export type AssignableOwner = { id: string; name: string; email: string }
+export async function getAssignableOwners(): Promise<AssignableOwner[]> {
+  const rows = await db
+    .select({
+      id: userTable.id,
+      name: userTable.name,
+      email: userTable.email,
+      canViewDashboard: userTable.canViewDashboard,
+    })
+    .from(userTable)
+    .orderBy(userTable.name)
+  return rows
+    .filter((u) => u.canViewDashboard)
+    .map((u) => ({ id: u.id, name: u.name, email: u.email }))
+}
+
+// ---------------------------------------------------------------------------
+// Risk register — weekly operational meeting (Cosmin)
+// ---------------------------------------------------------------------------
+
+export type RiskOwnerGroup = {
+  ownerName: string
+  ownerUserId: string | null
+  risks: ActionRow[]
+}
+
+export type RiskRegister = {
+  total: number
+  open: number
+  unassigned: number
+  groups: RiskOwnerGroup[]
+}
+
+/**
+ * All risks (flagged actions) grouped by their assigned owner, for Cosmin's
+ * weekly operational meeting. Unassigned risks are grouped last.
+ */
+export async function getRiskRegister(): Promise<RiskRegister> {
+  const all = await getActions()
+  const risks = all.filter((a) => a.isRisk)
+  const open = risks.filter((r) => r.status !== "Closed").length
+  const unassigned = risks.filter((r) => !r.ownerUserId).length
+
+  const byOwner = new Map<string, RiskOwnerGroup>()
+  for (const r of risks) {
+    const key = r.ownerUserId ?? "__unassigned__"
+    const name = r.ownerUserId ? (r.ownerName ?? r.owner) : "Unassigned"
+    if (!byOwner.has(key)) {
+      byOwner.set(key, {
+        ownerName: name,
+        ownerUserId: r.ownerUserId,
+        risks: [],
+      })
+    }
+    byOwner.get(key)!.risks.push(r)
+  }
+
+  const groups = [...byOwner.values()].sort((a, b) => {
+    if (!a.ownerUserId) return 1
+    if (!b.ownerUserId) return -1
+    return a.ownerName.localeCompare(b.ownerName)
+  })
+
+  return { total: risks.length, open, unassigned, groups }
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   sublettingTakings,
   trainingWeeks,
   weeklyTakings,
+  user,
 } from "@/lib/db/schema"
 import { and, eq, sql } from "drizzle-orm"
 import { headers } from "next/headers"
@@ -108,6 +109,50 @@ export async function setActionStatus(formData: FormData) {
   if (!id || !status) return
   await db.update(actions).set({ status }).where(eq(actions.id, id))
   revalidatePath("/actions")
+  revalidatePath("/")
+}
+
+/**
+ * Assign an action/risk to an owner (a dashboard user). Owners feed Cosmin's
+ * weekly operational meeting register. Passing an empty value clears it.
+ */
+export async function assignActionOwner(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  const ownerUserId = String(formData.get("ownerUserId") ?? "").trim() || null
+
+  let ownerName: string | null = null
+  if (ownerUserId) {
+    const [u] = await db
+      .select({ name: user.name })
+      .from(user)
+      .where(eq(user.id, ownerUserId))
+    ownerName = u?.name ?? null
+  }
+
+  await db
+    .update(actions)
+    .set({
+      ownerUserId,
+      // Keep the free-text owner in sync with the assigned person's name.
+      ...(ownerName ? { owner: ownerName } : {}),
+    })
+    .where(eq(actions.id, id))
+  revalidatePath("/actions")
+  revalidatePath("/operations")
+  revalidatePath("/")
+}
+
+/** Flag/unflag an action as a risk for the weekly operational meeting. */
+export async function setActionRisk(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  const isRisk = String(formData.get("isRisk")) === "true"
+  await db.update(actions).set({ isRisk }).where(eq(actions.id, id))
+  revalidatePath("/actions")
+  revalidatePath("/operations")
   revalidatePath("/")
 }
 
