@@ -3,9 +3,10 @@ import Image from "next/image"
 import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
-import { RagDot } from "@/components/rag"
+import { RagDot, RagBadge } from "@/components/rag"
 import { Card } from "@/components/ui/card"
 import { brandLogo } from "@/lib/brands"
+import { ragForUtilisation } from "@/lib/capacity-config"
 import { AddSiteDialog } from "@/components/add-site-dialog"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
 import { WeekSelector } from "@/components/week-selector"
@@ -57,8 +58,32 @@ export default async function SitesPage({
             value={fmtGBP(sites.reduce((a, s) => a + s.weekRevenue, 0))}
           />
           <StatCard
-            label="Reporting barbers"
-            value={sites.reduce((a, s) => a + s.reportingBarbers, 0)}
+            label="Chair capacity"
+            value={(() => {
+              const shops = sites.filter((s) => s.siteType === "barbershop")
+              const head = shops.reduce((a, s) => a + s.activeBarbers, 0)
+              const cap = shops.reduce((a, s) => a + s.chairCapacity, 0)
+              const rag = ragForUtilisation(head, cap)
+              return (
+                <span
+                  className={
+                    rag === "green"
+                      ? "text-rag-green"
+                      : rag === "amber"
+                        ? "text-rag-amber"
+                        : "text-rag-red"
+                  }
+                >
+                  {head}/{cap}
+                </span>
+              )
+            })()}
+            sub={(() => {
+              const shops = sites.filter((s) => s.siteType === "barbershop")
+              const head = shops.reduce((a, s) => a + s.activeBarbers, 0)
+              const cap = shops.reduce((a, s) => a + s.chairCapacity, 0)
+              return <RagBadge rag={ragForUtilisation(head, cap)} />
+            })()}
           />
         </div>
 

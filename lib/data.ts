@@ -84,6 +84,10 @@ export type GroupSummary = {
   wowPct: number
   activeBarbers: number
   reportingBarbers: number
+  // Group chair staffing: total headcount (staffed chairs) vs total capacity.
+  totalHeadcount: number
+  totalCapacity: number
+  capacityRag: Rag
   siteCount: number
   confirmedSites: number
   avgPerBarber: number
@@ -184,6 +188,14 @@ export async function getGroupSummary(week: string): Promise<GroupSummary> {
   const prevWeekRevenue = prevRevenue?.total ?? 0
   const reportingBarbers = siteRows.reduce((a, s) => a + s.reportingBarbers, 0)
 
+  // Group chair staffing: sum of staffed chairs (headcount) vs total chair
+  // capacity across all barbershop sites. RAG: green at/above capacity, amber
+  // within 10% under, red anything lower.
+  const shopRows = siteRows.filter((s) => s.siteType === "barbershop")
+  const totalHeadcount = shopRows.reduce((a, s) => a + s.activeBarbers, 0)
+  const totalCapacity = shopRows.reduce((a, s) => a + s.chairCapacity, 0)
+  const capacityRag = ragForUtilisation(totalHeadcount, totalCapacity)
+
   const [barberCount] = await db
     .select({ c: sql<number>`count(*)` })
     .from(barbers)
@@ -218,6 +230,9 @@ export async function getGroupSummary(week: string): Promise<GroupSummary> {
     wowPct,
     activeBarbers: Number(barberCount?.c ?? 0),
     reportingBarbers,
+    totalHeadcount,
+    totalCapacity,
+    capacityRag,
     siteCount: siteRows.length,
     confirmedSites,
     avgPerBarber: reportingBarbers > 0 ? weekRevenue / reportingBarbers : 0,

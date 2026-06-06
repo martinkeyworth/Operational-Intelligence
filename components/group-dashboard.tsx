@@ -110,9 +110,30 @@ export function GroupDashboard({
             }
           />
           <StatCard
-            label="Reporting Barbers"
-            value={`${summary.reportingBarbers}/${summary.activeBarbers}`}
-            sub={`${fmtGBP(summary.avgPerBarber)} avg this week`}
+            label="Chair Capacity"
+            value={
+              <span
+                className={
+                  summary.capacityRag === "green"
+                    ? "text-rag-green"
+                    : summary.capacityRag === "amber"
+                      ? "text-rag-amber"
+                      : "text-rag-red"
+                }
+              >
+                {summary.totalHeadcount}/{summary.totalCapacity}
+              </span>
+            }
+            sub={
+              <span className="flex items-center gap-2">
+                <RagBadge rag={summary.capacityRag} />
+                {summary.totalCapacity > 0
+                  ? `${Math.round(
+                      (summary.totalHeadcount / summary.totalCapacity) * 100,
+                    )}% staffed`
+                  : "No chairs"}
+              </span>
+            }
           />
           <StatCard
             label="Sites Confirmed"
