@@ -94,7 +94,13 @@ function OwnerSelect({
   return (
     <Select value={value} onValueChange={onChange} disabled={pending}>
       <SelectTrigger className="h-8 w-[150px] text-xs">
-        <SelectValue placeholder="Assign owner" />
+        <SelectValue placeholder="Assign owner">
+          {(val: string) =>
+            val === UNASSIGNED
+              ? "Unassigned"
+              : (owners.find((o) => o.id === val)?.name ?? "Unassigned")
+          }
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={UNASSIGNED} className="text-xs">

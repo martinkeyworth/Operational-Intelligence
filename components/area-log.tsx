@@ -351,7 +351,13 @@ function EntryDialog({
             <Label htmlFor="ownerUserId">Owner</Label>
             <Select value={ownerUserId} onValueChange={(v) => v && setOwnerUserId(v)}>
               <SelectTrigger id="ownerUserId">
-                <SelectValue placeholder="Assign owner" />
+                <SelectValue placeholder="Assign owner">
+                  {(val: string) =>
+                    val === UNASSIGNED
+                      ? "Unassigned"
+                      : (owners.find((o) => o.id === val)?.name ?? "Unassigned")
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>

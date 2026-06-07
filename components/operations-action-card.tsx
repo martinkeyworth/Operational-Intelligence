@@ -116,7 +116,13 @@ export function OperationsActionCard({
 
             <Select value={ownerId} onValueChange={changeOwner} disabled={pending}>
               <SelectTrigger className="h-8 w-[160px] text-xs">
-                <SelectValue placeholder="Assign owner" />
+                <SelectValue placeholder="Assign owner">
+                  {(val: string) =>
+                    val === UNASSIGNED
+                      ? "Unassigned"
+                      : (owners.find((o) => o.id === val)?.name ?? "Unassigned")
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNASSIGNED} className="text-xs">
