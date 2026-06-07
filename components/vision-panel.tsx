@@ -22,6 +22,7 @@ export function VisionPanel({
     headcountCagrPct,
     years,
     sites,
+    totalChairs,
   } = vision
 
   const progressPct =
@@ -60,7 +61,10 @@ export function VisionPanel({
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <Stat label="Barbers today" value={String(currentHeadcount)} />
+        <Stat
+          label="Barbers in post today"
+          value={`${currentHeadcount} / ${totalChairs} chairs`}
+        />
         <Stat
           label={`${targetYear} barbers needed`}
           value={`~${barbersNeeded}`}
@@ -97,7 +101,7 @@ export function VisionPanel({
       {/* Per-site worked-back targets */}
       <div className="mt-5">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {targetYear} targets by site (allocated by chair capacity)
+          {targetYear} targets by site (at full chair capacity)
         </h3>
         <div className="mt-2 overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
@@ -106,7 +110,7 @@ export function VisionPanel({
                 <th className="px-3 py-2 font-medium">Site</th>
                 <th className="px-3 py-2 text-right font-medium">Chairs</th>
                 <th className="px-3 py-2 text-right font-medium">
-                  Barbers needed
+                  Barbers (1 / chair)
                 </th>
                 <th className="px-3 py-2 text-right font-medium">Sales</th>
                 <th className="px-3 py-2 text-right font-medium">RTB</th>

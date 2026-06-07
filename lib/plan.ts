@@ -158,6 +158,13 @@ export const PLAN_ASSUMPTIONS = {
 /** RTB (revenue-to-business) is the house share of gross. */
 export const PLAN_RTB_GOAL = Math.round(PLAN_SALES_GOAL * PLAN_ASSUMPTIONS.revenueSplit)
 
+/**
+ * Flat board assumption: every barber is expected to return £500/week to the
+ * business (the RTB KPI). Actuals are RAG'd against barbers × £500. This is the
+ * single source of truth for the per-barber RTB target across the app.
+ */
+export const RTB_PER_BARBER_WEEKLY = 500
+
 /** Linear-interpolated barbering turnover target for any month in range. */
 export function barberingTargetForMonth(year: number, month1to12: number): number {
   const first = PLAN_MILESTONES[0]

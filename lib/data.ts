@@ -19,7 +19,7 @@ import {
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { VISION } from "@/lib/vision"
-import { perBarberWeeklyRevenue, tierForBrand } from "@/lib/plan"
+import { perBarberWeeklyRevenue, tierForBrand, RTB_PER_BARBER_WEEKLY } from "@/lib/plan"
 import {
   ragForUtilisation,
   ragForRtb,
@@ -1184,6 +1184,7 @@ export type CapacityKpis = {
   siteType: string
   // Chair utilisation
   activeBarbers: number
+  rtbBarbers: number
   chairCapacity: number
   utilisationPct: number
   utilisationRag: Rag
@@ -1226,8 +1227,11 @@ export async function getCapacityKpis(
   const chairCapacity = site.chairCapacity ?? 0
   // Sites such as F.AF confirm a headcount rather than entering per-barber
   // records, so use the greater of barber rows and confirmed headcount as the
-  // number of staffed chairs for utilisation.
-  const staffedChairs = Math.max(activeBarbers, site.headcount ?? 0)
+  // number of staffed barbers. Chair utilisation is then capped at the chair
+  // capacity — a shop can't be more than 100% utilised even if it carries more
+  // barbers than chairs (e.g. LTZ Soresby with 10 barbers across 8 chairs).
+  const staffedBarbers = Math.max(activeBarbers, site.headcount ?? 0)
+  const staffedChairs = Math.min(staffedBarbers, chairCapacity || staffedBarbers)
   const utilisationPct =
     chairCapacity > 0 ? (staffedChairs / chairCapacity) * 100 : 0
 
@@ -1246,18 +1250,14 @@ export async function getCapacityKpis(
     )
   const rtbActual = Number(rentAgg?.rent ?? 0)
   const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
-  // RTB per barber per week = 50% house share of the plan's brand-tier gross
-  // target for this site (Mid/Youth/Elite, +10%/yr). A site's stored figure
-  // overrides it only if explicitly set higher.
-  const tierGrossWeekly = perBarberWeeklyRevenue(
-    tierForBrand(site.brand),
-    new Date(week).getFullYear(),
-  )
+  // RTB per barber per week is a flat board assumption of £500. A site's stored
+  // figure overrides it only if explicitly set higher. Expected RTB scales with
+  // every barber on the floor (not capped to chairs).
   const rtbPerBarber = Math.max(
-    Math.round(tierGrossWeekly * VISION.rtbRatio),
+    RTB_PER_BARBER_WEEKLY,
     Number(site.rtbPerBarber ?? 0),
   )
-  const rtbExpected = staffedChairs * rtbPerBarber
+  const rtbExpected = staffedBarbers * rtbPerBarber
 
   // Training throughput for the week (academy sites only).
   const [tw] = await db
@@ -1276,6 +1276,7 @@ export async function getCapacityKpis(
     siteId,
     siteType: site.siteType ?? "barbershop",
     activeBarbers: staffedChairs,
+    rtbBarbers: staffedBarbers,
     chairCapacity,
     utilisationPct,
     utilisationRag: ragForUtilisation(staffedChairs, chairCapacity),

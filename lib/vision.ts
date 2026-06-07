@@ -295,12 +295,13 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
       ? Math.pow(barbersNeeded / startHc, 1 / span) - 1
       : 0
 
-  // Allocate the target-year headcount across today's sites by chair capacity
-  // (indicative — the plan opens new sites to actually reach this headcount).
+  // Per-site target-year economics. Each existing site is targeted at FULL
+  // chair utilisation (one barber per chair) — you can't put the whole group's
+  // future headcount into today's shops, the plan opens NEW shops for that.
+  // Sales = barbers × the brand-tier per-barber revenue in the target year.
   const sites: VisionSite[] = barbershops.map((b) => {
     const chairs = b.chairs ?? 0
-    const share = totalChairs > 0 ? chairs / totalChairs : 0
-    const headcountTarget = Math.round(barbersNeeded * share)
+    const headcountTarget = chairs
     const tier = tierForBrand(b.brand)
     const salesTarget = headcountTarget * perBarberRevenue(tier, VISION.targetYear)
     const rtbTarget = Math.round(salesTarget * VISION.rtbRatio)

@@ -5,6 +5,7 @@ import { Armchair, TrendingUp } from "lucide-react"
 
 type CapacityKpis = {
   activeBarbers: number
+  rtbBarbers: number
   chairCapacity: number
   utilisationPct: number
   utilisationRag: Rag
@@ -143,7 +144,7 @@ export function CapacityCard({
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Expected = {kpis.activeBarbers} barbers × {fmtGBP(kpis.rtbPerBarber)}
+          Expected = {kpis.rtbBarbers} barbers × {fmtGBP(kpis.rtbPerBarber)}
         </p>
 
         {kpis.rtbReported && kpis.rtbActual < kpis.rtbExpected && (
