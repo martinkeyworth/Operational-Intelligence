@@ -45,6 +45,7 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     email: row.email,
     isCompany: isCompanyEmail(row.email),
     isOwner: isOwnerEmail(row.email),
+    leadAreas: parseLeadAreas(row.leadAreas),
     canViewDashboard: row.canViewDashboard,
     isBarber: row.isBarber,
     isTrainingLead: row.isTrainingLead,
@@ -88,7 +89,22 @@ export async function requireOwner(): Promise<AccessUser> {
   return user
 }
 
-/** Map a functional area key -> the capability flag that owns its input. */
+/** Parse the comma-separated lead_areas column into a clean string array. */
+export function parseLeadAreas(value: string | null | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** Serialise an array of area keys back into the stored comma-separated form. */
+export function serializeLeadAreas(areas: string[]): string {
+  return Array.from(new Set(areas.map((s) => s.trim()).filter(Boolean))).join(",")
+}
+
+/** Map a functional area key -> the legacy capability flag (where one exists).
+ *  Retained as a fallback so pre-existing leads keep access before migration. */
 export function areaLeadFlag(
   areaKey: string,
 ): keyof Pick<Capabilities, "isHrLead" | "isSocialMedia" | "isTrainingLead"> | null {
@@ -104,13 +120,14 @@ export function areaLeadFlag(
   }
 }
 
-/** Can this user input data for the given functional area?
- *  Owners and the area's designated lead may input. */
+/** Can this user input data / manage the RAID log for the given area?
+ *  Owners manage all areas; otherwise the user must lead that area (via
+ *  leadAreas, with the legacy capability flag as a fallback). */
 export function canInputArea(user: AccessUser, areaKey: string): boolean {
   if (user.isOwner) return true
+  if (user.leadAreas.includes(areaKey)) return true
   const flag = areaLeadFlag(areaKey)
-  if (!flag) return false
-  return Boolean(user[flag])
+  return flag ? Boolean(user[flag]) : false
 }
 
 /** Require input rights for a functional area. Redirects otherwise. */
@@ -129,6 +146,7 @@ export async function getAllUsers(): Promise<AccessUser[]> {
     email: row.email,
     isCompany: isCompanyEmail(row.email),
     isOwner: isOwnerEmail(row.email),
+    leadAreas: parseLeadAreas(row.leadAreas),
     canViewDashboard: row.canViewDashboard,
     isBarber: row.isBarber,
     isTrainingLead: row.isTrainingLead,

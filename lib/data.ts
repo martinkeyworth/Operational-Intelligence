@@ -601,6 +601,8 @@ export type ActionRow = {
   ownerName: string | null
   // Always-safe owner display (never a raw user id); "Unassigned" if none.
   ownerLabel: string
+  // RAID classification: "Risk" | "Issue" | "Action".
+  entryType: string
   priority: string
   status: string
   rag: Rag
@@ -680,6 +682,7 @@ export async function getActions(): Promise<ActionRow[]> {
           ownerName ??
           friendlyOwner(a.owner, userRows) ??
           "Unassigned",
+        entryType: a.entryType ?? "Action",
         priority: a.priority,
         status: a.status,
         rag: a.rag as Rag,
@@ -718,9 +721,12 @@ export type FunctionAreaSummary = {
   escalated: number
   overdue: number
   risks: number
+  // Open RAID counts by entry type, for the area cards.
+  issues: number
+  actionItems: number
   // The single worst open action title, for an at-a-glance headline.
   topIssue: string | null
-}
+  }
 
 /** Roll up the action register into the canonical functional areas. */
 export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]> {
@@ -736,7 +742,11 @@ export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]>
     const amber = open.filter((a) => a.rag === "amber")
     const escalated = open.filter((a) => a.escalated)
     const overdue = open.filter((a) => a.overdue)
-    const risks = open.filter((a) => a.isRisk)
+    const risks = open.filter((a) => (a.entryType ?? "Action") === "Risk" || a.isRisk)
+    const issues = open.filter((a) => (a.entryType ?? "Action") === "Issue")
+    const actionItems = open.filter(
+      (a) => (a.entryType ?? "Action") === "Action" && !a.isRisk,
+    )
 
     // Worst-status roll-up across open items; no open items = green.
     const rag: Rag =
@@ -760,6 +770,8 @@ export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]>
       escalated: escalated.length,
       overdue: overdue.length,
       risks: risks.length,
+      issues: issues.length,
+      actionItems: actionItems.length,
       topIssue,
     }
   })

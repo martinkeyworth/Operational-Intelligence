@@ -82,7 +82,7 @@ export function FunctionAreaCard({
         </div>
       )}
 
-      <div className="mt-4 flex items-center gap-4 text-xs">
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
         <span className="flex items-center gap-1.5 text-foreground">
           <RagDot rag="red" />
           {area.red} red
@@ -91,12 +91,19 @@ export function FunctionAreaCard({
           <RagDot rag="amber" />
           {area.amber} amber
         </span>
-        <span className="text-muted-foreground">{area.open} open actions</span>
         {area.overdue > 0 && (
           <span className="font-semibold text-rag-red">
             {area.overdue} overdue
           </span>
         )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <span>{area.risks} risks</span>
+        <span aria-hidden>·</span>
+        <span>{area.issues} issues</span>
+        <span aria-hidden>·</span>
+        <span>{area.actionItems} actions</span>
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">

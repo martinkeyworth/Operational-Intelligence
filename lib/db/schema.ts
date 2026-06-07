@@ -25,6 +25,10 @@ export const user = pgTable("user", {
   isTrainingLead: boolean("is_training_lead").notNull().default(false),
   isHrLead: boolean("is_hr_lead").notNull().default(false),
   isSocialMedia: boolean("is_social_media").notNull().default(false),
+  // Comma-separated functional-area keys this user leads (e.g. "Capacity,RTB").
+  // A lead can manage their own area's RAID log. Generalises the per-flag leads
+  // above to all six areas (Capacity, RTB, Subletting, Training, HR, Marketing).
+  leadAreas: text("lead_areas").notNull().default(""),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
@@ -190,11 +194,16 @@ export const actions = pgTable("actions", {
   title: text("title").notNull(),
   description: text("description"),
   functionArea: text("function_area").notNull(),
+  // RAID log classification: 'Risk' (potential threat), 'Issue' (current
+  // problem) or 'Action' (task). All three roll up by RAG to the dashboard.
+  entryType: text("entry_type").notNull().default("Action"),
   siteId: integer("site_id"),
   owner: text("owner").notNull(),
   // Optional link to the responsible user account (the assigned owner). Risks
   // assigned to an owner feed Cosmin's weekly operational meeting view.
   ownerUserId: text("owner_user_id"),
+  // The user who raised the entry (area lead or owner).
+  createdByUserId: text("created_by_user_id"),
   priority: text("priority").notNull().default("Medium"),
   status: text("status").notNull().default("Open"),
   rag: text("rag").notNull().default("amber"),
@@ -203,6 +212,7 @@ export const actions = pgTable("actions", {
   // Flags this action as a risk for the weekly operational meeting register.
   isRisk: boolean("is_risk").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 })
 
 // Weekly subletting income (e.g. chair/room rent) per site. Used for the

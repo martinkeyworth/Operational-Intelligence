@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
-import { CAPABILITY_LABELS, type AccessUser } from "@/lib/access-types"
+import { CAPABILITY_LABELS, AREA_KEYS, type AccessUser } from "@/lib/access-types"
 import { updateUserCapabilities } from "@/app/admin/people/actions"
 
 export function UserAccessCard({ user }: { user: AccessUser }) {
@@ -79,6 +79,35 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
               </Label>
             )
           })}
+        </div>
+
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-semibold text-foreground">
+            Functional area leads
+          </p>
+          <p className="mb-2.5 text-xs text-muted-foreground">
+            Areas this person leads — they can raise and manage that area&apos;s
+            risks, issues and actions.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {AREA_KEYS.map((key) => {
+              const checked = user.leadAreas.includes(key)
+              return (
+                <Label
+                  key={key}
+                  htmlFor={`area-${key}-${user.id}`}
+                  className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs"
+                >
+                  <Checkbox
+                    id={`area-${key}-${user.id}`}
+                    name={`area:${key}`}
+                    defaultChecked={checked}
+                  />
+                  <span className="font-medium text-foreground">{key}</span>
+                </Label>
+              )
+            })}
+          </div>
         </div>
 
         <div className="mt-4 flex justify-end">

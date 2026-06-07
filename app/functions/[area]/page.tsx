@@ -4,6 +4,7 @@ import { requireDashboard, canInputArea } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
+import { AreaLog } from "@/components/area-log"
 import { KpiScorecard } from "@/components/kpi-scorecard"
 import { RagBadge } from "@/components/rag"
 import {
@@ -45,7 +46,8 @@ export default async function FunctionAreaPage({
 
   // Areas with a dedicated, lead-owned weekly input page.
   const INPUT_AREAS = ["HR", "Marketing", "Training"]
-  const canInput = INPUT_AREAS.includes(area.key) && canInputArea(user, area.key)
+  const isLead = canInputArea(user, area.key)
+  const canInput = INPUT_AREAS.includes(area.key) && isLead
 
   return (
     <AppShell user={user}>
@@ -104,12 +106,22 @@ export default async function FunctionAreaPage({
           </div>
         )}
 
-        <div>
-          <h2 className="mb-3 text-sm font-semibold text-foreground">
-            {area.label} Actions
-          </h2>
-          <ActionsTable actions={actions} owners={owners} />
-        </div>
+        <AreaLog
+          areaKey={area.key}
+          areaLabel={area.label}
+          entries={actions}
+          owners={owners}
+          canManage={isLead}
+        />
+
+        <details className="group">
+          <summary className="cursor-pointer text-sm font-semibold text-foreground">
+            Full register table
+          </summary>
+          <div className="mt-3">
+            <ActionsTable actions={actions} owners={owners} />
+          </div>
+        </details>
       </div>
     </AppShell>
   )

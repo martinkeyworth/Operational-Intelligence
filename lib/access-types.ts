@@ -14,7 +14,24 @@ export type AccessUser = {
   email: string
   isCompany: boolean
   isOwner: boolean
+  // Functional-area keys this user leads (e.g. ["Capacity","RTB"]).
+  leadAreas: string[]
 } & Capabilities
+
+// All functional areas that can have a designated lead + RAID log.
+export const AREA_KEYS = [
+  "Capacity",
+  "RTB",
+  "Subletting",
+  "Training",
+  "HR",
+  "Marketing",
+] as const
+export type AreaKey = (typeof AREA_KEYS)[number]
+
+// RAID log entry types.
+export const ENTRY_TYPES = ["Risk", "Issue", "Action"] as const
+export type EntryType = (typeof ENTRY_TYPES)[number]
 
 export const COMPANY_DOMAIN = "lessthanzerobarbers.com"
 
