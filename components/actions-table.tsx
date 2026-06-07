@@ -201,6 +201,13 @@ export function ActionsTable({
                           {a.daysOverdue} day{a.daysOverdue === 1 ? "" : "s"} overdue
                         </span>
                       )}
+                      {a.escalated && a.status !== "Closed" && (
+                        <span className="mt-1 ml-1 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                          <AlertTriangle className="h-3 w-3" />
+                          {a.autoEscalated ? "Auto-escalated" : "Escalated"}
+                          {a.escalationReason ? `: ${a.escalationReason}` : ""}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </TableCell>

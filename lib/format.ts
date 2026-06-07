@@ -43,3 +43,14 @@ export function fmtWeekLong(iso: string): string {
     year: "numeric",
   })
 }
+
+/** Format an ISO date (yyyy-mm-dd, optionally with time) as e.g. "24 Jan 2026". */
+export function fmtDate(iso: string): string {
+  const d = new Date(iso.length === 10 ? iso + "T00:00:00" : iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}

@@ -8,7 +8,16 @@ import {
   sites,
   user as userTable,
 } from "@/lib/db/schema"
-import { desc, eq } from "drizzle-orm"
+import { desc } from "drizzle-orm"
+
+export type SiteOption = { id: number; name: string }
+export async function getSiteOptions(): Promise<SiteOption[]> {
+  const rows = await db
+    .select({ id: sites.id, name: sites.name })
+    .from(sites)
+    .orderBy(sites.name)
+  return rows
+}
 
 // ---------------------------------------------------------------------------
 // Decision Register — completes RAID (the "D"). What was decided, by whom,

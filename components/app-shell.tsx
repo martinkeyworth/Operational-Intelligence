@@ -20,6 +20,10 @@ import {
   ClipboardCheck,
   CalendarRange,
   UserPlus,
+  Gavel,
+  UserSearch,
+  GraduationCap,
+  Activity,
   LogOut,
 } from "lucide-react"
 
@@ -54,6 +58,10 @@ export function AppShell({
         { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
         { href: "/actions", label: "Action Register", icon: ListChecks },
         { href: "/operations", label: "Risk Register", icon: ShieldAlert },
+        { href: "/decisions", label: "Decision Register", icon: Gavel },
+        { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
+        { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
+        { href: "/activity", label: "Activity Tracker", icon: Activity },
       ]
     : []
   const nav = [

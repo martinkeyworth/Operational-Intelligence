@@ -608,6 +608,10 @@ export type ActionRow = {
   rag: Rag
   dueDate: string | null
   escalated: boolean
+  // True when the auto-escalation engine raised it (vs a manual escalation).
+  autoEscalated: boolean
+  // Human-readable reason the item was escalated, if any.
+  escalationReason: string | null
   isRisk: boolean
   // Derived: open (not Closed) with a due date in the past.
   overdue: boolean
@@ -688,6 +692,8 @@ export async function getActions(): Promise<ActionRow[]> {
         rag: a.rag as Rag,
         dueDate,
         escalated: a.escalated,
+        autoEscalated: a.autoEscalated,
+        escalationReason: a.escalationReason ?? null,
         isRisk: a.isRisk,
         overdue,
         daysOverdue,
