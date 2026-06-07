@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   ClipboardCheck,
   CalendarRange,
+  UserPlus,
   LogOut,
 } from "lucide-react"
 
@@ -48,6 +49,7 @@ export function AppShell({
         { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
         { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
         { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
+        { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
         { href: "/actions", label: "Action Register", icon: ListChecks },
         { href: "/operations", label: "Risk Register", icon: ShieldAlert },
       ]

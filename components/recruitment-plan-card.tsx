@@ -124,12 +124,46 @@ export function RecruitmentPlanCard({ plan }: { plan: RecruitmentPlan }) {
           Training Academy demand
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {plan.apprenticesHave} apprentices in post (target{" "}
-          {plan.apprenticesNeed}) → needs {plan.trainersNeed} trainer
-          {plan.trainersNeed === 1 ? "" : "s"} and {plan.assessorsNeed} assessor
-          {plan.assessorsNeed === 1 ? "" : "s"} to support the cohort.
+          {plan.academy.learnersPerWeek} learners/week and{" "}
+          {plan.academy.apprenticesActive} apprentices in post (capacity{" "}
+          {plan.academy.apprenticesTarget}) → needs {plan.academy.trainersNeed}{" "}
+          trainer{plan.academy.trainersNeed === 1 ? "" : "s"} and{" "}
+          {plan.academy.assessorsNeed} assessor
+          {plan.academy.assessorsNeed === 1 ? "" : "s"}.
+        </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Trainer demand = max(learners ÷ 50 ={" "}
+          {plan.academy.trainersFromLearners}, apprentices ÷ 10 ={" "}
+          {plan.academy.trainersFromApprentices}); assessors = apprentices ÷ 40.
+          Currently {plan.academy.trainersHave} trainer
+          {plan.academy.trainersHave === 1 ? "" : "s"} /{" "}
+          {plan.academy.assessorsHave} assessor
+          {plan.academy.assessorsHave === 1 ? "" : "s"} in post.
         </p>
       </div>
+
+      {/* Forward recruitment pipeline for planned openings */}
+      {plan.pipelineByRole.length > 0 && (
+        <div className="mt-4 rounded-lg border border-border bg-background p-3">
+          <p className="text-xs font-medium text-foreground">
+            Pipeline for planned openings
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {plan.pipeline.length} opening
+            {plan.pipeline.length === 1 ? "" : "s"} ahead per the plan schedule.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {plan.pipelineByRole.map((r) => (
+              <span
+                key={r.role}
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+              >
+                {r.role}: {r.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

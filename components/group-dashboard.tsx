@@ -23,6 +23,7 @@ import type {
   PlanBoardSummary,
 } from "@/lib/vision"
 import type { SubmissionSummary } from "@/lib/submissions"
+import type { RecruitmentPlan } from "@/lib/hr"
 import {
   AlertTriangle,
   ArrowRight,
@@ -54,6 +55,7 @@ export function GroupDashboard({
   expansion,
   planProgress,
   submissions,
+  recruitment,
 }: {
   summary: GroupSummary
   weeks: string[]
@@ -67,6 +69,7 @@ export function GroupDashboard({
   expansion: ExpansionRecommendation
   planProgress: PlanBoardSummary
   submissions: SubmissionSummary
+  recruitment: RecruitmentPlan
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
@@ -117,34 +120,16 @@ export function GroupDashboard({
     }))
     .sort((a, b) => b.yieldPct - a.yieldPct)
 
-  // Capacity recruitment trigger: when AVERAGE chair utilisation across the
-  // barbershops is above 90%, the estate is effectively full. HR is actioned
-  // to recruit the variance between barbers on headcount and total chair
-  // capacity (the vacant chairs) to unlock growth.
-  const CAPACITY_UTIL_THRESHOLD = 90
-  const capacityShops = sites.filter(
-    (s) => s.siteType !== "training" && s.chairCapacity > 0,
-  )
-  const totalCapacityChairs = capacityShops.reduce(
-    (a, s) => a + s.chairCapacity,
-    0,
-  )
-  const totalStaffedChairs = capacityShops.reduce(
-    (a, s) => a + Math.min(s.activeBarbers, s.chairCapacity),
-    0,
-  )
-  const avgUtilisationPct =
-    totalCapacityChairs > 0
-      ? (totalStaffedChairs / totalCapacityChairs) * 100
-      : 0
-  const vacantChairs = Math.max(0, totalCapacityChairs - totalStaffedChairs)
-  const capacityRecruit = {
-    triggered: avgUtilisationPct > CAPACITY_UTIL_THRESHOLD && vacantChairs > 0,
-    avgUtilisationPct: Math.round(avgUtilisationPct),
-    vacantChairs,
-    totalCapacityChairs,
-    totalStaffedChairs,
-  }
+  // Role-aware recruitment: the plan staffing model (manager + brand cutting
+  // staff + apprentice per shop, plus academy trainers/assessors) drives the
+  // true recruitment requirement, not just vacant chairs. Full detail lives on
+  // the Workforce Plan page; here we surface the headline gap and worst shops.
+  const recruitGapSites = recruitment.sites
+    .filter((s) => s.totalGap > 0)
+    .sort((a, b) => b.totalGap - a.totalGap)
+  const topRecruitRoles = recruitment.byRole
+    .filter((r) => r.gap > 0)
+    .sort((a, b) => b.gap - a.gap)
 
   return (
     <div>
@@ -598,45 +583,70 @@ export function GroupDashboard({
               <div>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
                   <UserPlus className="h-4 w-4 text-muted-foreground" />
-                  Recruitment Triggers
+                  Recruitment &amp; Capacity
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Barbers at ≥95% yield — action manager &amp; HR to recruit
+                  Role gaps vs the plan model, plus barbers at ≥95% yield
                 </p>
               </div>
-              {recruitTriggers.length > 0 && (
-                <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber">
-                  {recruitTriggers.length} at capacity
-                </span>
-              )}
+              <Link
+                href="/reports/workforce"
+                className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Workforce Plan
+                <ArrowRight className="h-3 w-3" />
+              </Link>
             </div>
-            {capacityRecruit.triggered && (
-              <div className="mb-3 rounded-lg border border-rag-red/30 bg-rag-red/10 p-3">
+            {recruitment.totalGap > 0 ? (
+              <Link
+                href="/reports/workforce"
+                className="mb-3 block rounded-lg border border-rag-red/30 bg-rag-red/10 p-3 transition-colors hover:bg-rag-red/15"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-sm font-medium text-foreground">
-                    Estate at {capacityRecruit.avgUtilisationPct}% utilisation —
-                    HR to recruit {capacityRecruit.vacantChairs} barber
-                    {capacityRecruit.vacantChairs > 1 ? "s" : ""}
+                    HR to recruit {recruitment.totalGap} role
+                    {recruitment.totalGap > 1 ? "s" : ""} to meet the plan
+                    staffing model
                   </p>
                   <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
                     <AlertTriangle className="h-3 w-3" />
                     HR action
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {capacityRecruit.totalStaffedChairs}/
-                  {capacityRecruit.totalCapacityChairs} chairs filled · average
-                  utilisation above 90%. Recruit the{" "}
-                  {capacityRecruit.vacantChairs}-chair variance to capacity.
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {topRecruitRoles.map((r) => (
+                    <span
+                      key={r.role}
+                      className="rounded-md border border-rag-red/30 bg-background px-1.5 py-0.5 text-[11px] text-rag-red"
+                    >
+                      {r.role} +{r.gap}
+                    </span>
+                  ))}
+                </div>
+                {recruitGapSites.length > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {recruitGapSites
+                      .slice(0, 3)
+                      .map((s) => `${s.siteName} (${s.totalGap})`)
+                      .join(" · ")}
+                    {recruitGapSites.length > 3
+                      ? ` +${recruitGapSites.length - 3} more`
+                      : ""}
+                  </p>
+                )}
+              </Link>
+            ) : (
+              <div className="mb-3 rounded-lg border border-rag-green/30 bg-rag-green/10 p-3">
+                <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-rag-green" />
+                  All shops meet the plan staffing model
                 </p>
               </div>
             )}
             {recruitTriggers.length === 0 ? (
-              !capacityRecruit.triggered ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No barbers at capacity. No recruitment action required.
-                </p>
-              ) : null
+              <p className="py-2 text-center text-xs text-muted-foreground">
+                No barbers at ≥95% yield this week.
+              </p>
             ) : (
               <div className="flex flex-col gap-3">
                 {recruitTriggers.map((r) => (

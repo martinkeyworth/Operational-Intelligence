@@ -2,7 +2,7 @@ import "server-only"
 import { db } from "@/lib/db"
 import { sites, barbers } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
-import { tierForBrand } from "@/lib/plan"
+import { tierForBrand, OPENING_SCHEDULE } from "@/lib/plan"
 
 // ---------------------------------------------------------------------------
 // HR / recruitment model
@@ -53,9 +53,24 @@ export function cuttingRoleForBrand(brand: string | null | undefined): RoleBucke
   return BRAND_CUTTING_ROLE[brand.trim().toLowerCase()] ?? "Barber"
 }
 
-// Academy staffing ratios against the live apprentice headcount.
-export const APPRENTICES_PER_TRAINER = 6
-export const APPRENTICES_PER_ASSESSOR = 10
+// ---------------------------------------------------------------------------
+// Training Academy capacity & staffing ratios (board-confirmed)
+// ---------------------------------------------------------------------------
+// A trainer covers EITHER a block of learners OR a block of apprentices, so the
+// required trainers is the larger of the two demands (combined block model).
+export const LEARNERS_PER_TRAINER = 50
+export const APPRENTICES_PER_TRAINER = 10
+export const APPRENTICES_PER_ASSESSOR = 40
+
+// Academy throughput basis used to plan academy staff:
+//   • Learners: 10 per cohort × AM/PM/Eve (3) × 5 days = 150 learners/week
+//   • Apprentices: 10 AM + 10 PM, 1 day/week = 20 apprentices
+export const LEARNERS_PER_COHORT = 10
+export const COHORTS_PER_DAY = 3 // AM, PM, Evening
+export const ACADEMY_DAYS_PER_WEEK = 5
+export const LEARNER_WEEKLY_CAPACITY =
+  LEARNERS_PER_COHORT * COHORTS_PER_DAY * ACADEMY_DAYS_PER_WEEK // 150
+export const ACADEMY_APPRENTICE_CAPACITY = 10 + 10 // AM + PM, 1 day/week = 20
 
 /**
  * Normalise a free-text `barbers.role` value onto a model bucket. Existing data
@@ -93,6 +108,35 @@ export type SiteRolePlan = {
   totalGap: number
 }
 
+export type AcademyPlan = {
+  // Demand basis
+  learnersPerWeek: number
+  apprenticesActive: number
+  apprenticesTarget: number
+  // Trainer demand split (combined-block: required = max of the two)
+  trainersFromLearners: number
+  trainersFromApprentices: number
+  trainersNeed: number
+  trainersHave: number
+  assessorsNeed: number
+  assessorsHave: number
+}
+
+export type PipelineRole = {
+  role: RoleBucket
+  count: number
+}
+
+export type PlannedOpeningPlan = {
+  location: string
+  tier: string
+  year: number
+  month: number
+  cuttingRole: RoleBucket
+  roles: PipelineRole[]
+  totalRoles: number
+}
+
 export type RecruitmentPlan = {
   sites: SiteRolePlan[]
   // Group totals by role across all shops + academy.
@@ -100,8 +144,9 @@ export type RecruitmentPlan = {
   totalGap: number
   apprenticesHave: number
   apprenticesNeed: number
-  trainersNeed: number
-  assessorsNeed: number
+  academy: AcademyPlan
+  pipeline: PlannedOpeningPlan[]
+  pipelineByRole: { role: RoleBucket; count: number }[]
 }
 
 /**
@@ -205,10 +250,24 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
   // Apprentice population drives Academy trainer/assessor demand.
   const apprenticesHave = roleAgg.get("Apprentice")?.have ?? 0
   const apprenticesNeed = roleAgg.get("Apprentice")?.need ?? 0
-  // Scale academy staff against the larger of current vs target apprentices so
-  // we recruit trainers ahead of the apprentice intake.
-  const apprenticeBasis = Math.max(apprenticesHave, apprenticesNeed)
-  const trainersNeed = Math.ceil(apprenticeBasis / APPRENTICES_PER_TRAINER)
+
+  // Academy staff are planned against the academy's throughput capacity, not
+  // just shop apprentices: 150 learners/week + 20 apprentices in training.
+  // Recruit trainers ahead of intake by using the larger apprentice basis.
+  const apprenticeBasis = Math.max(
+    apprenticesHave,
+    apprenticesNeed,
+    ACADEMY_APPRENTICE_CAPACITY,
+  )
+  const trainersFromLearners = Math.ceil(
+    LEARNER_WEEKLY_CAPACITY / LEARNERS_PER_TRAINER,
+  )
+  const trainersFromApprentices = Math.ceil(
+    apprenticeBasis / APPRENTICES_PER_TRAINER,
+  )
+  // Combined-block model: a trainer covers a block of learners OR apprentices,
+  // so the requirement is the larger of the two demands.
+  const trainersNeed = Math.max(trainersFromLearners, trainersFromApprentices)
   const assessorsNeed = Math.ceil(apprenticeBasis / APPRENTICES_PER_ASSESSOR)
 
   const academyRoleRows = await db
@@ -228,6 +287,18 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
   roleAgg.set("Trainer", { have: trainersHave, need: trainersNeed })
   roleAgg.set("Assessor", { have: assessorsHave, need: assessorsNeed })
 
+  const academy: AcademyPlan = {
+    learnersPerWeek: LEARNER_WEEKLY_CAPACITY,
+    apprenticesActive: apprenticesHave,
+    apprenticesTarget: apprenticeBasis,
+    trainersFromLearners,
+    trainersFromApprentices,
+    trainersNeed,
+    trainersHave,
+    assessorsNeed,
+    assessorsHave,
+  }
+
   const byRole = ROLE_LADDER.filter((role) => roleAgg.has(role)).map((role) => {
     const { have, need } = roleAgg.get(role)!
     return { role, have, need, gap: Math.max(0, need - have) }
@@ -235,15 +306,62 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
 
   const totalGap = byRole.reduce((a, r) => a + r.gap, 0)
 
+  // Forward pipeline: roles needed for upcoming planned openings.
+  const pipeline = buildPipeline()
+  const pipelineAgg = new Map<RoleBucket, number>()
+  for (const op of pipeline) {
+    for (const r of op.roles) {
+      pipelineAgg.set(r.role, (pipelineAgg.get(r.role) ?? 0) + r.count)
+    }
+  }
+  const pipelineByRole = ROLE_LADDER.filter((role) => pipelineAgg.has(role)).map(
+    (role) => ({ role, count: pipelineAgg.get(role)! }),
+  )
+
   return {
     sites: sitePlans,
     byRole,
     totalGap,
     apprenticesHave,
     apprenticesNeed,
-    trainersNeed,
-    assessorsNeed,
+    academy,
+    pipeline,
+    pipelineByRole,
   }
+}
+
+/**
+ * Build the forward recruitment pipeline from the plan's opening schedule:
+ * every opening still in the future needs a Manager, brand cutting staff, and
+ * an Apprentice.
+ */
+function buildPipeline(now: Date = new Date()): PlannedOpeningPlan[] {
+  const idx = now.getFullYear() * 12 + now.getMonth()
+  return OPENING_SCHEDULE.filter(
+    (op) => op.year * 12 + (op.month - 1) >= idx,
+  ).map((op) => {
+    // Tier → cutting role: Mid=Senior Barber, Youth=Junior Barber, Elite=Barber.
+    const roleForTier: RoleBucket =
+      op.tier === "Mid"
+        ? "Senior Barber"
+        : op.tier === "Youth"
+          ? "Junior Barber"
+          : "Barber"
+    const roles: PipelineRole[] = [
+      { role: "Manager", count: op.manager },
+      { role: roleForTier, count: op.barbers },
+      { role: "Apprentice", count: op.apprentices },
+    ]
+    return {
+      location: op.location,
+      tier: op.tier,
+      year: op.year,
+      month: op.month,
+      cuttingRole: roleForTier,
+      roles,
+      totalRoles: roles.reduce((a, r) => a + r.count, 0),
+    }
+  })
 }
 
 // Re-export so callers can label brand tiers alongside roles if needed.
