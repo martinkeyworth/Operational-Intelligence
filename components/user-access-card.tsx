@@ -8,8 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { CAPABILITY_LABELS, AREA_KEYS, type AccessUser } from "@/lib/access-types"
+import { FUNCTION_AREAS } from "@/lib/function-areas"
 import { updateUserCapabilities } from "@/app/admin/people/actions"
 import { SetPasswordForm } from "@/components/set-password-form"
+
+const AREA_LABELS: Record<string, string> = Object.fromEntries(
+  FUNCTION_AREAS.map((a) => [a.key, a.label]),
+)
 
 export function UserAccessCard({ user }: { user: AccessUser }) {
   const router = useRouter()
@@ -104,7 +109,7 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
                     name={`area:${key}`}
                     defaultChecked={checked}
                   />
-                  <span className="font-medium text-foreground">{key}</span>
+                  <span className="font-medium text-foreground">{AREA_LABELS[key] ?? key}</span>
                 </Label>
               )
             })}
