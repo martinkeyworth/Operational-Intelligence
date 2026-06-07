@@ -1,18 +1,39 @@
 import "server-only"
-import { Resend } from "resend"
+import nodemailer, { type Transporter } from "nodemailer"
 import { db } from "@/lib/db"
 import { emailLog } from "@/lib/db/schema"
 
-// Default to Resend's shared test sender until the lessthanzerobarbers.com
-// domain is verified in Resend, then set RESEND_FROM_EMAIL to
-// "Less Than Zero <info@lessthanzerobarbers.com>".
+// Sending via Google Workspace SMTP (smtp.gmail.com).
+// Required env vars:
+//   GMAIL_USER          - the mailbox to authenticate/send as, e.g.
+//                         "martin@lessthanzerobarbers.com"
+//   GMAIL_APP_PASSWORD  - a 16-char Google "App Password" (NOT the account
+//                         password). Generate at myaccount.google.com/apppasswords
+// Optional:
+//   EMAIL_FROM          - display From header. Defaults to GMAIL_USER. Must be
+//                         the GMAIL_USER address or a Workspace alias/send-as.
+const GMAIL_USER = process.env.GMAIL_USER
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD
 const FROM =
-  process.env.RESEND_FROM_EMAIL || "Less Than Zero <onboarding@resend.dev>"
+  process.env.EMAIL_FROM ||
+  (GMAIL_USER ? `Less Than Zero <${GMAIL_USER}>` : "")
 
-function client(): Resend | null {
-  const key = process.env.RESEND_API_KEY
-  if (!key) return null
-  return new Resend(key)
+let _transporter: Transporter | null = null
+function transporter(): Transporter | null {
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) return null
+  if (_transporter) return _transporter
+  _transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      // App passwords are entered with spaces by Google; strip them so either
+      // "abcd efgh ijkl mnop" or "abcdefghijklmnop" works.
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD.replace(/\s+/g, ""),
+    },
+  })
+  return _transporter
 }
 
 export type SendArgs = {
@@ -23,8 +44,9 @@ export type SendArgs = {
   weekEnding?: string | null
 }
 
-/** Send a single email via Resend and log the outcome. Never throws — returns
- *  ok/false so the batching workflow can continue on individual failures. */
+/** Send a single email via Google Workspace SMTP and log the outcome. Never
+ *  throws — returns ok/false so the batching workflow can continue on
+ *  individual failures. */
 export async function sendEmail({
   to,
   subject,
@@ -32,26 +54,15 @@ export async function sendEmail({
   kind,
   weekEnding = null,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
-  const resend = client()
-  if (!resend) {
-    const error = "RESEND_API_KEY not set"
+  const tx = transporter()
+  if (!tx) {
+    const error = "GMAIL_USER / GMAIL_APP_PASSWORD not set"
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
 
   try {
-    const res = await resend.emails.send({ from: FROM, to, subject, html })
-    if (res.error) {
-      await logEmail({
-        kind,
-        recipient: to,
-        subject,
-        weekEnding,
-        status: "failed",
-        error: res.error.message,
-      })
-      return { ok: false, error: res.error.message }
-    }
+    await tx.sendMail({ from: FROM, to, subject, html })
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "sent" })
     return { ok: true }
   } catch (e) {

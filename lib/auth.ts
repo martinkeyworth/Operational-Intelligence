@@ -36,8 +36,8 @@ export const auth = betterAuth({
       })
       // Better Auth swallows send failures (to avoid leaking which addresses
       // exist). Surface them in the server logs so an admin can diagnose — e.g.
-      // Resend's dev sender only delivers to the account owner until the domain
-      // is verified. The failure is also recorded in the emailLog table.
+      // a missing GMAIL_USER / GMAIL_APP_PASSWORD or an SMTP auth error. The
+      // failure is also recorded in the emailLog table.
       if (!result.ok) {
         console.error(
           `[v0] Password reset email to ${user.email} failed: ${result.error}`,
