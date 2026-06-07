@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { sites as sitesTable, weeklyTakings } from "@/lib/db/schema"
+import { sites as sitesTable, weeklyTakings, barbers as barbersTable } from "@/lib/db/schema"
 import { eq, desc, sql } from "drizzle-orm"
 import { ragFromAttainment, type Rag } from "@/lib/format"
 import {
@@ -248,8 +248,25 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     .where(eq(sitesTable.siteType, "barbershop"))
     .orderBy(sitesTable.name)
 
+  // Current total barbershop headcount anchors today's progress. Sites track
+  // staff two ways: some enter per-barber rows (e.g. LTZ Soresby), others just
+  // state a headcount (e.g. F.AF). We count CUTTING barbers (excluding
+  // apprentices) per site, taking the greater of the barber rows and the
+  // manager's stated headcount so neither method under-counts.
+  const barberRows = await db
+    .select({
+      siteId: barbersTable.siteId,
+      cutters: sql<number>`count(*) filter (where lower(${barbersTable.role}) not like '%apprentice%')`,
+    })
+    .from(barbersTable)
+    .where(eq(barbersTable.active, true))
+    .groupBy(barbersTable.siteId)
+  const cuttersBySite = new Map<number, number>(
+    barberRows.map((r) => [r.siteId, Number(r.cutters)]),
+  )
+
   const currentHeadcount = barbershops.reduce(
-    (s, b) => s + (b.headcount ?? 0),
+    (s, b) => s + Math.max(cuttersBySite.get(b.id) ?? 0, b.headcount ?? 0),
     0,
   )
   const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
