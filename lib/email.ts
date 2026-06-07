@@ -3,34 +3,49 @@ import nodemailer, { type Transporter } from "nodemailer"
 import { db } from "@/lib/db"
 import { emailLog } from "@/lib/db/schema"
 
-// Sending via Google Workspace SMTP (smtp.gmail.com).
+// Sending via Gmail / Google Workspace using OAuth2 (no app password needed).
 // Required env vars:
-//   GMAIL_USER          - the mailbox to authenticate/send as, e.g.
-//                         "martin@lessthanzerobarbers.com"
-//   GMAIL_APP_PASSWORD  - a 16-char Google "App Password" (NOT the account
-//                         password). Generate at myaccount.google.com/apppasswords
+//   GMAIL_USER                  - the mailbox to send as, e.g.
+//                                 "martin@lessthanzerobarbers.com"
+//   GMAIL_OAUTH_CLIENT_ID       - OAuth client ID from Google Cloud Console
+//   GMAIL_OAUTH_CLIENT_SECRET   - OAuth client secret
+//   GMAIL_OAUTH_REFRESH_TOKEN   - long-lived refresh token authorised for the
+//                                 https://mail.google.com/ scope
 // Optional:
-//   EMAIL_FROM          - display From header. Defaults to GMAIL_USER. Must be
-//                         the GMAIL_USER address or a Workspace alias/send-as.
+//   EMAIL_FROM                  - display From header. Defaults to GMAIL_USER.
+//                                 Must be the GMAIL_USER address or a verified
+//                                 Workspace alias/send-as.
 const GMAIL_USER = process.env.GMAIL_USER
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD
+const OAUTH_CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID
+const OAUTH_CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET
+const OAUTH_REFRESH_TOKEN = process.env.GMAIL_OAUTH_REFRESH_TOKEN
 const FROM =
   process.env.EMAIL_FROM ||
   (GMAIL_USER ? `Less Than Zero <${GMAIL_USER}>` : "")
 
 let _transporter: Transporter | null = null
 function transporter(): Transporter | null {
-  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) return null
+  if (
+    !GMAIL_USER ||
+    !OAUTH_CLIENT_ID ||
+    !OAUTH_CLIENT_SECRET ||
+    !OAUTH_REFRESH_TOKEN
+  ) {
+    return null
+  }
   if (_transporter) return _transporter
   _transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
     auth: {
-      // App passwords are entered with spaces by Google; strip them so either
-      // "abcd efgh ijkl mnop" or "abcdefghijklmnop" works.
+      // nodemailer mints short-lived access tokens from the refresh token,
+      // so we never store/expire an access token ourselves.
+      type: "OAuth2",
       user: GMAIL_USER,
-      pass: GMAIL_APP_PASSWORD.replace(/\s+/g, ""),
+      clientId: OAUTH_CLIENT_ID,
+      clientSecret: OAUTH_CLIENT_SECRET,
+      refreshToken: OAUTH_REFRESH_TOKEN,
     },
   })
   return _transporter
@@ -56,7 +71,8 @@ export async function sendEmail({
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const tx = transporter()
   if (!tx) {
-    const error = "GMAIL_USER / GMAIL_APP_PASSWORD not set"
+    const error =
+      "Gmail OAuth2 not configured (need GMAIL_USER, GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN)"
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
