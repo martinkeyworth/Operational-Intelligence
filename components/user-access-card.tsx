@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { CAPABILITY_LABELS, AREA_KEYS, type AccessUser } from "@/lib/access-types"
 import { updateUserCapabilities } from "@/app/admin/people/actions"
+import { SetPasswordForm } from "@/components/set-password-form"
 
 export function UserAccessCard({ user }: { user: AccessUser }) {
   const router = useRouter()
@@ -121,6 +122,17 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
           </Button>
         </div>
       </form>
+
+      <div className="mt-4 border-t border-border pt-4">
+        <p className="mb-2 text-xs font-semibold text-foreground">
+          Password
+        </p>
+        <p className="mb-2.5 text-xs text-muted-foreground">
+          Set a new password for this person and share it with them directly —
+          no email needed.
+        </p>
+        <SetPasswordForm userId={user.id} userName={user.name} />
+      </div>
     </Card>
   )
 }
