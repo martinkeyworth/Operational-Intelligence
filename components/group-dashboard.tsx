@@ -864,7 +864,7 @@ export function GroupDashboard({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {r.functionArea}
                       {r.siteName ? ` · ${r.siteName}` : " · Group"} · Owner:{" "}
-                      {r.owner}
+                      {r.ownerLabel}
                     </p>
                   </div>
                 ))}

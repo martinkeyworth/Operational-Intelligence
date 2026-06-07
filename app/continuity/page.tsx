@@ -14,7 +14,7 @@ export default async function ContinuityPage() {
       <PageHeader
         meta="Leadership Continuity"
         title="CEO Continuity Briefing"
-        subtitle="If leadership were unavailable for 30 days, this is the live answer the platform gives the team: what is off track, why, who owns recovery, what is overdue, which strategic objectives are at risk, and what must happen next."
+        subtitle="A live, self-serve answer to what is off track and why, who owns recovery, what is overdue, which strategic objectives are at risk, and what must happen next — so the business keeps running without anyone in the loop."
       />
       {briefing ? (
         <ContinuityBriefingView data={briefing} />

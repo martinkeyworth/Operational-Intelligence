@@ -599,6 +599,8 @@ export type ActionRow = {
   owner: string
   ownerUserId: string | null
   ownerName: string | null
+  // Always-safe owner display (never a raw user id); "Unassigned" if none.
+  ownerLabel: string
   priority: string
   status: string
   rag: Rag
@@ -609,6 +611,25 @@ export type ActionRow = {
   overdue: boolean
   // Whole days past the due date (0 if not overdue / no due date).
   daysOverdue: number
+}
+
+/**
+ * Resolve a free-text owner into a friendly label. Better Auth user ids are
+ * long opaque tokens; if the owner text is actually one of those (a legacy
+ * value), resolve it to the user's name. Returns null if the value is empty.
+ */
+function friendlyOwner(
+  owner: string | null,
+  users: { id: string; name: string | null }[],
+): string | null {
+  const text = (owner ?? "").trim()
+  if (!text) return null
+  // A Better Auth id is a ~16+ char token with no spaces — never a real label.
+  const looksLikeId = !text.includes(" ") && /^[A-Za-z0-9]{16,}$/.test(text)
+  if (looksLikeId) {
+    return users.find((u) => u.id === text)?.name ?? null
+  }
+  return text
 }
 
 /** Days an open action is past its due date (0 if none/closed/future). */
@@ -637,6 +658,9 @@ export async function getActions(): Promise<ActionRow[]> {
     .map((a) => {
       const dueDate = a.dueDate ? String(a.dueDate) : null
       const { overdue, daysOverdue } = computeOverdue(dueDate, a.status)
+      const ownerName = a.ownerUserId
+        ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
+        : null
       return {
         id: a.id,
         title: a.title,
@@ -647,9 +671,15 @@ export async function getActions(): Promise<ActionRow[]> {
           : null,
         owner: a.owner,
         ownerUserId: a.ownerUserId ?? null,
-        ownerName: a.ownerUserId
-          ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
-          : null,
+        ownerName,
+        // Always-safe display label: never leaks a raw user id. Resolves the
+        // assigned user's name first, then a friendly free-text owner (role or
+        // name), and as a last resort resolves an id accidentally stored in the
+        // owner text back to a name. Falls back to "Unassigned".
+        ownerLabel:
+          ownerName ??
+          friendlyOwner(a.owner, userRows) ??
+          "Unassigned",
         priority: a.priority,
         status: a.status,
         rag: a.rag as Rag,
@@ -1015,7 +1045,7 @@ export async function getRiskRegister(): Promise<RiskRegister> {
   const byOwner = new Map<string, RiskOwnerGroup>()
   for (const r of live) {
     const key = r.ownerUserId ?? "__unassigned__"
-    const name = r.ownerUserId ? (r.ownerName ?? r.owner) : "Unassigned"
+    const name = r.ownerUserId ? r.ownerLabel : "Unassigned"
     if (!byOwner.has(key)) {
       byOwner.set(key, {
         ownerName: name,

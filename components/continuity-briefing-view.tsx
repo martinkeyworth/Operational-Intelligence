@@ -193,7 +193,7 @@ export function ContinuityBriefingView({ data }: { data: ContinuityBriefing }) {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{a.title}</p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {a.ownerName ?? a.owner}
+                      {a.ownerLabel}
                       {a.siteName ? ` · ${a.siteName}` : ""}
                     </p>
                   </div>
@@ -227,7 +227,7 @@ export function ContinuityBriefingView({ data }: { data: ContinuityBriefing }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{a.title}</p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {a.ownerName ?? a.owner}
+                      {a.ownerLabel}
                       {a.siteName ? ` · ${a.siteName}` : ""}
                       {a.overdue
                         ? ` · ${dueLabel(a)}`
