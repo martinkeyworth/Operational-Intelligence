@@ -29,6 +29,9 @@ export type KpiDef = {
   amber: number
   direction: KpiDirection
   ownerRole: string
+  // Named accountable owner for this KPI (the single person on the hook).
+  // Falls back to the ownerRole label when no individual is named.
+  owner?: string
   // Relative weight of this KPI within its functional area.
   weight: number
   help: string
@@ -127,6 +130,20 @@ export const KPI_CATALOGUE: KpiDef[] = [
     ownerRole: "Social Media",
     weight: 1,
     help: `Total marketing spend this week vs the plan budget of £${PLAN_ASSUMPTIONS.marketingAnnualPerBrand.toLocaleString()}/yr per brand (${MARKETING_BRAND_COUNT} brands ≈ £${MARKETING_WEEKLY_BUDGET}/week). On/under budget is green.`,
+  },
+  {
+    code: "mkt_free_haircuts",
+    name: "Free haircuts given",
+    functionArea: "Marketing",
+    unit: "cuts",
+    // Community/brand-building leading indicator: complimentary cuts (charity,
+    // schools, content, influencer/seeding). Higher is better — target 8+/week.
+    green: 8,
+    amber: 4,
+    direction: "higher_better",
+    ownerRole: "Social Media",
+    weight: 1,
+    help: "Complimentary cuts given this week for community, content and outreach (charity, schools, influencer seeding). A leading indicator of brand reach and goodwill — target 8+/week.",
   },
 ]
 

@@ -7,11 +7,11 @@ import {
   recruitmentCandidates,
   trainingLearners,
   activityLog,
-  actions,
 } from "@/lib/db/schema"
-import { and, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
+import { sweepAutoEscalations } from "@/lib/registers"
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -255,41 +255,11 @@ export async function logActivity(formData: FormData) {
  *  - overdue by 7+ days, or
  *  - red and still open for 2+ weeks (14 days since being raised).
  * Idempotent: only escalates actions not already escalated. Safe to call on
- * every actions/dashboard load.
+ * every actions/dashboard load. Delegates to the render-safe sweep in
+ * lib/registers and handles revalidation here.
  */
 export async function runAutoEscalation() {
-  const now = new Date()
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000)
-    .toISOString()
-    .slice(0, 10)
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000)
-
-  const open = await db
-    .select()
-    .from(actions)
-    .where(and(eq(actions.status, "Open"), eq(actions.escalated, false)))
-
-  let escalated = 0
-  for (const a of open) {
-    let reason: string | null = null
-    if (a.dueDate && String(a.dueDate) <= sevenDaysAgo) {
-      reason = "Overdue by 7+ days"
-    } else if (a.rag === "red" && a.createdAt && a.createdAt <= fourteenDaysAgo) {
-      reason = "Red for 2+ weeks without resolution"
-    }
-    if (reason) {
-      await db
-        .update(actions)
-        .set({
-          escalated: true,
-          autoEscalated: true,
-          escalatedAt: now,
-          escalationReason: reason,
-        })
-        .where(eq(actions.id, a.id))
-      escalated++
-    }
-  }
+  const escalated = await sweepAutoEscalations()
   if (escalated > 0) {
     revalidatePath("/actions")
     revalidatePath("/operations")

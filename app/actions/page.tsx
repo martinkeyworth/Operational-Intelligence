@@ -3,11 +3,16 @@ import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { ActionsTable } from "@/components/actions-table"
 import { getActions, getAssignableOwners } from "@/lib/data"
+import { sweepAutoEscalations } from "@/lib/registers"
 import Link from "next/link"
 import { CalendarClock } from "lucide-react"
 
 export default async function ActionsPage() {
   const user = await requireDashboard()
+
+  // Run the auto-escalation sweep before loading, so overdue / persistently-red
+  // actions are flagged on every visit. Render-safe (no cache revalidation).
+  await sweepAutoEscalations()
 
   const [actions, owners] = await Promise.all([
     getActions(),

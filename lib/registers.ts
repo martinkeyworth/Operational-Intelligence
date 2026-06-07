@@ -5,10 +5,11 @@ import {
   recruitmentCandidates,
   trainingLearners,
   activityLog,
+  actions,
   sites,
   user as userTable,
 } from "@/lib/db/schema"
-import { desc } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 
 export type SiteOption = { id: number; name: string }
 export async function getSiteOptions(): Promise<SiteOption[]> {
@@ -17,6 +18,49 @@ export async function getSiteOptions(): Promise<SiteOption[]> {
     .from(sites)
     .orderBy(sites.name)
   return rows
+}
+
+/**
+ * Render-safe auto-escalation sweep (no cache revalidation, so it can run
+ * during a Server Component render). Escalates open, not-yet-escalated actions
+ * that are overdue by 7+ days OR have been red and open for 2+ weeks.
+ * Returns the number of actions escalated. The server-action wrapper in
+ * app/actions/registers.ts handles revalidation for explicit invocations.
+ */
+export async function sweepAutoEscalations(): Promise<number> {
+  const now = new Date()
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000)
+    .toISOString()
+    .slice(0, 10)
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000)
+
+  const open = await db
+    .select()
+    .from(actions)
+    .where(and(eq(actions.status, "Open"), eq(actions.escalated, false)))
+
+  let escalated = 0
+  for (const a of open) {
+    let reason: string | null = null
+    if (a.dueDate && String(a.dueDate) <= sevenDaysAgo) {
+      reason = "Overdue by 7+ days"
+    } else if (a.rag === "red" && a.createdAt && a.createdAt <= fourteenDaysAgo) {
+      reason = "Red for 2+ weeks without resolution"
+    }
+    if (reason) {
+      await db
+        .update(actions)
+        .set({
+          escalated: true,
+          autoEscalated: true,
+          escalatedAt: now,
+          escalationReason: reason,
+        })
+        .where(eq(actions.id, a.id))
+      escalated++
+    }
+  }
+  return escalated
 }
 
 // ---------------------------------------------------------------------------
