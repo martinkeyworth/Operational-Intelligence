@@ -16,6 +16,7 @@ import {
   Percent,
   ShieldAlert,
   LayoutGrid,
+  LifeBuoy,
   ClipboardCheck,
   CalendarRange,
   UserPlus,
@@ -45,6 +46,7 @@ export function AppShell({
   const dashboardNav = user.canViewDashboard
     ? [
         { href: "/", label: "Group Overview", icon: LayoutDashboard },
+        { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
         { href: "/sites", label: "Sites", icon: Store },
         { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
         { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },

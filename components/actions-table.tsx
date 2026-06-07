@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select"
 import { setActionStatus, assignActionOwner, setActionRisk } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
-import { AlertTriangle, Flag } from "lucide-react"
+import { AlertTriangle, Flag, Clock } from "lucide-react"
 
 const STATUSES = ["Open", "In Progress", "Blocked", "Closed"]
 
@@ -188,6 +188,12 @@ export function ActionsTable({
                         <p className="text-xs text-muted-foreground">
                           {a.description}
                         </p>
+                      )}
+                      {a.overdue && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                          <Clock className="h-3 w-3" />
+                          {a.daysOverdue} day{a.daysOverdue === 1 ? "" : "s"} overdue
+                        </span>
                       )}
                     </div>
                   </div>

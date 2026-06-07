@@ -605,6 +605,24 @@ export type ActionRow = {
   dueDate: string | null
   escalated: boolean
   isRisk: boolean
+  // Derived: open (not Closed) with a due date in the past.
+  overdue: boolean
+  // Whole days past the due date (0 if not overdue / no due date).
+  daysOverdue: number
+}
+
+/** Days an open action is past its due date (0 if none/closed/future). */
+export function computeOverdue(
+  dueDate: string | null,
+  status: string,
+  now: Date = new Date(),
+): { overdue: boolean; daysOverdue: number } {
+  if (!dueDate || status === "Closed") return { overdue: false, daysOverdue: 0 }
+  const due = new Date(dueDate + "T00:00:00")
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diffMs = today.getTime() - due.getTime()
+  if (diffMs <= 0) return { overdue: false, daysOverdue: 0 }
+  return { overdue: true, daysOverdue: Math.floor(diffMs / 86_400_000) }
 }
 
 export async function getActions(): Promise<ActionRow[]> {
@@ -616,29 +634,38 @@ export async function getActions(): Promise<ActionRow[]> {
 
   const ragRank: Record<Rag, number> = { red: 0, amber: 1, green: 2 }
   return rows
-    .map((a) => ({
-      id: a.id,
-      title: a.title,
-      description: a.description,
-      functionArea: a.functionArea,
-      siteName: a.siteId
-        ? (siteRows.find((s) => s.id === a.siteId)?.name ?? null)
-        : null,
-      owner: a.owner,
-      ownerUserId: a.ownerUserId ?? null,
-      ownerName: a.ownerUserId
-        ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
-        : null,
-      priority: a.priority,
-      status: a.status,
-      rag: a.rag as Rag,
-      dueDate: a.dueDate ? String(a.dueDate) : null,
-      escalated: a.escalated,
-      isRisk: a.isRisk,
-    }))
+    .map((a) => {
+      const dueDate = a.dueDate ? String(a.dueDate) : null
+      const { overdue, daysOverdue } = computeOverdue(dueDate, a.status)
+      return {
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        functionArea: a.functionArea,
+        siteName: a.siteId
+          ? (siteRows.find((s) => s.id === a.siteId)?.name ?? null)
+          : null,
+        owner: a.owner,
+        ownerUserId: a.ownerUserId ?? null,
+        ownerName: a.ownerUserId
+          ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
+          : null,
+        priority: a.priority,
+        status: a.status,
+        rag: a.rag as Rag,
+        dueDate,
+        escalated: a.escalated,
+        isRisk: a.isRisk,
+        overdue,
+        daysOverdue,
+      }
+    })
     .sort((a, b) => {
       if (a.status === "Closed" && b.status !== "Closed") return 1
       if (b.status === "Closed" && a.status !== "Closed") return -1
+      // Overdue items float to the top, most-overdue first.
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1
+      if (a.overdue && b.overdue) return b.daysOverdue - a.daysOverdue
       return ragRank[a.rag] - ragRank[b.rag]
     })
 }
@@ -659,6 +686,7 @@ export type FunctionAreaSummary = {
   red: number
   amber: number
   escalated: number
+  overdue: number
   risks: number
   // The single worst open action title, for an at-a-glance headline.
   topIssue: string | null
@@ -677,6 +705,7 @@ export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]>
     const red = open.filter((a) => a.rag === "red")
     const amber = open.filter((a) => a.rag === "amber")
     const escalated = open.filter((a) => a.escalated)
+    const overdue = open.filter((a) => a.overdue)
     const risks = open.filter((a) => a.isRisk)
 
     // Worst-status roll-up across open items; no open items = green.
@@ -699,6 +728,7 @@ export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]>
       red: red.length,
       amber: amber.length,
       escalated: escalated.length,
+      overdue: overdue.length,
       risks: risks.length,
       topIssue,
     }

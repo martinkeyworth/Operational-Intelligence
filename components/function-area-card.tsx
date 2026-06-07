@@ -92,6 +92,11 @@ export function FunctionAreaCard({
           {area.amber} amber
         </span>
         <span className="text-muted-foreground">{area.open} open actions</span>
+        {area.overdue > 0 && (
+          <span className="font-semibold text-rag-red">
+            {area.overdue} overdue
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
