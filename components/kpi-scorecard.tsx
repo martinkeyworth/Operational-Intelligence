@@ -11,6 +11,7 @@ export function KpiScorecard({ kpis }: { kpis: KpiResult[] }) {
         <thead>
           <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
             <th className="px-4 py-2.5 font-medium">KPI</th>
+            <th className="px-4 py-2.5 font-medium">Owner</th>
             <th className="px-4 py-2.5 text-right font-medium">This week</th>
             <th className="px-4 py-2.5 text-right font-medium">Target</th>
             <th className="px-4 py-2.5 text-right font-medium">Status</th>
@@ -28,6 +29,7 @@ export function KpiScorecard({ kpis }: { kpis: KpiResult[] }) {
                   <p className="font-medium text-foreground">{k.name}</p>
                   <p className="text-xs text-muted-foreground">{k.unit}</p>
                 </td>
+                <td className="px-4 py-3 text-foreground">{k.owner}</td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
                   {k.entered ? k.value : "—"}
                 </td>

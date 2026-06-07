@@ -1,5 +1,6 @@
 import "server-only"
-import { generateText } from "ai"
+import { generateText, generateObject } from "ai"
+import { z } from "zod"
 import { eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { weeklyReports, user as userTable } from "@/lib/db/schema"
@@ -227,5 +228,96 @@ Produce a single cohesive executive review (max ~180 words) that blends the data
     return res.text.trim()
   } catch {
     return report.aiAnalysis ?? ""
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AI root-cause analysis + recommended actions
+// ---------------------------------------------------------------------------
+
+export type RecommendedAction = {
+  functionArea: string
+  title: string
+  rationale: string
+  priority: "High" | "Medium" | "Low"
+  owner: string
+}
+
+export type RootCauseAnalysis = {
+  summary: string
+  rootCauses: { area: string; cause: string; evidence: string }[]
+  recommendedActions: RecommendedAction[]
+}
+
+const rootCauseSchema = z.object({
+  summary: z
+    .string()
+    .describe("One or two sentences naming the biggest drivers of underperformance this week."),
+  rootCauses: z
+    .array(
+      z.object({
+        area: z.string().describe("The functional area, e.g. Marketing, HR, RTB."),
+        cause: z.string().describe("The most likely underlying root cause, not just the symptom."),
+        evidence: z.string().describe("The specific number/trend from the data that supports this."),
+      }),
+    )
+    .describe("2 to 4 root causes for the worst-performing areas."),
+  recommendedActions: z
+    .array(
+      z.object({
+        functionArea: z.string().describe("Functional area the action belongs to."),
+        title: z.string().describe("A concrete, specific action (imperative, max ~12 words)."),
+        rationale: z.string().describe("Why this action addresses the root cause."),
+        priority: z.enum(["High", "Medium", "Low"]),
+        owner: z.string().describe("The role best placed to own it, e.g. COO, Social Media, Training Lead."),
+      }),
+    )
+    .describe("3 to 5 recommended actions, highest priority first."),
+})
+
+/**
+ * Run a structured root-cause analysis for a week. Produces likely root causes
+ * for the worst-performing areas plus concrete recommended actions that can be
+ * pushed straight into the action register. Falls back to an empty result if
+ * the model call fails.
+ */
+export async function runRootCauseAnalysis(
+  weekEnding: string,
+): Promise<RootCauseAnalysis> {
+  const { current, rows } = await buildComparison(weekEnding)
+
+  const tableLines = rows
+    .map(
+      (r) =>
+        `- ${r.area}: ${r.currPct}% (${r.currRag})` +
+        (r.prevPct === null
+          ? ""
+          : ` vs ${r.prevPct}% last week → ${r.trend}`),
+    )
+    .join("\n")
+
+  const prompt = `You are the group operations analyst for Less Than Zero, a barbershop group.
+Overall business RAG this week: ${current.overallRag.toUpperCase()} at ${current.overallPct}%.
+
+Area scores (this week vs last week):
+${tableLines}
+
+Diagnose the WORST-performing / declining areas. For each, identify the most likely ROOT CAUSE (the underlying driver, not just the symptom) backed by the specific number. Then propose concrete, specific recommended actions a leadership team could assign this week to fix them. Prefer high-leverage actions. Owners should be roles (COO, Social Media, Training Lead, Finance, Operations).`
+
+  const empty: RootCauseAnalysis = {
+    summary: "",
+    rootCauses: [],
+    recommendedActions: [],
+  }
+
+  try {
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: rootCauseSchema,
+      prompt,
+    })
+    return object as RootCauseAnalysis
+  } catch {
+    return empty
   }
 }

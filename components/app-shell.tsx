@@ -24,6 +24,7 @@ import {
   UserSearch,
   GraduationCap,
   Activity,
+  CalendarClock,
   LogOut,
 } from "lucide-react"
 
@@ -62,6 +63,7 @@ export function AppShell({
         { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
         { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
         { href: "/activity", label: "Activity Tracker", icon: Activity },
+        { href: "/cadence", label: "Review Cadence", icon: CalendarClock },
       ]
     : []
   const nav = [

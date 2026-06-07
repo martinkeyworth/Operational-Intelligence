@@ -809,6 +809,8 @@ export type KpiResult = {
   rag: Rag
   help: string
   entered: boolean
+  // Named accountable owner for this KPI (falls back to the role label).
+  owner: string
 }
 
 export type AreaScore = {
@@ -879,6 +881,7 @@ export async function getManualKpiResults(
       rag,
       help: def.help,
       entered,
+      owner: def.owner?.trim() || def.ownerRole,
     }
   })
 }

@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
 import { RagBadge } from "@/components/rag"
 import { NarrativeForm } from "@/components/narrative-form"
+import { RootCausePanel } from "@/components/root-cause-panel"
 import { buildComparison } from "@/lib/reporting"
 import { fmtWeekLong, type Rag } from "@/lib/data"
 import {
@@ -127,6 +128,8 @@ export default async function ReportPage({
             </p>
           )}
         </Card>
+
+        <RootCausePanel weekEnding={week} />
 
         <div className="grid gap-6 md:grid-cols-2">
           {isCosmin || user.isOwner ? (
