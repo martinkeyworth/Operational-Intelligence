@@ -174,6 +174,8 @@ export const kpis = pgTable("kpis", {
   direction: text("direction").notNull().default("higher_better"),
   frequency: text("frequency").notNull().default("Weekly"),
   ownerRole: text("owner_role").notNull(),
+  // Single named accountable owner for the KPI (in addition to the role).
+  ownerName: text("owner_name").notNull().default(""),
   escalationRule: text("escalation_rule"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
@@ -209,6 +211,12 @@ export const actions = pgTable("actions", {
   rag: text("rag").notNull().default("amber"),
   dueDate: date("due_date"),
   escalated: boolean("escalated").notNull().default(false),
+  // Auto-escalation tracking. `escalatedAt` is set when an action is escalated
+  // (manually or by the auto-escalation engine); `autoEscalated` marks engine-
+  // driven escalations; `escalationReason` records why.
+  escalatedAt: timestamp("escalated_at"),
+  escalationReason: text("escalation_reason"),
+  autoEscalated: boolean("auto_escalated").notNull().default(false),
   // Flags this action as a risk for the weekly operational meeting register.
   isRisk: boolean("is_risk").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -278,5 +286,86 @@ export const emailLog = pgTable("email_log", {
   weekEnding: date("week_ending"),
   status: text("status").notNull().default("sent"), // sent | failed
   error: text("error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// --- Governance: Decision Register -----------------------------------------
+// Completes the RAID model (Risk/Issue/Action live in the actions table; this
+// is the D). Records what was decided, by whom, when and why.
+export const decisions = pgTable("decisions", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  context: text("context"),
+  decision: text("decision").notNull(),
+  rationale: text("rationale"),
+  functionArea: text("function_area").notNull(),
+  siteId: integer("site_id"),
+  decidedBy: text("decided_by").notNull(),
+  decidedByUserId: text("decided_by_user_id"),
+  createdByUserId: text("created_by_user_id"),
+  status: text("status").notNull().default("Active"), // Active | Superseded | Reversed
+  reviewDate: date("review_date"),
+  decidedOn: date("decided_on").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+// --- Recruitment funnel (end-to-end) ---------------------------------------
+// Tracks a candidate from first contact through to hire. Stages:
+// Contacted -> Interview -> Offer -> Hired (or Rejected/Withdrawn via status).
+export const recruitmentCandidates = pgTable("recruitment_candidates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  role: text("role").notNull().default("Barber"),
+  siteId: integer("site_id"),
+  source: text("source"),
+  stage: text("stage").notNull().default("Contacted"), // Contacted | Interview | Offer | Hired
+  status: text("status").notNull().default("Active"), // Active | Rejected | Withdrawn
+  ownerUserId: text("owner_user_id"),
+  contactedOn: date("contacted_on").notNull().defaultNow(),
+  interviewOn: date("interview_on"),
+  offerOn: date("offer_on"),
+  hiredOn: date("hired_on"),
+  lastFollowUpOn: date("last_follow_up_on"),
+  followUpCount: integer("follow_up_count").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+// --- Training funnel (end-to-end) ------------------------------------------
+// Tracks an academy learner from enquiry to placement. Stages:
+// Enquiry -> Enrolled -> Completed -> Placed (into a chair).
+export const trainingLearners = pgTable("training_learners", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  program: text("program").notNull().default("Academy"),
+  siteId: integer("site_id"),
+  stage: text("stage").notNull().default("Enquiry"), // Enquiry | Enrolled | Completed | Placed
+  status: text("status").notNull().default("Active"), // Active | Dropped
+  ownerUserId: text("owner_user_id"),
+  enquiryOn: date("enquiry_on").notNull().defaultNow(),
+  enrolledOn: date("enrolled_on"),
+  completedOn: date("completed_on"),
+  placedOn: date("placed_on"),
+  placedSiteId: integer("placed_site_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+// --- Behaviour / activity tracking -----------------------------------------
+// Leading indicators (effort), as opposed to outcomes. e.g. posts made,
+// recruitment contacts, follow-ups, interviews booked. One row per
+// area+type+site+week.
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  functionArea: text("function_area").notNull(),
+  activityType: text("activity_type").notNull(),
+  siteId: integer("site_id"),
+  userId: text("user_id"),
+  weekEnding: date("week_ending").notNull(),
+  count: integer("count").notNull().default(0),
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
