@@ -10,8 +10,42 @@ import {
   user as userTable,
 } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
+import {
+  ACTIVITY_TYPES,
+  RECRUITMENT_STAGES,
+  TRAINING_STAGES,
+  type ActivityRow,
+  type ActivitySummary,
+  type DecisionRow,
+  type FunnelStageStat,
+  type RecruitmentCandidateRow,
+  type RecruitmentFunnel,
+  type SiteOption,
+  type TrainingFunnel,
+  type TrainingLearnerRow,
+} from "@/lib/registers-types"
 
-export type SiteOption = { id: number; name: string }
+// Re-export client-safe types/constants so existing server-side imports of
+// "@/lib/registers" keep working.
+export {
+  ACTIVITY_TYPES,
+  RECRUITMENT_STAGES,
+  TRAINING_STAGES,
+} from "@/lib/registers-types"
+export type {
+  ActivityRow,
+  ActivitySummary,
+  DecisionRow,
+  FunnelStageStat,
+  RecruitmentCandidateRow,
+  RecruitmentFunnel,
+  RecruitmentStage,
+  SiteOption,
+  TrainingFunnel,
+  TrainingLearnerRow,
+  TrainingStage,
+} from "@/lib/registers-types"
+
 export async function getSiteOptions(): Promise<SiteOption[]> {
   const rows = await db
     .select({ id: sites.id, name: sites.name })
@@ -68,20 +102,6 @@ export async function sweepAutoEscalations(): Promise<number> {
 // when and why.
 // ---------------------------------------------------------------------------
 
-export type DecisionRow = {
-  id: number
-  title: string
-  context: string | null
-  decision: string
-  rationale: string | null
-  functionArea: string
-  siteName: string | null
-  decidedBy: string
-  status: string
-  reviewDate: string | null
-  decidedOn: string
-}
-
 export async function getDecisions(): Promise<DecisionRow[]> {
   const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
   const rows = await db.select().from(decisions).orderBy(desc(decisions.decidedOn))
@@ -103,51 +123,6 @@ export async function getDecisions(): Promise<DecisionRow[]> {
 // ---------------------------------------------------------------------------
 // Recruitment funnel — Contacted -> Interview -> Offer -> Hired.
 // ---------------------------------------------------------------------------
-
-export const RECRUITMENT_STAGES = [
-  "Contacted",
-  "Interview",
-  "Offer",
-  "Hired",
-] as const
-export type RecruitmentStage = (typeof RECRUITMENT_STAGES)[number]
-
-export type RecruitmentCandidateRow = {
-  id: number
-  name: string
-  role: string
-  siteName: string | null
-  source: string | null
-  stage: string
-  status: string
-  ownerName: string | null
-  contactedOn: string
-  interviewOn: string | null
-  offerOn: string | null
-  hiredOn: string | null
-  lastFollowUpOn: string | null
-  followUpCount: number
-  notes: string | null
-}
-
-export type FunnelStageStat = {
-  stage: string
-  count: number
-  // Conversion from the previous stage (%) — null for the first stage.
-  convFromPrev: number | null
-}
-
-export type RecruitmentFunnel = {
-  candidates: RecruitmentCandidateRow[]
-  active: number
-  hired: number
-  rejected: number
-  totalFollowUps: number
-  // Stage funnel counts each candidate at the furthest stage they reached.
-  stages: FunnelStageStat[]
-  // End-to-end conversion: hired / total contacted (%).
-  overallConversion: number
-}
 
 function reachedStageIndex(stage: string, stages: readonly string[]): number {
   const i = stages.indexOf(stage)
@@ -233,38 +208,6 @@ export async function getRecruitmentFunnel(): Promise<RecruitmentFunnel> {
 // Training funnel — Enquiry -> Enrolled -> Completed -> Placed.
 // ---------------------------------------------------------------------------
 
-export const TRAINING_STAGES = [
-  "Enquiry",
-  "Enrolled",
-  "Completed",
-  "Placed",
-] as const
-export type TrainingStage = (typeof TRAINING_STAGES)[number]
-
-export type TrainingLearnerRow = {
-  id: number
-  name: string
-  program: string
-  siteName: string | null
-  stage: string
-  status: string
-  ownerName: string | null
-  enquiryOn: string
-  enrolledOn: string | null
-  completedOn: string | null
-  placedOn: string | null
-  notes: string | null
-}
-
-export type TrainingFunnel = {
-  learners: TrainingLearnerRow[]
-  active: number
-  placed: number
-  dropped: number
-  stages: FunnelStageStat[]
-  overallConversion: number
-}
-
 export async function getTrainingFunnel(): Promise<TrainingFunnel> {
   const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
   const userRows = await db
@@ -326,32 +269,6 @@ export async function getTrainingFunnel(): Promise<TrainingFunnel> {
 // ---------------------------------------------------------------------------
 // Behaviour / activity tracking — leading indicators (effort).
 // ---------------------------------------------------------------------------
-
-// Catalogue of trackable weekly activities by functional area.
-export const ACTIVITY_TYPES: { area: string; type: string; label: string }[] = [
-  { area: "Marketing", type: "posts", label: "Posts made" },
-  { area: "HR", type: "contacts", label: "Recruitment contacts" },
-  { area: "HR", type: "follow_ups", label: "Follow-ups" },
-  { area: "HR", type: "interviews_booked", label: "Interviews booked" },
-  { area: "Training", type: "academy_enquiries", label: "Academy enquiries" },
-]
-
-export type ActivityRow = {
-  id: number
-  functionArea: string
-  activityType: string
-  label: string
-  siteName: string | null
-  weekEnding: string
-  count: number
-  notes: string | null
-}
-
-export type ActivitySummary = {
-  weekEnding: string | null
-  byType: { area: string; type: string; label: string; count: number }[]
-  recent: ActivityRow[]
-}
 
 export async function getActivitySummary(): Promise<ActivitySummary> {
   const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)

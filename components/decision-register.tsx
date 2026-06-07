@@ -28,8 +28,8 @@ import {
   createDecision,
   setDecisionStatus,
 } from "@/app/actions/registers"
-import type { DecisionRow } from "@/lib/registers"
-import type { SiteOption } from "@/lib/registers"
+import type { DecisionRow } from "@/lib/registers-types"
+import type { SiteOption } from "@/lib/registers-types"
 import { fmtDate } from "@/lib/format"
 
 const AREAS = [

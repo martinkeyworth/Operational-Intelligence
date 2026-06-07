@@ -17,8 +17,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { logActivity } from "@/app/actions/registers"
-import type { ActivitySummary, SiteOption } from "@/lib/registers"
-import { ACTIVITY_TYPES } from "@/lib/registers"
+import type { ActivitySummary, SiteOption } from "@/lib/registers-types"
+import { ACTIVITY_TYPES } from "@/lib/registers-types"
 import { StatCard } from "@/components/ui-bits"
 import { fmtDate } from "@/lib/format"
 

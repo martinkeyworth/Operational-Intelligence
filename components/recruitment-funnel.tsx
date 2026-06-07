@@ -34,8 +34,8 @@ import type {
   RecruitmentCandidateRow,
   RecruitmentFunnel,
   SiteOption,
-} from "@/lib/registers"
-import { RECRUITMENT_STAGES } from "@/lib/registers"
+} from "@/lib/registers-types"
+import { RECRUITMENT_STAGES } from "@/lib/registers-types"
 import type { AssignableOwner } from "@/lib/data"
 import { StatCard } from "@/components/ui-bits"
 import { fmtDate } from "@/lib/format"

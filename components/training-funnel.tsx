@@ -33,8 +33,8 @@ import type {
   TrainingLearnerRow,
   TrainingFunnel,
   SiteOption,
-} from "@/lib/registers"
-import { TRAINING_STAGES } from "@/lib/registers"
+} from "@/lib/registers-types"
+import { TRAINING_STAGES } from "@/lib/registers-types"
 import type { AssignableOwner } from "@/lib/data"
 import { StatCard } from "@/components/ui-bits"
 import { fmtDate } from "@/lib/format"
