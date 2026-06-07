@@ -26,6 +26,7 @@ export const AREA_KEYS = [
   "Training",
   "HR",
   "Marketing",
+  "Strategy",
 ] as const
 export type AreaKey = (typeof AREA_KEYS)[number]
 

@@ -36,7 +36,7 @@ import {
   kpis,
   kpiValues,
 } from "@/lib/db/schema"
-import { FUNCTION_AREAS, canonicalAreaKey } from "@/lib/function-areas"
+import { FUNCTION_AREAS, canonicalAreaKey, ACTIONS_SCORED_AREAS } from "@/lib/function-areas"
 import {
   kpisForArea,
   scoreKpi,
@@ -996,6 +996,39 @@ export async function getBusinessScorecard(
   }
 
   const areas = [...opAreas, ...manualAreas]
+
+  // ---- Actions-scored areas (Strategy) ----------------------------------
+  // Areas with no operational feed and no weekly KPI catalogue are scored
+  // straight from their open action register: any open red = red, else any
+  // open amber = amber, else green. Keeps director-level work (Expansion
+  // Strategy) interlocked into the overall business RAG.
+  const allActions = await getActions()
+  for (const areaKey of ACTIONS_SCORED_AREAS) {
+    const areaCfg = FUNCTION_AREAS.find((a) => a.key === areaKey)
+    const items = allActions.filter(
+      (a) => canonicalAreaKey(a.functionArea) === areaKey,
+    )
+    const open = items.filter((a) => a.status !== "Closed")
+    const red = open.filter((a) => a.rag === "red").length
+    const amber = open.filter((a) => a.rag === "amber").length
+    const areaRag: Rag = red > 0 ? "red" : amber > 0 ? "amber" : "green"
+    const closed = items.length - open.length
+    areas.push({
+      key: areaKey,
+      label: areaCfg?.label ?? areaKey,
+      icon: areaCfg?.icon ?? "Activity",
+      ownerRole: areaCfg?.ownerRole ?? "",
+      weight: AREA_WEIGHTS[areaKey] ?? 1,
+      rag: areaRag,
+      pct: ragPct(areaRag),
+      source: "manual",
+      detail:
+        items.length === 0
+          ? "No strategic items logged"
+          : `${closed}/${items.length} milestones complete · ${open.length} open`,
+      kpis: [],
+    })
+  }
 
   // ---- Overall business RAG (weighted score band) -----------------------
   const overall = rollUpWeighted(

@@ -211,4 +211,7 @@ export const AREA_WEIGHTS: Record<string, number> = {
   Training: 1,
   HR: 1.25,
   Marketing: 0.75,
+  // Director-level expansion strategy. Weighted modestly so a backlog of
+  // strategic actions nudges, but doesn't dominate, the operational RAG.
+  Strategy: 0.75,
 }

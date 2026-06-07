@@ -69,7 +69,22 @@ export const FUNCTION_AREAS: FunctionAreaDef[] = [
     ownerRole: "Social Media",
     icon: "Megaphone",
   },
+  {
+    key: "Strategy",
+    label: "Expansion Strategy",
+    aliases: ["Strategy", "Expansion", "Expansion Strategy"],
+    description:
+      "The 5x5 expansion strategy — market analysis, growth, partnerships, financial oversight and the director-level milestones behind the 2025–2030 plan.",
+    ownerRole: "Director / COO",
+    icon: "Compass",
+  },
 ]
+
+// Areas scored from their action register only (no operational data feed and no
+// weekly KPI catalogue). These still roll up into the business scorecard via
+// their open-action RAG. Everything not listed here is either operational
+// (Capacity/RTB/Subletting/Training) or manual-KPI (HR/Marketing).
+export const ACTIONS_SCORED_AREAS = ["Strategy"] as const
 
 export function findFunctionArea(key: string): FunctionAreaDef | undefined {
   const lower = key.toLowerCase()

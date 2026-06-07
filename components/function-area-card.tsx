@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Users,
   Megaphone,
+  Compass,
   Activity,
   ArrowRight,
   AlertTriangle,
@@ -23,6 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
   GraduationCap,
   Users,
   Megaphone,
+  Compass,
   Activity,
 }
 
