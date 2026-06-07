@@ -18,7 +18,7 @@ export const auth = betterAuth({
     // Email the user a secure link to reset their password. Better Auth
     // generates the token and points `url` at our /reset-password page.
     sendResetPassword: async ({ user, url }) => {
-      await sendEmail({
+      const result = await sendEmail({
         to: user.email,
         subject: "Reset your LTZ Group password",
         kind: "password-reset",
@@ -34,6 +34,15 @@ export const auth = betterAuth({
            <p style="margin:0;color:#6b7280;font-size:12px;">If you didn't request this, you can safely ignore this email — your password won't change.</p>`,
         ),
       })
+      // Better Auth swallows send failures (to avoid leaking which addresses
+      // exist). Surface them in the server logs so an admin can diagnose — e.g.
+      // Resend's dev sender only delivers to the account owner until the domain
+      // is verified. The failure is also recorded in the emailLog table.
+      if (!result.ok) {
+        console.error(
+          `[v0] Password reset email to ${user.email} failed: ${result.error}`,
+        )
+      }
     },
     // Token lifetime in seconds (1 hour).
     resetPasswordTokenExpiresIn: 3600,

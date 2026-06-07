@@ -62,6 +62,10 @@ export default function ForgotPasswordPage() {
                   sent a link to reset your password. The link expires in 1
                   hour.
                 </p>
+                <p className="text-xs text-muted-foreground mt-3">
+                  Don&apos;t see it? Check your spam folder, or contact your
+                  administrator if it doesn&apos;t arrive shortly.
+                </p>
               </div>
               <Link
                 href="/sign-in"
