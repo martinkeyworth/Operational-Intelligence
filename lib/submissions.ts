@@ -141,11 +141,18 @@ export async function getSubmissionStatus(
           : "No learners/apprentices entered",
       })
     } else {
-      // Barbershop -> expect all active barbers' takings + a confirmation.
-      const active = activeBySite.get(s.id) ?? 0
+      // Barbershop -> expect takings for every barber the manager says is on site.
+      // The manager's declared headcount (sites.headcount) is the source of truth
+      // for "how many barbers should report". Fall back to / combine with the
+      // active barber rows so neither an unset headcount nor unloaded barber
+      // records can silently mark a site complete.
+      const headcount = Number(s.headcount ?? 0)
+      const activeRows = activeBySite.get(s.id) ?? 0
+      const expected = Math.max(headcount, activeRows)
       const reporting = reportingBySite.get(s.id) ?? 0
-      // A site with no active barbers can't be outstanding on takings.
-      const takingsSubmitted = active === 0 ? true : reporting >= active
+      // A site with no expected barbers is NOT complete — it means headcount
+      // hasn't been set / barbers haven't been loaded yet, not "nothing to do".
+      const takingsSubmitted = expected > 0 && reporting >= expected
       items.push({
         key: `takings-${s.id}`,
         category: "Takings",
@@ -153,9 +160,9 @@ export async function getSubmissionStatus(
         ownerRole: s.managerName ? `${s.managerName} (Manager)` : "Site Manager",
         submitted: takingsSubmitted,
         detail:
-          active === 0
-            ? "No active barbers"
-            : `${reporting}/${active} barbers entered`,
+          expected === 0
+            ? "Headcount not set / barbers not loaded"
+            : `${reporting}/${expected} barbers entered`,
       })
 
       items.push({
