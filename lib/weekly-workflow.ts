@@ -18,6 +18,7 @@ import {
   currentWeekEnding,
   getOrCreateReport,
   getCompanyRecipients,
+  getAllRecipients,
   buildComparison,
   runWeeklyAnalysis,
   reviewNarrative,
@@ -56,7 +57,9 @@ export async function remindUsers(weekEnding = currentWeekEnding()) {
   const report = await getOrCreateReport(weekEnding)
   if (report.remindersSentAt) return { skipped: true, reason: "already sent" }
 
-  const recipients = await getCompanyRecipients()
+  // Every registered user (barbers and external collaborators included),
+  // not just @COMPANY_DOMAIN accounts — everyone needs to submit their update.
+  const recipients = await getAllRecipients()
   const url = appBaseUrl()
   const body = (name: string) =>
     emailShell(
