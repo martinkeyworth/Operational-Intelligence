@@ -1,26 +1,44 @@
 import "server-only"
-import { Resend } from "resend"
+import nodemailer, { type Transporter } from "nodemailer"
 import { db } from "@/lib/db"
 import { emailLog } from "@/lib/db/schema"
 
-// Sending via Resend.
-// Required env var:
-//   RESEND_API_KEY  - API key from the Resend dashboard.
+// Sending via Google Workspace SMTP using an App Password.
+// This avoids any DNS changes — Google already authenticates mail sent from
+// your Workspace mailbox, so deliverability works out of the box and there is
+// no Wix/Resend DNS limitation to deal with.
+//
+// Required env vars:
+//   GMAIL_USER          - the Workspace mailbox to send as,
+//                         e.g. "martin@lessthanzerobarbers.com"
+//   GMAIL_APP_PASSWORD  - a 16-character App Password generated at
+//                         https://myaccount.google.com/apppasswords
+//                         (2-Step Verification must be on for the account).
 // Optional:
-//   EMAIL_FROM      - From header, e.g. "Less Than Zero <reports@lessthanzerobarbers.com>".
-//                     The domain MUST be verified in Resend. Until you verify
-//                     lessthanzerobarbers.com, we fall back to Resend's shared
-//                     onboarding@resend.dev sender, which only delivers to the
-//                     email address that owns the Resend account.
-const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM = process.env.EMAIL_FROM || "Less Than Zero <onboarding@resend.dev>"
+//   EMAIL_FROM          - display From header. Defaults to GMAIL_USER.
+//                         Must be the GMAIL_USER address or a verified
+//                         Workspace send-as alias.
+const GMAIL_USER = process.env.GMAIL_USER
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD
+const FROM =
+  process.env.EMAIL_FROM ||
+  (GMAIL_USER ? `Less Than Zero <${GMAIL_USER}>` : "")
 
-let _resend: Resend | null = null
-function client(): Resend | null {
-  if (!RESEND_API_KEY) return null
-  if (_resend) return _resend
-  _resend = new Resend(RESEND_API_KEY)
-  return _resend
+let _transporter: Transporter | null = null
+function transporter(): Transporter | null {
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) return null
+  if (_transporter) return _transporter
+  _transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: GMAIL_USER,
+      // App Password — strip any spaces Google shows for readability.
+      pass: GMAIL_APP_PASSWORD.replace(/\s+/g, ""),
+    },
+  })
+  return _transporter
 }
 
 export type SendArgs = {
@@ -31,9 +49,9 @@ export type SendArgs = {
   weekEnding?: string | null
 }
 
-/** Send a single email via Resend and log the outcome. Never throws —
- *  returns ok/false so the batching workflow can continue on individual
- *  failures. */
+/** Send a single email via Google Workspace SMTP and log the outcome. Never
+ *  throws — returns ok/false so the batching workflow can continue on
+ *  individual failures. */
 export async function sendEmail({
   to,
   subject,
@@ -41,25 +59,16 @@ export async function sendEmail({
   kind,
   weekEnding = null,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
-  const resend = client()
-  if (!resend) {
-    const error = "Email not configured (RESEND_API_KEY is not set)"
+  const tx = transporter()
+  if (!tx) {
+    const error =
+      "Email not configured (need GMAIL_USER and GMAIL_APP_PASSWORD)"
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
 
   try {
-    const { error: sendError } = await resend.emails.send({
-      from: FROM,
-      to,
-      subject,
-      html,
-    })
-    if (sendError) {
-      const error = sendError.message || "Resend rejected the message"
-      await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
-      return { ok: false, error }
-    }
+    await tx.sendMail({ from: FROM, to, subject, html })
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "sent" })
     return { ok: true }
   } catch (e) {
