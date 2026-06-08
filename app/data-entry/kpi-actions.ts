@@ -4,17 +4,15 @@ import { and, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { kpis, kpiValues } from "@/lib/db/schema"
-import { requireDashboard } from "@/lib/access"
+import { requireUser, canInputArea } from "@/lib/access"
 import { findKpi, scoreKpi } from "@/lib/kpi-config"
 
 /**
  * Save a single weekly functional-area KPI value (HR / Marketing). Scores it
  * RAG against its thresholds and upserts one row per KPI per week. Restricted
- * to dashboard/management users.
+ * to the lead of that KPI's functional area (owners may input any area).
  */
 export async function saveKpiValue(formData: FormData) {
-  await requireDashboard()
-
   const code = String(formData.get("code") ?? "")
   const week = String(formData.get("week") ?? "")
   const raw = formData.get("value")
@@ -22,6 +20,13 @@ export async function saveKpiValue(formData: FormData) {
 
   const def = findKpi(code)
   if (!def || !week) throw new Error("Unknown KPI or week")
+
+  // Authorise against the KPI's functional area, not just "has a dashboard".
+  const user = await requireUser()
+  if (!canInputArea(user, def.functionArea)) {
+    throw new Error("Not authorised to input this area")
+  }
+
   if (raw === null || String(raw).trim() === "") return
 
   const value = Number(raw)

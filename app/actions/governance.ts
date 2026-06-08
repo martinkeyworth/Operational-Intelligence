@@ -1,6 +1,5 @@
 "use server"
 
-import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   sites,
@@ -13,8 +12,8 @@ import {
   user,
 } from "@/lib/db/schema"
 import { and, eq, sql } from "drizzle-orm"
-import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
+import { requireDashboard, requireDataEntry } from "@/lib/access"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 
@@ -67,9 +66,7 @@ async function syncKpiAction(opts: {
 }
 
 async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error("Unauthorized")
-  return session.user
+  return requireDashboard()
 }
 
 export async function createSite(formData: FormData) {
@@ -406,7 +403,9 @@ export async function saveSubletting(formData: FormData) {
 /** Record a training academy's weekly throughput (private learners + apprentices).
  *  Below either weekly capacity is RED and raises a review action. */
 export async function saveTrainingWeek(formData: FormData) {
-  const user = await requireUser()
+  // Rendered on the weekly data-entry page, so allow any data-entry user
+  // (barbers + management) to record academy throughput.
+  const user = await requireDataEntry()
   const siteId = Number(formData.get("siteId"))
   const weekEnding = String(formData.get("weekEnding"))
   const privateLearners = Number(formData.get("privateLearners") ?? 0) || 0

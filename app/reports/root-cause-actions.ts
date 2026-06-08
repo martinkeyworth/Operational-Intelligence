@@ -1,19 +1,18 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { headers } from "next/headers"
-import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { actions } from "@/lib/db/schema"
+import { requireDashboard } from "@/lib/access"
 import {
   runRootCauseAnalysis,
   type RootCauseAnalysis,
 } from "@/lib/reporting"
 
+// Root-cause analysis + recommended-action creation belong to the weekly
+// reports (dashboard-only). Gate at dashboard level.
 async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error("Unauthorized")
-  return session.user
+  return requireDashboard()
 }
 
 /** Generate the AI root-cause analysis + recommended actions for a week. */

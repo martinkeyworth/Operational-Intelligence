@@ -1,6 +1,5 @@
 "use server"
 
-import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   decisions,
@@ -10,14 +9,16 @@ import {
   actions,
 } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
-import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { sweepAutoEscalations } from "@/lib/registers"
+import { requireDashboard } from "@/lib/access"
 
+// All register mutations here (decisions, recruitment, training funnel,
+// activity tracking, escalations) are management features. Gate them at the
+// dashboard level so data-entry-only users (barbers) can never invoke them by
+// POSTing to the server action directly.
 async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error("Unauthorized")
-  return session.user
+  return requireDashboard()
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -260,6 +261,7 @@ export async function logActivity(formData: FormData) {
  * lib/registers and handles revalidation here.
  */
 export async function runAutoEscalation() {
+  await requireUser()
   const escalated = await sweepAutoEscalations()
   if (escalated > 0) {
     revalidatePath("/actions")

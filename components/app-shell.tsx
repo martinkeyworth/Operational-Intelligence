@@ -70,7 +70,10 @@ export function AppShell({
   const nav = [
     { href: "/my-work", label: "My Work", icon: Inbox },
     ...dashboardNav,
-    { href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit },
+    // Weekly Takings is for data-entry users: barbers + any dashboard user.
+    ...(user.isBarber || user.canViewDashboard
+      ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
+      : []),
     ...(user.isCompany && user.canViewDashboard
       ? [{ href: "/admin/people", label: "People & Access", icon: Users }]
       : []),
