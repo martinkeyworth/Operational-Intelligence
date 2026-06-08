@@ -26,6 +26,7 @@ import {
   Activity,
   CalendarClock,
   Inbox,
+  Mail,
   LogOut,
 } from "lucide-react"
 
@@ -79,6 +80,9 @@ export function AppShell({
       : []),
     ...(user.isOwner
       ? [{ href: "/admin/splits", label: "Profit Split", icon: Percent }]
+      : []),
+    ...(user.isOwner
+      ? [{ href: "/admin/email", label: "Email Diagnostics", icon: Mail }]
       : []),
   ]
 
