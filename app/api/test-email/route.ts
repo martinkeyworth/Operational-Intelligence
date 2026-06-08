@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { sendEmail, emailShell } from "@/lib/email"
+import { sendEmail, emailShell, resolvedFrom } from "@/lib/email"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -50,7 +50,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ...res,
     to,
-    from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+    rawFrom: process.env.EMAIL_FROM || null,
+    resolvedFrom: resolvedFrom(),
     configured: Boolean(process.env.RESEND_API_KEY),
   })
 }

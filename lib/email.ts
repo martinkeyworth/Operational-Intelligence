@@ -24,23 +24,44 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
 function normalizeFrom(raw: string | undefined): string {
   const fallback = "Less Than Zero <onboarding@resend.dev>"
   if (!raw) return fallback
+  // Normalize unicode look-alikes and whitespace that mobile keyboards inject.
   let v = raw
     .replace(/[\u201C\u201D]/g, '"') // “ ” -> "
     .replace(/[\u2018\u2019]/g, "'") // ‘ ’ -> '
     .replace(/[\u2039\u3008\uFF1C]/g, "<") // ‹ 〈 ＜ -> <
     .replace(/[\u203A\u3009\uFF1E]/g, ">") // › 〉 ＞ -> >
+    .replace(/[\u00A0\u2007\u202F]/g, " ") // non-breaking spaces -> normal space
     .replace(/\s+/g, " ")
     .trim()
   // strip a single pair of wrapping quotes
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
     v = v.slice(1, -1).trim()
   }
-  // must contain a plausible email; otherwise fall back
-  const hasEmail = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/.test(v)
-  return hasEmail ? v : fallback
+
+  // Extract the first plausible email address anywhere in the string.
+  const emailMatch = v.match(/[^\s<>@"]+@[^\s<>@"]+\.[^\s<>@"]+/)
+  if (!emailMatch) return fallback
+  const email = emailMatch[0].toLowerCase()
+
+  // Derive the display name = whatever precedes the email / angle bracket.
+  let name = v
+    .slice(0, v.indexOf(emailMatch[0]))
+    .replace(/[<>"']/g, "")
+    .trim()
+  if (!name) name = "Less Than Zero"
+  // Strip characters that aren't valid unquoted in a display name.
+  name = name.replace(/[",;:<>@\\]/g, "").trim()
+
+  // Rebuild a guaranteed-valid RFC 5322 `Name <email>` header.
+  return `${name} <${email}>`
 }
 
 const FROM = normalizeFrom(process.env.EMAIL_FROM)
+
+/** The exact, normalized `from` header the app will hand to Resend. */
+export function resolvedFrom(): string {
+  return FROM
+}
 
 let _resend: Resend | null = null
 function client(): Resend | null {
