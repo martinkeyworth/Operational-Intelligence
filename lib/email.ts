@@ -1,54 +1,26 @@
 import "server-only"
-import nodemailer, { type Transporter } from "nodemailer"
+import { Resend } from "resend"
 import { db } from "@/lib/db"
 import { emailLog } from "@/lib/db/schema"
 
-// Sending via Gmail / Google Workspace using OAuth2 (no app password needed).
-// Required env vars:
-//   GMAIL_USER                  - the mailbox to send as, e.g.
-//                                 "martin@lessthanzerobarbers.com"
-//   GMAIL_OAUTH_CLIENT_ID       - OAuth client ID from Google Cloud Console
-//   GMAIL_OAUTH_CLIENT_SECRET   - OAuth client secret
-//   GMAIL_OAUTH_REFRESH_TOKEN   - long-lived refresh token authorised for the
-//                                 https://mail.google.com/ scope
+// Sending via Resend.
+// Required env var:
+//   RESEND_API_KEY  - API key from the Resend dashboard.
 // Optional:
-//   EMAIL_FROM                  - display From header. Defaults to GMAIL_USER.
-//                                 Must be the GMAIL_USER address or a verified
-//                                 Workspace alias/send-as.
-const GMAIL_USER = process.env.GMAIL_USER
-const OAUTH_CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID
-const OAUTH_CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET
-const OAUTH_REFRESH_TOKEN = process.env.GMAIL_OAUTH_REFRESH_TOKEN
-const FROM =
-  process.env.EMAIL_FROM ||
-  (GMAIL_USER ? `Less Than Zero <${GMAIL_USER}>` : "")
+//   EMAIL_FROM      - From header, e.g. "Less Than Zero <reports@lessthanzerobarbers.com>".
+//                     The domain MUST be verified in Resend. Until you verify
+//                     lessthanzerobarbers.com, we fall back to Resend's shared
+//                     onboarding@resend.dev sender, which only delivers to the
+//                     email address that owns the Resend account.
+const RESEND_API_KEY = process.env.RESEND_API_KEY
+const FROM = process.env.EMAIL_FROM || "Less Than Zero <onboarding@resend.dev>"
 
-let _transporter: Transporter | null = null
-function transporter(): Transporter | null {
-  if (
-    !GMAIL_USER ||
-    !OAUTH_CLIENT_ID ||
-    !OAUTH_CLIENT_SECRET ||
-    !OAUTH_REFRESH_TOKEN
-  ) {
-    return null
-  }
-  if (_transporter) return _transporter
-  _transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: {
-      // nodemailer mints short-lived access tokens from the refresh token,
-      // so we never store/expire an access token ourselves.
-      type: "OAuth2",
-      user: GMAIL_USER,
-      clientId: OAUTH_CLIENT_ID,
-      clientSecret: OAUTH_CLIENT_SECRET,
-      refreshToken: OAUTH_REFRESH_TOKEN,
-    },
-  })
-  return _transporter
+let _resend: Resend | null = null
+function client(): Resend | null {
+  if (!RESEND_API_KEY) return null
+  if (_resend) return _resend
+  _resend = new Resend(RESEND_API_KEY)
+  return _resend
 }
 
 export type SendArgs = {
@@ -59,9 +31,9 @@ export type SendArgs = {
   weekEnding?: string | null
 }
 
-/** Send a single email via Google Workspace SMTP and log the outcome. Never
- *  throws — returns ok/false so the batching workflow can continue on
- *  individual failures. */
+/** Send a single email via Resend and log the outcome. Never throws —
+ *  returns ok/false so the batching workflow can continue on individual
+ *  failures. */
 export async function sendEmail({
   to,
   subject,
@@ -69,16 +41,25 @@ export async function sendEmail({
   kind,
   weekEnding = null,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
-  const tx = transporter()
-  if (!tx) {
-    const error =
-      "Gmail OAuth2 not configured (need GMAIL_USER, GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN)"
+  const resend = client()
+  if (!resend) {
+    const error = "Email not configured (RESEND_API_KEY is not set)"
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
 
   try {
-    await tx.sendMail({ from: FROM, to, subject, html })
+    const { error: sendError } = await resend.emails.send({
+      from: FROM,
+      to,
+      subject,
+      html,
+    })
+    if (sendError) {
+      const error = sendError.message || "Resend rejected the message"
+      await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
+      return { ok: false, error }
+    }
     await logEmail({ kind, recipient: to, subject, weekEnding, status: "sent" })
     return { ok: true }
   } catch (e) {

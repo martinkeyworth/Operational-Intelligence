@@ -5,6 +5,7 @@
     { "path": "/api/cron/weekly?step=analysis", "schedule": "50 18 * * 6" },
     { "path": "/api/cron/weekly?step=cosmin-narrative", "schedule": "0 19 * * 6" },
     { "path": "/api/cron/weekly?step=board-report", "schedule": "0 20 * * 6" },
-    { "path": "/api/cron/weekly?step=martin-response", "schedule": "30 20 * * 6" }
+    { "path": "/api/cron/weekly?step=martin-response", "schedule": "30 20 * * 6" },
+    { "path": "/api/cron/weekly?step=escalate", "schedule": "0 7 * * *" }
   ]
 }

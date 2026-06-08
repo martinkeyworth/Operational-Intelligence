@@ -5,6 +5,7 @@ import { weeklyReports } from "@/lib/db/schema"
 import { fmtWeekLong } from "@/lib/data"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import { getSubmissionStatus } from "@/lib/submissions"
+import { sweepAutoEscalations } from "@/lib/registers"
 import { OWNER_EMAILS } from "@/lib/access-types"
 import {
   currentWeekEnding,
@@ -339,6 +340,42 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
   return { sent: res.ok, to: martin.email }
 }
 
+// Daily — run the auto-escalation sweep so overdue / persistently-red actions
+// escalate on time without anyone having to open the Actions page. When new
+// items escalate, email the owners (Martin + Cosmin) a digest so the "AI timed
+// actions" are visible, not silent.
+export async function runDailyEscalation() {
+  const escalated = await sweepAutoEscalations()
+  if (escalated === 0) return { escalated: 0, notified: 0 }
+
+  const recipients = await getCompanyRecipients()
+  const owners = recipients.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+  const url = appBaseUrl()
+  const html = emailShell(
+    "Actions auto-escalated",
+    `<p style="margin:0 0 12px;"><strong>${escalated}</strong> open ${
+      escalated === 1 ? "action has" : "actions have"
+    } been automatically escalated because they are overdue by 7+ days or have been red for 2+ weeks without resolution.</p>
+     <p style="margin:16px 0;"><a href="${url}/actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review escalated actions</a></p>
+     <p style="margin:0;color:#6b7280;">This is an automated daily check.</p>`,
+  )
+
+  let notified = 0
+  for (const owner of owners) {
+    const res = await sendEmail({
+      to: owner.email,
+      subject: `${escalated} action${escalated === 1 ? "" : "s"} auto-escalated`,
+      html,
+      kind: "auto_escalation",
+      weekEnding: null,
+    })
+    if (res.ok) notified++
+  }
+  return { escalated, notified }
+}
+
 export const STEPS = {
   reminders: remindUsers,
   "submission-alert": submissionAlert,
@@ -346,6 +383,7 @@ export const STEPS = {
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,
   "martin-response": requestMartinResponse,
+  escalate: runDailyEscalation,
 } as const
 
 export type StepName = keyof typeof STEPS
