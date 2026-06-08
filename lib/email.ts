@@ -13,7 +13,34 @@ import { emailLog } from "@/lib/db/schema"
 //                     onboarding@resend.dev sender, which only delivers to the
 //                     email address that owns the Resend account.
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM = process.env.EMAIL_FROM || "Less Than Zero <onboarding@resend.dev>"
+
+/** Normalize the EMAIL_FROM value so common copy/paste issues (esp. from
+ *  mobile keyboards) don't produce an invalid Resend `from` header:
+ *   - trim whitespace / stray newlines
+ *   - strip wrapping single or double quotes
+ *   - replace curly quotes/brackets with plain ASCII < > " '
+ *   - collapse internal whitespace
+ *  Falls back to Resend's shared sender if the result still looks invalid. */
+function normalizeFrom(raw: string | undefined): string {
+  const fallback = "Less Than Zero <onboarding@resend.dev>"
+  if (!raw) return fallback
+  let v = raw
+    .replace(/[\u201C\u201D]/g, '"') // “ ” -> "
+    .replace(/[\u2018\u2019]/g, "'") // ‘ ’ -> '
+    .replace(/[\u2039\u3008\uFF1C]/g, "<") // ‹ 〈 ＜ -> <
+    .replace(/[\u203A\u3009\uFF1E]/g, ">") // › 〉 ＞ -> >
+    .replace(/\s+/g, " ")
+    .trim()
+  // strip a single pair of wrapping quotes
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim()
+  }
+  // must contain a plausible email; otherwise fall back
+  const hasEmail = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/.test(v)
+  return hasEmail ? v : fallback
+}
+
+const FROM = normalizeFrom(process.env.EMAIL_FROM)
 
 let _resend: Resend | null = null
 function client(): Resend | null {
