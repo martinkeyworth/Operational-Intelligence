@@ -2,7 +2,6 @@ import "server-only"
 import { db } from "@/lib/db"
 import {
   sites,
-  barbers,
   weeklyTakings,
   siteConfirmations,
   sublettingTakings,
@@ -64,7 +63,6 @@ export async function getSubmissionStatus(
 ): Promise<SubmissionSummary> {
   const [
     siteRows,
-    activeBarberRows,
     takingsRows,
     confirmRows,
     subletSiteIds,
@@ -72,14 +70,6 @@ export async function getSubmissionStatus(
     trainingWeekRows,
   ] = await Promise.all([
     db.select().from(sites),
-    db
-      .select({
-        siteId: barbers.siteId,
-        count: sql<number>`count(*)`,
-      })
-      .from(barbers)
-      .where(eq(barbers.active, true))
-      .groupBy(barbers.siteId),
     db
       .select({
         siteId: weeklyTakings.siteId,
@@ -110,9 +100,6 @@ export async function getSubmissionStatus(
       .where(eq(trainingWeeks.weekEnding, week)),
   ])
 
-  const activeBySite = new Map(
-    activeBarberRows.map((r) => [r.siteId, Number(r.count)]),
-  )
   const reportingBySite = new Map(
     takingsRows.map((r) => [r.siteId, Number(r.count)]),
   )
@@ -141,18 +128,15 @@ export async function getSubmissionStatus(
           : "No learners/apprentices entered",
       })
     } else {
-      // Barbershop -> expect takings for every barber the manager says is on site.
-      // The manager's declared headcount (sites.headcount) is the source of truth
-      // for "how many barbers should report". Fall back to / combine with the
-      // active barber rows so neither an unset headcount nor unloaded barber
-      // records can silently mark a site complete.
-      const headcount = Number(s.headcount ?? 0)
-      const activeRows = activeBySite.get(s.id) ?? 0
-      const expected = Math.max(headcount, activeRows)
+      // Barbershop -> the manager's DECLARED headcount (sites.headcount) is the
+      // single source of truth for how many barbers should report takings.
+      // We do NOT infer it from barber records or submitted figures.
+      const declared = Number(s.headcount ?? 0)
       const reporting = reportingBySite.get(s.id) ?? 0
-      // A site with no expected barbers is NOT complete — it means headcount
-      // hasn't been set / barbers haven't been loaded yet, not "nothing to do".
-      const takingsSubmitted = expected > 0 && reporting >= expected
+      // Complete only when every declared barber has takings entered.
+      // Declared 0 means the manager hasn't set headcount yet -> outstanding,
+      // never auto-green.
+      const takingsSubmitted = declared > 0 && reporting >= declared
       items.push({
         key: `takings-${s.id}`,
         category: "Takings",
@@ -160,9 +144,9 @@ export async function getSubmissionStatus(
         ownerRole: s.managerName ? `${s.managerName} (Manager)` : "Site Manager",
         submitted: takingsSubmitted,
         detail:
-          expected === 0
-            ? "Headcount not set / barbers not loaded"
-            : `${reporting}/${expected} barbers entered`,
+          declared === 0
+            ? "Headcount not declared by manager"
+            : `${reporting}/${declared} barbers entered`,
       })
 
       items.push({
