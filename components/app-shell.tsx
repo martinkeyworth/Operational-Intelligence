@@ -25,6 +25,7 @@ import {
   GraduationCap,
   Activity,
   CalendarClock,
+  Inbox,
   LogOut,
 } from "lucide-react"
 
@@ -67,6 +68,7 @@ export function AppShell({
       ]
     : []
   const nav = [
+    { href: "/my-work", label: "My Work", icon: Inbox },
     ...dashboardNav,
     { href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit },
     ...(user.isCompany && user.canViewDashboard
