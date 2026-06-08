@@ -1,9 +1,9 @@
 "use server"
 
 import { requireOwner } from "@/lib/access"
-import { sendEmail } from "@/lib/email"
+import { sendEmail, resolvedFrom } from "@/lib/email"
 
-export type TestEmailResult = { ok: boolean; to?: string; error?: string }
+export type TestEmailResult = { ok: boolean; to?: string; error?: string; from?: string }
 
 /**
  * Owner-only: send a test email to the currently logged-in owner's own
@@ -27,7 +27,7 @@ export async function sendTestEmail(): Promise<TestEmailResult> {
     weekEnding: null,
   })
 
-  return { ok: res.ok, to: owner.email, error: res.error }
+  return { ok: res.ok, to: owner.email, error: res.error, from: resolvedFrom() }
 }
 
 /**
@@ -45,7 +45,6 @@ export async function sendTestEmailTo(
   if (!looksValid) {
     return { ok: false, error: "Enter a valid email address (e.g. name@example.com)." }
   }
-
   const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#111827;line-height:1.6;">
       <h2 style="margin:0 0 12px;font-size:18px;">Test email</h2>
       <p style="margin:0 0 12px;">This is a test from the Less Than Zero dashboard, sent to confirm delivery to your address.</p>
@@ -60,5 +59,5 @@ export async function sendTestEmailTo(
     weekEnding: null,
   })
 
-  return { ok: res.ok, to: recipient, error: res.error }
+  return { ok: res.ok, to: recipient, error: res.error, from: resolvedFrom() }
 }

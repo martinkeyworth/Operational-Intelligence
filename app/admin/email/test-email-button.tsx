@@ -26,6 +26,11 @@ function ResultBanner({ result, otherLabel }: { result: TestEmailResult; otherLa
           Failed: <span className="font-mono">{result.error}</span>
         </p>
       )}
+      {result.from && (
+        <p className="mt-2 text-xs opacity-80">
+          Sent from: <span className="font-mono break-all">{result.from}</span>
+        </p>
+      )}
     </div>
   )
 }

@@ -5,14 +5,20 @@ import { emailLog } from "@/lib/db/schema"
 
 // Sending via Resend (https://resend.com).
 // Required env var:
-//   RESEND_API_KEY  - API key from the Resend dashboard.
+//   RESEND_API_KEY  - API key from the Resend dashboard (must belong to the
+//                     team where theltzgroup.com is verified).
 // Optional:
-//   EMAIL_FROM      - From header, e.g. "Less Than Zero <reports@lessthanzerobarbers.com>".
-//                     The domain MUST be verified in Resend. Until you verify
-//                     lessthanzerobarbers.com, we fall back to Resend's shared
-//                     onboarding@resend.dev sender, which only delivers to the
-//                     email address that owns the Resend account.
+//   EMAIL_FROM      - Override the From header, e.g. "Less Than Zero <reports@theltzgroup.com>".
+//                     The domain MUST be verified in Resend. When unset, we use
+//                     DEFAULT_FROM below, which is on the already-verified
+//                     theltzgroup.com domain so delivery to any recipient works
+//                     without depending on an env var being present.
 const RESEND_API_KEY = process.env.RESEND_API_KEY
+
+// theltzgroup.com is verified in Resend, so this default lets the app send to
+// anyone even if EMAIL_FROM is not configured in a given environment.
+const VERIFIED_DOMAIN = "theltzgroup.com"
+const DEFAULT_FROM = `Less Than Zero <noreply@${VERIFIED_DOMAIN}>`
 
 /** Normalize the EMAIL_FROM value so common copy/paste issues (esp. from
  *  mobile keyboards) don't produce an invalid Resend `from` header:
@@ -20,9 +26,10 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
  *   - strip wrapping single or double quotes
  *   - replace curly quotes/brackets with plain ASCII < > " '
  *   - collapse internal whitespace
- *  Falls back to Resend's shared sender if the result still looks invalid. */
+ *  Falls back to the verified-domain DEFAULT_FROM if the result is missing,
+ *  invalid, or not on the verified sending domain. */
 function normalizeFrom(raw: string | undefined): string {
-  const fallback = "Less Than Zero <onboarding@resend.dev>"
+  const fallback = DEFAULT_FROM
   if (!raw) return fallback
   // Normalize unicode look-alikes and whitespace that mobile keyboards inject.
   let v = raw
@@ -53,7 +60,15 @@ function normalizeFrom(raw: string | undefined): string {
   name = name.replace(/[",;:<>@\\]/g, "").trim()
 
   // Rebuild a guaranteed-valid RFC 5322 `Name <email>` header.
-  return `${name} <${email}>`
+  const rebuilt = `${name} <${email}>`
+
+  // Guard: only trust EMAIL_FROM if it's on the verified sending domain.
+  // Any other domain (e.g. a stale lessthanzerobarbers.com value) would be
+  // rejected by Resend for all recipients except the account owner, so we
+  // force the known-verified default instead.
+  if (!email.endsWith("@" + VERIFIED_DOMAIN)) return fallback
+
+  return rebuilt
 }
 
 const FROM = normalizeFrom(process.env.EMAIL_FROM)

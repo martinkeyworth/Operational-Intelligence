@@ -4,6 +4,9 @@ import { PageHeader } from "@/components/ui-bits"
 import { TestEmailButton } from "./test-email-button"
 import { resolvedFrom } from "@/lib/email"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 export default async function EmailDiagnosticsPage() {
   const owner = await requireOwner()
   const from = resolvedFrom()
