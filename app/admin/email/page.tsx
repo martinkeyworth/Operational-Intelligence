@@ -11,7 +11,7 @@ export default async function EmailDiagnosticsPage() {
       <PageHeader
         meta="Admin"
         title="Email diagnostics"
-        subtitle="Send yourself a test email to confirm Google Workspace delivery is working from the live site."
+        subtitle="Send yourself a test email to confirm delivery is working from the live site."
       />
 
       <div className="space-y-6 px-5 py-6 md:px-8">
