@@ -1,8 +1,15 @@
 import "server-only"
-import { and, eq, ne } from "drizzle-orm"
+import { and, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
-import { weeklyReports, actions, user as userTable } from "@/lib/db/schema"
+import {
+  weeklyReports,
+  actions,
+  user as userTable,
+  weeklyTakings,
+  sites,
+} from "@/lib/db/schema"
 import { fmtWeekLong } from "@/lib/data"
+import { fmtGBP } from "@/lib/format"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import { getSubmissionStatus } from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
@@ -340,6 +347,94 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
   return { sent: res.ok, to: martin.email }
 }
 
+// Weekly — email Martin & Cosmin the cash vs card Ready-To-Bank (RTB / house
+// rent share) for the week, broken down by brand. RTB cash = sum of cash_rent,
+// RTB card = sum of card_rent across all takings for the week, grouped by the
+// site's brand.
+export async function sendBrandRtbSummary(weekEnding = currentWeekEnding()) {
+  const rows = await db
+    .select({
+      brand: sites.brand,
+      cashRtb: sql<number>`coalesce(sum(${weeklyTakings.cashRent}), 0)`,
+      cardRtb: sql<number>`coalesce(sum(${weeklyTakings.cardRent}), 0)`,
+    })
+    .from(weeklyTakings)
+    .innerJoin(sites, eq(weeklyTakings.siteId, sites.id))
+    .where(eq(weeklyTakings.weekEnding, weekEnding))
+    .groupBy(sites.brand)
+    .orderBy(sites.brand)
+
+  const brands = rows.map((r) => ({
+    brand: r.brand,
+    cash: Number(r.cashRtb ?? 0),
+    card: Number(r.cardRtb ?? 0),
+  }))
+  const totalCash = brands.reduce((a, b) => a + b.cash, 0)
+  const totalCard = brands.reduce((a, b) => a + b.card, 0)
+  const grand = totalCash + totalCard
+
+  const rowsHtml =
+    brands.length === 0
+      ? `<tr><td colspan="4" style="padding:12px 0;color:#6b7280;">No takings recorded for this week yet.</td></tr>`
+      : brands
+          .map(
+            (b) =>
+              `<tr>
+                <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;">${esc(
+                  b.brand,
+                )}</td>
+                <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;text-align:right;">${fmtGBP(
+                  b.cash,
+                )}</td>
+                <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;text-align:right;">${fmtGBP(
+                  b.card,
+                )}</td>
+                <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600;">${fmtGBP(
+                  b.cash + b.card,
+                )}</td>
+              </tr>`,
+          )
+          .join("")
+
+  const url = appBaseUrl()
+  const html = emailShell(
+    `Cash & card RTB by brand · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;">Ready-To-Bank (house rent share) for the week ending <strong>${fmtWeekLong(
+      weekEnding,
+    )}</strong>, split by payment method and broken down by brand.</p>
+     <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
+       <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
+         <th style="padding:0 0 6px;">Brand</th>
+         <th style="padding:0 0 6px;text-align:right;">Cash RTB</th>
+         <th style="padding:0 0 6px;text-align:right;">Card RTB</th>
+         <th style="padding:0 0 6px;text-align:right;">Total</th>
+       </tr></thead>
+       <tbody>${rowsHtml}</tbody>
+       <tfoot><tr style="font-weight:700;">
+         <td style="padding:10px 8px 0 0;">All brands</td>
+         <td style="padding:10px 8px 0 0;text-align:right;">${fmtGBP(totalCash)}</td>
+         <td style="padding:10px 8px 0 0;text-align:right;">${fmtGBP(totalCard)}</td>
+         <td style="padding:10px 0 0;text-align:right;">${fmtGBP(grand)}</td>
+       </tr></tfoot>
+     </table>
+     <p style="margin:16px 0;"><a href="${url}/reports" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View full report</a></p>
+     <p style="margin:0;color:#6b7280;">Automated weekly summary.</p>`,
+  )
+
+  let sent = 0
+  for (const email of OWNER_EMAILS) {
+    const res = await sendEmail({
+      to: email,
+      subject: `Cash & card RTB by brand (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "brand_rtb_summary",
+      weekEnding,
+    })
+    if (res.ok) sent++
+  }
+  return { brands: brands.length, totalCash, totalCard, sent }
+}
+
 // Daily 07:00 — email each owner the open RED actions assigned to them, so the
 // person responsible gets a direct daily nudge (not just a leadership digest).
 // Actions are matched to a user by ownerUserId where set, otherwise by the
@@ -491,6 +586,7 @@ export const STEPS = {
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,
   "martin-response": requestMartinResponse,
+  "brand-rtb": sendBrandRtbSummary,
   "red-action-reminders": remindRedActionOwners,
   escalate: runDailyEscalation,
 } as const
