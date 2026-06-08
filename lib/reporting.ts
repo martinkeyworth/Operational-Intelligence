@@ -77,6 +77,19 @@ export async function getCompanyRecipients(): Promise<
   return rows.filter((r) => r.email.toLowerCase().endsWith(`@${COMPANY_DOMAIN}`))
 }
 
+/**
+ * Every registered user, regardless of email domain. Used for the Saturday
+ * 17:00 "update your section" reminder so external collaborators are nudged
+ * too — not just @COMPANY_DOMAIN accounts.
+ */
+export async function getAllRecipients(): Promise<
+  { name: string; email: string }[]
+> {
+  return db
+    .select({ name: userTable.name, email: userTable.email })
+    .from(userTable)
+}
+
 function diffLabel(curr: number, prev: number | null): string {
   if (prev === null) return "new"
   if (curr > prev) return "improving"
