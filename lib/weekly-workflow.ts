@@ -1,5 +1,5 @@
 import "server-only"
-import { and, eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { weeklyReports, actions, user as userTable } from "@/lib/db/schema"
 import { fmtWeekLong } from "@/lib/data"
@@ -349,7 +349,7 @@ export async function remindRedActionOwners() {
   const redOpen = await db
     .select()
     .from(actions)
-    .where(and(eq(actions.status, "Open"), eq(actions.rag, "red")))
+    .where(and(ne(actions.status, "Closed"), eq(actions.rag, "red")))
 
   if (redOpen.length === 0) {
     return { owners: 0, emailsSent: 0, actions: 0, unassigned: 0 }
@@ -411,9 +411,9 @@ export async function remindRedActionOwners() {
       `<p style="margin:0 0 12px;">Hi ${esc(r.name || "there")},</p>
        <p style="margin:0 0 12px;">You have ${ragChip("red")} <strong>${
          r.items.length
-       }</strong> open ${
+       }</strong> ${
          r.items.length === 1 ? "action" : "actions"
-       } currently rated red. Please review and update ${
+       } currently rated red and not yet closed. Please review and update ${
          r.items.length === 1 ? "it" : "them"
        } today.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
