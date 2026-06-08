@@ -1,7 +1,7 @@
 import "server-only"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/lib/db"
-import { weeklyReports } from "@/lib/db/schema"
+import { weeklyReports, actions, user as userTable } from "@/lib/db/schema"
 import { fmtWeekLong } from "@/lib/data"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import { getSubmissionStatus } from "@/lib/submissions"
@@ -340,6 +340,114 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
   return { sent: res.ok, to: martin.email }
 }
 
+// Daily 07:00 — email each owner the open RED actions assigned to them, so the
+// person responsible gets a direct daily nudge (not just a leadership digest).
+// Actions are matched to a user by ownerUserId where set, otherwise by the
+// owner name matching a registered user's name. Actions with no resolvable
+// email are skipped (and reported) so nothing fails silently.
+export async function remindRedActionOwners() {
+  const redOpen = await db
+    .select()
+    .from(actions)
+    .where(and(eq(actions.status, "Open"), eq(actions.rag, "red")))
+
+  if (redOpen.length === 0) {
+    return { owners: 0, emailsSent: 0, actions: 0, unassigned: 0 }
+  }
+
+  const users = await db
+    .select({ id: userTable.id, name: userTable.name, email: userTable.email })
+    .from(userTable)
+  const byId = new Map(users.map((u) => [u.id, u]))
+  const byName = new Map(
+    users.map((u) => [u.name.trim().toLowerCase(), u]),
+  )
+
+  // Group red actions by the resolved recipient email.
+  type Recipient = { email: string; name: string; items: typeof redOpen }
+  const groups = new Map<string, Recipient>()
+  let unassigned = 0
+
+  for (const a of redOpen) {
+    const u =
+      (a.ownerUserId ? byId.get(a.ownerUserId) : undefined) ??
+      byName.get(a.owner.trim().toLowerCase())
+    if (!u) {
+      unassigned++
+      continue
+    }
+    const key = u.email.toLowerCase()
+    if (!groups.has(key)) {
+      groups.set(key, { email: u.email, name: u.name, items: [] })
+    }
+    groups.get(key)!.items.push(a)
+  }
+
+  const url = appBaseUrl()
+  let emailsSent = 0
+  let actionsCovered = 0
+
+  for (const r of groups.values()) {
+    actionsCovered += r.items.length
+    const rowsHtml = r.items
+      .map(
+        (a) =>
+          `<tr>
+            <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;">${esc(
+              a.title,
+            )}</td>
+            <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;color:#6b7280;">${esc(
+              a.functionArea,
+            )}</td>
+            <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:${
+              a.dueDate ? "#dc2626" : "#6b7280"
+            };">${a.dueDate ? `Due ${String(a.dueDate)}` : "No due date"}</td>
+          </tr>`,
+      )
+      .join("")
+
+    const html = emailShell(
+      "Your red actions need attention",
+      `<p style="margin:0 0 12px;">Hi ${esc(r.name || "there")},</p>
+       <p style="margin:0 0 12px;">You have ${ragChip("red")} <strong>${
+         r.items.length
+       }</strong> open ${
+         r.items.length === 1 ? "action" : "actions"
+       } currently rated red. Please review and update ${
+         r.items.length === 1 ? "it" : "them"
+       } today.</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
+         <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
+           <th style="padding:0 0 6px;">Action</th>
+           <th style="padding:0 0 6px;">Area</th>
+           <th style="padding:0 0 6px;text-align:right;">Due</th>
+         </tr></thead>
+         <tbody>${rowsHtml}</tbody>
+       </table>
+       <p style="margin:16px 0;"><a href="${url}/actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review my actions</a></p>
+       <p style="margin:0;color:#6b7280;">This is an automated daily reminder sent at 07:00.</p>`,
+    )
+
+    const res = await sendEmail({
+      to: r.email,
+      subject: `${r.items.length} red action${
+        r.items.length === 1 ? "" : "s"
+      } need your attention`,
+      html,
+      kind: "red_action_reminder",
+      weekEnding: null,
+    })
+    if (res.ok) emailsSent++
+  }
+
+  return {
+    owners: groups.size,
+    emailsSent,
+    actions: actionsCovered,
+    unassigned,
+  }
+}
+
 // Daily — run the auto-escalation sweep so overdue / persistently-red actions
 // escalate on time without anyone having to open the Actions page. When new
 // items escalate, email the owners (Martin + Cosmin) a digest so the "AI timed
@@ -383,6 +491,7 @@ export const STEPS = {
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,
   "martin-response": requestMartinResponse,
+  "red-action-reminders": remindRedActionOwners,
   escalate: runDailyEscalation,
 } as const
 
