@@ -77,10 +77,22 @@ function toItem(a: ActionRow, reasons: MyWorkReason[]): MyWorkItem {
   }
 }
 
+// Only genuinely actionable entries belong in a personal task feed. The
+// imported HR library was loaded with entry_type "Action", but its reference
+// artifacts are distinguished by a title prefix (Process: / Form: / Data
+// Capture: / Resource:). Those are documentation, not work to do.
+const REFERENCE_TITLE = /^(process|form|data capture|resource|policy|template)\s*:/i
+
+function isActionable(a: ActionRow): boolean {
+  if (a.status === "Closed") return false
+  if (REFERENCE_TITLE.test(a.title)) return false
+  return true
+}
+
 /** Build the personal attention feed for the signed-in user. */
 export async function getMyWork(user: AccessUser): Promise<MyWork> {
   const actions = await getActions()
-  const open = actions.filter((a) => a.status !== "Closed")
+  const open = actions.filter(isActionable)
 
   // Effective areas this user can act on (covers leadAreas + legacy flags +
   // owners, who can input everywhere).
