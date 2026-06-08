@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { EditSiteInfoDialog } from "@/components/edit-site-info-dialog"
 import { SubletCard } from "@/components/sublet-card"
 import { CapacityCard } from "@/components/capacity-card"
 import { TrainingCard } from "@/components/training-card"
@@ -79,6 +80,20 @@ export default async function SiteDetailPage({
       >
         {siteWeek && <RagBadge rag={siteWeek.rag} className="px-3 py-1 text-sm" />}
         {week && <WeekSelector weeks={weeks} current={week} />}
+        {!isTraining && (
+          <EditSiteInfoDialog
+            siteId={siteId}
+            name={site.name}
+            location={site.location}
+            brand={site.brand}
+            region={site.region}
+            managerName={site.managerName}
+            siteType={site.siteType}
+            headcount={site.headcount}
+            chairs={site.chairs}
+            chairCapacity={site.chairCapacity}
+          />
+        )}
         {week && siteWeek && (
           <ConfirmSiteDialog
             siteId={siteId}
@@ -125,6 +140,60 @@ export default async function SiteDetailPage({
                 )}
               />
             </div>
+
+            {!isTraining && (
+              <Card className="p-5">
+                <div className="mb-4">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Site info
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Capacity, chairs and barbers — set by the manager
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Capacity</p>
+                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                      {site.chairCapacity}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Chairs</p>
+                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                      {site.chairs}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Barbers</p>
+                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                      {site.headcount}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Submitted this week
+                    </p>
+                    <p
+                      className={`text-2xl font-semibold tabular-nums ${
+                        site.headcount > 0 &&
+                        siteWeek.reportingBarbers >= site.headcount
+                          ? "text-rag-green"
+                          : "text-rag-amber"
+                      }`}
+                    >
+                      {siteWeek.reportingBarbers}/{site.headcount}
+                    </p>
+                  </div>
+                </div>
+                {site.headcount === 0 && (
+                  <p className="mt-3 text-xs text-rag-amber">
+                    Number of barbers not set — update Site info so the weekly
+                    tally can track submissions.
+                  </p>
+                )}
+              </Card>
+            )}
 
             {capacity && isTraining && (
               <TrainingCard week={week} kpis={capacity} />

@@ -87,7 +87,7 @@ export function AddSiteDialog() {
                 <Input id="managerName" name="managerName" placeholder="Name" />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="headcount">Headcount</Label>
+                <Label htmlFor="headcount">Number of barbers</Label>
                 <Input
                   id="headcount"
                   name="headcount"
@@ -114,20 +114,35 @@ export function AddSiteDialog() {
               </select>
             </div>
             {siteType === "barbershop" ? (
-              <div className="grid gap-2">
-                <Label htmlFor="chairCapacity">Chair capacity</Label>
-                <Input
-                  id="chairCapacity"
-                  name="chairCapacity"
-                  type="number"
-                  min={0}
-                  step="1"
-                  placeholder="e.g. 8"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Anything below capacity is flagged red (underutilised). RTB is
-                  assumed at £500/barber/week.
-                </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="chairCapacity">Capacity</Label>
+                  <Input
+                    id="chairCapacity"
+                    name="chairCapacity"
+                    type="number"
+                    min={0}
+                    step="1"
+                    placeholder="e.g. 10"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Max barbers the site could ever support.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="chairs">Number of chairs</Label>
+                  <Input
+                    id="chairs"
+                    name="chairs"
+                    type="number"
+                    min={0}
+                    step="1"
+                    placeholder="e.g. 8"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Physical chairs installed.
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">

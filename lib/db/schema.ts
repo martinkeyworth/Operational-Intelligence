@@ -89,8 +89,10 @@ export const sites = pgTable("sites", {
   rag: text("rag").notNull().default("green"),
   // Site type drives which capacity KPIs apply.
   siteType: text("site_type").notNull().default("barbershop"), // barbershop | training
-  // Barbershop capacity: number of chairs the site can run.
+  // Barbershop CAPACITY: the most barbers the site could ever support.
   chairCapacity: integer("chair_capacity").notNull().default(0),
+  // Physical chairs installed at the site (between capacity and barbers).
+  chairs: integer("chairs").notNull().default(0),
   // Weekly Revenue-To-Business assumption per barber (£).
   rtbPerBarber: numeric("rtb_per_barber").notNull().default("500"),
   // Training capacity: weekly private learners and apprentices.

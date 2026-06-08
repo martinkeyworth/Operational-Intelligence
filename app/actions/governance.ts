@@ -79,6 +79,7 @@ export async function createSite(formData: FormData) {
   const headcount = Number(formData.get("headcount") ?? 0) || 0
   const siteType = String(formData.get("siteType") ?? "barbershop").trim()
   const chairCapacity = Number(formData.get("chairCapacity") ?? 0) || 0
+  const chairs = Number(formData.get("chairs") ?? 0) || 0
   const learnerCapacity = Number(formData.get("learnerCapacity") ?? 0) || 0
   const apprenticeCapacity = Number(formData.get("apprenticeCapacity") ?? 0) || 0
   if (!name || !location) throw new Error("Name and location are required")
@@ -92,6 +93,7 @@ export async function createSite(formData: FormData) {
     headcount,
     siteType: siteType === "training" ? "training" : "barbershop",
     chairCapacity,
+    chairs,
     learnerCapacity,
     apprenticeCapacity,
     monthlyTarget: "0",
@@ -114,6 +116,7 @@ export async function editSite(formData: FormData) {
   const headcount = Number(formData.get("headcount") ?? 0) || 0
   const siteType = String(formData.get("siteType") ?? "barbershop").trim()
   const chairCapacity = Number(formData.get("chairCapacity") ?? 0) || 0
+  const chairs = Number(formData.get("chairs") ?? 0) || 0
   const learnerCapacity = Number(formData.get("learnerCapacity") ?? 0) || 0
   const apprenticeCapacity = Number(formData.get("apprenticeCapacity") ?? 0) || 0
   if (!name || !location) throw new Error("Name and location are required")
@@ -129,6 +132,7 @@ export async function editSite(formData: FormData) {
       headcount,
       siteType: siteType === "training" ? "training" : "barbershop",
       chairCapacity,
+      chairs,
       learnerCapacity,
       apprenticeCapacity,
     })
