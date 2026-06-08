@@ -99,8 +99,8 @@ export default async function SitesPage({
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="relative mt-0.5 shrink-0">
                       <Image
-                        src={brandLogo(s.brand) || "/placeholder.svg"}
-                        alt={`${s.brand} logo`}
+                        src={brandLogo(s.brand, s.siteType) || "/placeholder.svg"}
+                        alt={`${s.siteType === "training" ? "LTZ Training Academy" : s.brand} logo`}
                         width={40}
                         height={40}
                         className="h-10 w-10 rounded-md object-cover"

@@ -44,14 +44,24 @@ export const SITE_BRANDS: Record<string, Brand> = {
 /** The list of brand options for pickers. */
 export const SITE_BRAND_OPTIONS = Object.keys(SITE_BRANDS)
 
-/** Resolve a site brand's logo, falling back to the group mark. */
-export function brandLogo(brand: string | null | undefined): string {
-  if (!brand) return GROUP_BRAND.logo
-  return SITE_BRANDS[brand]?.logo ?? GROUP_BRAND.logo
-}
-
-/** Resolve a full brand record, falling back to the group brand. */
-export function getBrand(brand: string | null | undefined): Brand {
+/**
+ * Resolve a full brand record. Training-academy sites use the LTZ Training
+ * Academy mark regardless of their stored brand; barbershops resolve by brand
+ * and fall back to the group brand.
+ */
+export function getBrand(
+  brand: string | null | undefined,
+  siteType?: string | null,
+): Brand {
+  if (siteType === "training") return TRAINING_BRAND
   if (!brand) return GROUP_BRAND
   return SITE_BRANDS[brand] ?? GROUP_BRAND
+}
+
+/** Resolve a site brand's logo, falling back to the group mark. */
+export function brandLogo(
+  brand: string | null | undefined,
+  siteType?: string | null,
+): string {
+  return getBrand(brand, siteType).logo
 }
