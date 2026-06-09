@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { setActionStatus, assignActionOwner, setActionRisk } from "@/app/actions/governance"
+import { setActionStatus, assignActionOwner, setActionRisk, setActionDueDate } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
 import { AlertTriangle, Flag, Clock } from "lucide-react"
 
@@ -116,6 +116,44 @@ function OwnerSelect({
   )
 }
 
+function DueDateInput({
+  id,
+  dueDate,
+  overdue,
+}: {
+  id: number
+  dueDate: string | null
+  overdue: boolean
+}) {
+  const [value, setValue] = useState(dueDate ?? "")
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function onChange(next: string) {
+    setValue(next)
+    const fd = new FormData()
+    fd.set("id", String(id))
+    fd.set("dueDate", next)
+    startTransition(async () => {
+      await setActionDueDate(fd)
+      router.refresh()
+    })
+  }
+
+  return (
+    <input
+      type="date"
+      value={value}
+      disabled={pending}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Due date"
+      className={`h-8 w-[150px] rounded-md border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        overdue ? "border-rag-red/50 text-rag-red" : "border-border"
+      }`}
+    />
+  )
+}
+
 function RiskToggle({ id, isRisk }: { id: number; isRisk: boolean }) {
   const [value, setValue] = useState(isRisk)
   const [pending, startTransition] = useTransition()
@@ -171,6 +209,7 @@ export function ActionsTable({
               <TableHead>Owner</TableHead>
               <TableHead>Risk</TableHead>
               <TableHead>Priority</TableHead>
+              <TableHead>Due</TableHead>
               <TableHead>RAG</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -235,6 +274,9 @@ export function ActionsTable({
                   </span>
                 </TableCell>
                 <TableCell>
+                  <DueDateInput id={a.id} dueDate={a.dueDate} overdue={a.overdue} />
+                </TableCell>
+                <TableCell>
                   <RagSelect id={a.id} rag={a.rag} />
                 </TableCell>
                 <TableCell>
@@ -245,7 +287,7 @@ export function ActionsTable({
             {actions.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   No actions on the register.

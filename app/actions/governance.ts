@@ -212,6 +212,23 @@ export async function setActionRag(formData: FormData) {
   revalidatePath("/")
 }
 
+/**
+ * Set (or clear) an action's due date from the register. Drives overdue
+ * flagging and the daily red-action reminders. Empty value clears the date.
+ */
+export async function setActionDueDate(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  const raw = String(formData.get("dueDate") ?? "").trim()
+  // Accept YYYY-MM-DD from the date input, or clear when empty.
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null
+  await db.update(actions).set({ dueDate }).where(eq(actions.id, id))
+  revalidatePath("/actions")
+  revalidatePath("/operations")
+  revalidatePath("/")
+}
+
 export async function confirmSiteWeek(formData: FormData) {
   const user = await requireUser()
   const siteId = Number(formData.get("siteId"))
