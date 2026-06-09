@@ -8,6 +8,7 @@
     { "path": "/api/cron/weekly?step=martin-response", "schedule": "30 20 * * 6" },
     { "path": "/api/cron/weekly?step=brand-rtb", "schedule": "45 20 * * 6" },
     { "path": "/api/cron/weekly?step=red-action-reminders", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/weekly?step=escalate", "schedule": "5 7 * * *" }
+    { "path": "/api/cron/weekly?step=escalate", "schedule": "5 7 * * *" },
+    { "path": "/api/cron/team", "schedule": "0 6 * * *" }
   ]
 }

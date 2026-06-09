@@ -336,6 +336,67 @@ export async function getTeamRoster(): Promise<TeamRosterMember[]> {
   return out
 }
 
+export type TeamKpi = {
+  code: string
+  label: string
+  value: string
+  rag: Rag
+  help: string
+}
+
+/** Headline Team Area KPIs, computed from the live roster. Surfaced as cards
+ *  atop the leadership Team Area. */
+export async function getTeamKpis(): Promise<TeamKpi[]> {
+  const roster = await getTeamRoster()
+  const count = roster.length || 1
+
+  const sickGreen = roster.filter((m) => m.sicknessRag === "green").length
+  const sickPct = Math.round((sickGreen / count) * 100)
+
+  const oneToOneOk = roster.filter(
+    (m) => m.oneToOneStatus === "Scheduled" || m.oneToOneStatus === "Completed",
+  ).length
+  const oneToOnePct = Math.round((oneToOneOk / count) * 100)
+
+  const threeSixtyEngaged = roster.filter((m) => m.threeSixtyOpen).length
+
+  const apprentices = roster.filter((m) => m.isApprentice)
+  const apprenticeRed = apprentices.filter((m) => m.apprenticeRag === "red").length
+
+  const pctRag = (pct: number): Rag => (pct >= 85 ? "green" : pct >= 60 ? "amber" : "red")
+
+  return [
+    {
+      code: "team_sickness",
+      label: "Sickness in range",
+      value: `${sickPct}%`,
+      rag: pctRag(sickPct),
+      help: "Share of the team under the 5-day sickness threshold this leave year (0-4 green, 5 amber, 6+ red).",
+    },
+    {
+      code: "team_one_to_one",
+      label: "1-2-1s on track",
+      value: `${oneToOnePct}%`,
+      rag: pctRag(oneToOnePct),
+      help: "Share of team members with a current monthly 1-2-1 scheduled or completed.",
+    },
+    {
+      code: "team_360",
+      label: "360s in progress",
+      value: `${threeSixtyEngaged}/${roster.length}`,
+      rag: "green",
+      help: "Team members with an open 360 review cycle (auto-opened every 6 months; 5 nominees each).",
+    },
+    {
+      code: "team_apprentice",
+      label: "Apprentices at risk",
+      value: `${apprenticeRed}/${apprentices.length}`,
+      rag: apprenticeRed === 0 ? "green" : apprenticeRed === 1 ? "amber" : "red",
+      help: "Apprentices failing the 3-month cutting + revenue gate, flagged for a keep/separate decision.",
+    },
+  ]
+}
+
 /** Detail for one member, for the leadership member page. */
 export async function getTeamMemberDetail(barberId: number) {
   const self = await getBarberSelfView(barberId)
