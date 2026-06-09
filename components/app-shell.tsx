@@ -29,6 +29,7 @@ import {
   LogOut,
   Crown,
   Wrench,
+  UserRound,
   ChevronDown,
 } from "lucide-react"
 
@@ -66,6 +67,9 @@ export function AppShell({
       icon: Inbox,
       items: [
         { href: "/my-work", label: "My Work", icon: Inbox },
+        ...(user.isBarber
+          ? [{ href: "/team", label: "Team Area", icon: UserRound }]
+          : []),
         ...(canEnterData
           ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
           : []),
