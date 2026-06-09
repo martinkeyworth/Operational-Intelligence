@@ -13,10 +13,13 @@ export function KpiEntryRow({
   def,
   week,
   initialValue,
+  brand,
 }: {
   def: KpiDef
   week: string
   initialValue: number | null
+  /** Optional brand scope for per-brand areas (e.g. Marketing & Social). */
+  brand?: string
 }) {
   const router = useRouter()
   const [value, setValue] = useState<string>(
@@ -53,6 +56,7 @@ export function KpiEntryRow({
     >
       <input type="hidden" name="code" value={def.code} />
       <input type="hidden" name="week" value={week} />
+      {brand && <input type="hidden" name="brand" value={brand} />}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

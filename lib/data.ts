@@ -39,6 +39,9 @@ import {
 import { FUNCTION_AREAS, canonicalAreaKey, ACTIONS_SCORED_AREAS } from "@/lib/function-areas"
 import {
   kpisForArea,
+  kpisForBrand,
+  isPerBrandArea,
+  KPI_BRANDS,
   scoreKpi,
   rollUpWeighted,
   AREA_WEIGHTS,
@@ -848,6 +851,9 @@ export type AreaScore = {
   source: "operational" | "manual"
   detail: string
   kpis: KpiResult[]
+  // Present only for per-brand areas (e.g. Marketing & Social): the KPI grid
+  // split out by brand so the UI can show which brand is dragging the area.
+  brands?: BrandKpiResults[]
 }
 
 export type BusinessScorecard = {
@@ -908,6 +914,59 @@ export async function getManualKpiResults(
       owner: def.owner?.trim() || def.ownerRole,
     }
   })
+}
+
+export type BrandKpiResults = { brand: string; kpis: KpiResult[] }
+
+/**
+ * Per-brand KPI results for an area tracked at brand level (e.g. Marketing &
+ * Social). Returns one block per brand; any KPI not entered for that brand is
+ * scored red so the area cannot read green unless every brand hits every KPI.
+ */
+export async function getManualKpiResultsByBrand(
+  areaKey: string,
+  week: string,
+): Promise<BrandKpiResults[]> {
+  const defs = kpisForBrand(areaKey)
+  if (defs.length === 0) return []
+
+  const idMap = await kpiIdByCode()
+  const ids = defs.map((d) => idMap.get(d.code)).filter(Boolean) as number[]
+
+  const rows =
+    ids.length > 0
+      ? await db
+          .select()
+          .from(kpiValues)
+          .where(
+            and(eq(kpiValues.period, week), inArray(kpiValues.kpiId, ids)),
+          )
+      : []
+
+  return KPI_BRANDS.map((brand) => ({
+    brand,
+    kpis: defs.map((def) => {
+      const id = idMap.get(def.code)
+      const row = rows.find((r) => r.kpiId === id && r.brand === brand)
+      const entered = !!row
+      const value = entered ? Number(row!.value) : null
+      const rag: Rag = entered ? scoreKpi(def, value!) : "red"
+      return {
+        code: def.code,
+        name: def.name,
+        unit: def.unit,
+        value,
+        green: def.green,
+        amber: def.amber,
+        direction: def.direction,
+        weight: def.weight,
+        rag,
+        help: def.help,
+        entered,
+        owner: def.owner?.trim() || def.ownerRole,
+      }
+    }),
+  }))
 }
 
 /**
@@ -995,13 +1054,48 @@ export async function getBusinessScorecard(
   // ---- Manual KPI areas (HR, Marketing) ---------------------------------
   const manualAreas: AreaScore[] = []
   for (const areaKey of ["HR", "Marketing"]) {
-    const kpiResults = await getManualKpiResults(areaKey, week)
-    const entered = kpiResults.filter((k) => k.entered)
-    const roll = rollUpWeighted(
-      entered.map((k) => ({ item: k.rag, weight: k.weight }) as WeightedRag),
-    )
-    const allEntered = kpiResults.length > 0 && entered.length === kpiResults.length
     const areaCfg = FUNCTION_AREAS.find((a) => a.key === areaKey)
+
+    if (isPerBrandArea(areaKey)) {
+      // Per-brand area: score every brand × KPI cell. Un-entered cells are
+      // already red, so the area can only be green when every brand hits every
+      // KPI. The roll-up spans all cells across all brands.
+      const brands = await getManualKpiResultsByBrand(areaKey, week)
+      const allCells = brands.flatMap((b) => b.kpis)
+      const enteredCells = allCells.filter((k) => k.entered)
+      const roll = rollUpWeighted(
+        allCells.map((k) => ({ item: k.rag, weight: k.weight }) as WeightedRag),
+      )
+      const totalCells = allCells.length
+      const brandsReporting = brands.filter((b) =>
+        b.kpis.some((k) => k.entered),
+      ).length
+      manualAreas.push({
+        key: areaKey,
+        label: areaCfg?.label ?? areaKey,
+        icon: areaCfg?.icon ?? "Activity",
+        ownerRole: areaCfg?.ownerRole ?? "",
+        weight: AREA_WEIGHTS[areaKey] ?? 1,
+        rag: enteredCells.length === 0 ? "red" : roll.rag,
+        pct: enteredCells.length === 0 ? 0 : roll.pct,
+        source: "manual",
+        detail: `${brandsReporting}/${KPI_BRANDS.length} brands · ${enteredCells.length}/${totalCells} KPIs reported`,
+        kpis: allCells,
+        brands,
+      })
+      continue
+    }
+
+    const kpiResults = await getManualKpiResults(areaKey, week)
+    // Roll up ALL catalogued KPIs (not just entered ones): a KPI with no entry
+    // is already scored red, so the area cannot read green unless every
+    // required KPI has actually been entered AND met.
+    const roll = rollUpWeighted(
+      kpiResults.map((k) => ({ item: k.rag, weight: k.weight }) as WeightedRag),
+    )
+    const entered = kpiResults.filter((k) => k.entered)
+    const allEntered =
+      kpiResults.length > 0 && entered.length === kpiResults.length
     manualAreas.push({
       key: areaKey,
       label: areaCfg?.label ?? areaKey,

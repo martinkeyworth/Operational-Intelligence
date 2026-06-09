@@ -11,11 +11,12 @@ import {
   getFunctionAreaActions,
   getAssignableOwners,
   getManualKpiResults,
+  getManualKpiResultsByBrand,
   getLatestWeek,
   fmtWeekLong,
 } from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
-import { kpisForArea } from "@/lib/kpi-config"
+import { kpisForArea, isPerBrandArea } from "@/lib/kpi-config"
 import { ArrowLeft, PencilLine } from "lucide-react"
 
 export default async function FunctionAreaPage({
@@ -31,11 +32,15 @@ export default async function FunctionAreaPage({
   const user = await requireDashboard()
   const week = await getLatestWeek()
   const hasKpis = kpisForArea(area.key).length > 0
-  const [actions, owners, kpis] = await Promise.all([
+  const perBrand = isPerBrandArea(area.key)
+  const [actions, owners, kpis, brandKpis] = await Promise.all([
     getFunctionAreaActions(area.key),
     getAssignableOwners(),
-    hasKpis && week
+    hasKpis && !perBrand && week
       ? getManualKpiResults(area.key, week)
+      : Promise.resolve([]),
+    hasKpis && perBrand && week
+      ? getManualKpiResultsByBrand(area.key, week)
       : Promise.resolve([]),
   ])
 
@@ -95,7 +100,25 @@ export default async function FunctionAreaPage({
                 </p>
               )}
             </div>
-            {kpis.length > 0 ? (
+            {perBrand ? (
+              brandKpis.some((b) => b.kpis.some((k) => k.entered)) ? (
+                <div className="space-y-5">
+                  {brandKpis.map((b) => (
+                    <section key={b.brand} className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {b.brand}
+                      </h3>
+                      <KpiScorecard kpis={b.kpis} />
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-border p-4 text-xs text-muted-foreground">
+                  No KPI data yet. Enter each brand&apos;s weekly KPIs in the
+                  Weekly Input page.
+                </p>
+              )
+            ) : kpis.length > 0 ? (
               <KpiScorecard kpis={kpis} />
             ) : (
               <p className="rounded-lg border border-border p-4 text-xs text-muted-foreground">
