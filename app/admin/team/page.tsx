@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui-bits"
 import { getTeamRoster, getTeamKpis } from "@/lib/team"
 import { TeamRoster } from "@/components/team-roster"
 import { RagDot } from "@/components/rag"
+import { RunSchedulerButton } from "@/components/run-scheduler-button"
 
 export const dynamic = "force-dynamic"
 
@@ -18,6 +19,15 @@ export default async function TeamAdminPage() {
         subtitle="Your people at a glance — holiday, sickness, monthly 1-2-1s and 360 reviews. Tap a team member to manage their HR profile, link their login and run cadences."
       />
       <div className="px-5 py-6 md:px-8 flex flex-col gap-6">
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">Cadence automation</p>
+            <p className="text-xs text-muted-foreground">
+              1-2-1s and 360s schedule themselves daily for barbers with a manager assigned. Run it now to catch up immediately.
+            </p>
+          </div>
+          <RunSchedulerButton />
+        </div>
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {kpis.map((k) => (
             <div

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
 import { getBarberForUser } from "@/lib/team"
-import { scheduleOneToOne } from "@/lib/team-schedule"
+import { scheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles } from "@/lib/team-schedule"
 
 function revalidateTeam(barberId?: number) {
   revalidatePath("/admin/team")
@@ -112,4 +112,17 @@ export async function openThreeSixtyCycle(formData: FormData) {
   })
   revalidateTeam(barberId)
   return { ok: true }
+}
+
+/**
+ * Run the automated scheduler on demand (same logic as the daily cron).
+ * Schedules due 1-2-1s for barbers with a manager assigned, and opens any
+ * outstanding 360 cycles for the half-year. Idempotent and safe to re-run.
+ */
+export async function runTeamScheduler() {
+  await requireTeamAdmin()
+  const oneToOnes = await autoScheduleOneToOnes()
+  const threeSixties = await autoOpenThreeSixtyCycles()
+  revalidateTeam()
+  return { ok: true, oneToOnes, threeSixties }
 }
