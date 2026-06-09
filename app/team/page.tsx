@@ -14,28 +14,58 @@ import { CheckCircle2, AlertCircle, GraduationCap } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
-export default async function TeamHomePage() {
+export default async function TeamHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ barber?: string }>
+}) {
   const user = await requireUser()
-  const barber = await getBarberForUser(user.id)
+  const { barber: barberParam } = await searchParams
+
+  // Leadership preview: dashboard users can review any barber's Team Area
+  // exactly as that barber sees it, via /team?barber=<id>.
+  const previewId = user.canViewDashboard ? Number(barberParam) : NaN
+  const isPreview = Number.isFinite(previewId) && previewId > 0
+
+  const barber = isPreview ? null : await getBarberForUser(user.id)
 
   // A logged-in user with no linked barber record (e.g. a manager) shouldn't
-  // land here — send dashboard users to the overview, everyone else to no-access.
-  if (!barber) {
-    redirect(user.canViewDashboard ? "/" : "/no-access")
+  // land here unless previewing — send dashboard users to the team roster,
+  // everyone else to no-access.
+  if (!barber && !isPreview) {
+    redirect(user.canViewDashboard ? "/admin/team" : "/no-access")
   }
 
-  const self = await getBarberSelfView(barber.id)
-  if (!self) redirect("/no-access")
+  const self = await getBarberSelfView(isPreview ? previewId : barber!.id)
+  if (!self) redirect(user.canViewDashboard ? "/admin/team" : "/no-access")
 
   const submitted = self.submission.submitted
 
   return (
     <AppShell user={user}>
       <PageHeader
-        meta="Team Area"
-        title={`Hi, ${self.barber.name.split(" ")[0]}`}
+        meta={isPreview ? "Team Area · Leadership preview" : "Team Area"}
+        title={isPreview ? self.barber.name : `Hi, ${self.barber.name.split(" ")[0]}`}
         subtitle={`${self.barber.role} · ${self.barber.siteName}`}
       />
+
+      {isPreview && (
+        <div className="px-5 pt-4 md:px-8">
+          <Card className="flex flex-col gap-2 border-amber-500/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-foreground">
+              {"You're viewing "}
+              <span className="font-semibold">{self.barber.name}</span>
+              {"'s Team Area exactly as they see it."}
+            </p>
+            <Link
+              href={`/admin/team/${self.barber.id}`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Manage HR profile
+            </Link>
+          </Card>
+        </div>
+      )}
 
       <div className="space-y-6 px-5 py-6 md:px-8">
         {/* 1. Weekly submission status — always at the very top. */}
