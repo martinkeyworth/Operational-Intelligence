@@ -1,17 +1,16 @@
 import { requireAdmin, getAllUsers } from "@/lib/access"
-import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { UserAccessCard } from "@/components/user-access-card"
 
 export default async function PeopleAccessPage() {
-  const admin = await requireAdmin()
+  await requireAdmin()
   const users = await getAllUsers()
 
   const company = users.filter((u) => u.isCompany)
   const external = users.filter((u) => !u.isCompany)
 
   return (
-    <AppShell user={admin}>
+    <>
       <PageHeader
         meta="Admin"
         title="People & Access"
@@ -51,6 +50,6 @@ export default async function PeopleAccessPage() {
           )}
         </section>
       </div>
-    </AppShell>
+    </>
   )
 }

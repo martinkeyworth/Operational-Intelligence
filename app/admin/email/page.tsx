@@ -1,5 +1,4 @@
 import { requireOwner } from "@/lib/access"
-import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { TestEmailButton } from "./test-email-button"
 import { resolvedFrom } from "@/lib/email"
@@ -13,7 +12,7 @@ export default async function EmailDiagnosticsPage() {
   const usingVerifiedDomain = !from.includes("resend.dev")
 
   return (
-    <AppShell user={owner}>
+    <>
       <PageHeader
         meta="Admin"
         title="Email diagnostics"
@@ -47,6 +46,6 @@ export default async function EmailDiagnosticsPage() {
           <TestEmailButton />
         </section>
       </div>
-    </AppShell>
+    </>
   )
 }

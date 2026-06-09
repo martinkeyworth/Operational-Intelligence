@@ -1505,3 +1505,50 @@ export async function getBarberSplits(week: string): Promise<BarberSplitRow[]> {
     }
   })
 }
+
+export type AdminBarber = {
+  id: number
+  name: string
+  role: string
+  hasData: boolean
+}
+
+export type BarberSiteGroup = {
+  siteId: number
+  siteName: string
+  siteType: string
+  barbers: AdminBarber[]
+}
+
+/**
+ * All active barbers grouped by site, for the Barbers admin tab. `hasData`
+ * flags whether the barber has ever loaded takings (so an accidental removal of
+ * someone with history is clearly signposted).
+ */
+export async function getActiveBarbersBySite(): Promise<BarberSiteGroup[]> {
+  const siteRows = await db.select().from(sites).orderBy(asc(sites.name))
+  const barberRows = await db
+    .select()
+    .from(barbers)
+    .where(eq(barbers.active, true))
+    .orderBy(asc(barbers.name))
+  const everReported = await db
+    .select({ barberId: weeklyTakings.barberId })
+    .from(weeklyTakings)
+    .groupBy(weeklyTakings.barberId)
+  const reportedSet = new Set(everReported.map((r) => r.barberId))
+
+  return siteRows.map((s) => ({
+    siteId: s.id,
+    siteName: s.name,
+    siteType: s.siteType,
+    barbers: barberRows
+      .filter((b) => b.siteId === s.id)
+      .map((b) => ({
+        id: b.id,
+        name: b.name,
+        role: b.role,
+        hasData: reportedSet.has(b.id),
+      })),
+  }))
+}

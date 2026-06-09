@@ -12,8 +12,6 @@ import {
   Store,
   ListChecks,
   ClipboardEdit,
-  Users,
-  Percent,
   ShieldAlert,
   LayoutGrid,
   LifeBuoy,
@@ -26,7 +24,7 @@ import {
   Activity,
   CalendarClock,
   Inbox,
-  Mail,
+  Settings,
   LogOut,
 } from "lucide-react"
 
@@ -50,41 +48,74 @@ export function AppShell({
   const pathname = usePathname()
   const router = useRouter()
 
-  const dashboardNav = user.canViewDashboard
-    ? [
-        { href: "/", label: "Group Overview", icon: LayoutDashboard },
-        { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
-        { href: "/sites", label: "Sites", icon: Store },
-        { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
-        { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
-        { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
-        { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
-        { href: "/actions", label: "Action Register", icon: ListChecks },
-        { href: "/operations", label: "Risk Register", icon: ShieldAlert },
-        { href: "/decisions", label: "Decision Register", icon: Gavel },
-        { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
-        { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
-        { href: "/activity", label: "Activity Tracker", icon: Activity },
-        { href: "/cadence", label: "Review Cadence", icon: CalendarClock },
-      ]
-    : []
-  const nav = [
-    { href: "/my-work", label: "My Work", icon: Inbox },
-    ...dashboardNav,
-    // Weekly Takings is for data-entry users: barbers + any dashboard user.
-    ...(user.isBarber || user.canViewDashboard
-      ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
+  // Nav is grouped into labelled sections so the (long) list stays scannable.
+  type NavItem = { href: string; label: string; icon: typeof Inbox }
+  type NavSection = { title: string; items: NavItem[] }
+
+  const canEnterData = user.isBarber || user.canViewDashboard
+  const isAdmin = Boolean(user.isCompany && user.canViewDashboard)
+
+  const sections: NavSection[] = [
+    {
+      title: "Work",
+      items: [
+        { href: "/my-work", label: "My Work", icon: Inbox },
+        ...(canEnterData
+          ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
+          : []),
+      ],
+    },
+    ...(user.canViewDashboard
+      ? [
+          {
+            title: "Overview",
+            items: [
+              { href: "/", label: "Group Overview", icon: LayoutDashboard },
+              { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
+              { href: "/sites", label: "Sites", icon: Store },
+              { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
+            ],
+          },
+          {
+            title: "Reports",
+            items: [
+              { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
+              { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
+              { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
+            ],
+          },
+          {
+            title: "Registers",
+            items: [
+              { href: "/actions", label: "Action Register", icon: ListChecks },
+              { href: "/operations", label: "Risk Register", icon: ShieldAlert },
+              { href: "/decisions", label: "Decision Register", icon: Gavel },
+            ],
+          },
+          {
+            title: "Pipelines",
+            items: [
+              { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
+              { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
+              { href: "/activity", label: "Activity Tracker", icon: Activity },
+              { href: "/cadence", label: "Review Cadence", icon: CalendarClock },
+            ],
+          },
+        ]
       : []),
-    ...(user.isCompany && user.canViewDashboard
-      ? [{ href: "/admin/people", label: "People & Access", icon: Users }]
+    // All management lives behind a single Admin entry now.
+    ...(isAdmin
+      ? [
+          {
+            title: "Admin",
+            items: [{ href: "/admin", label: "Admin", icon: Settings }],
+          },
+        ]
       : []),
-    ...(user.isOwner
-      ? [{ href: "/admin/splits", label: "Profit Split", icon: Percent }]
-      : []),
-    ...(user.isOwner
-      ? [{ href: "/admin/email", label: "Email Diagnostics", icon: Mail }]
-      : []),
-  ]
+  ].filter((s) => s.items.length > 0)
+
+  // Flat list for the mobile horizontal strip.
+  const flatNav = sections.flatMap((s) => s.items)
 
   const initials = user.name
     .split(" ")
@@ -119,29 +150,36 @@ export function AppShell({
             <p className="text-[11px] text-muted-foreground">Governance</p>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {nav.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href)
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-sidebar-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 px-3 py-4 flex flex-col gap-4 overflow-y-auto">
+          {sections.map((section) => (
+            <div key={section.title} className="flex flex-col gap-1">
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {section.title}
+              </p>
+              {section.items.map((item) => {
+                const active =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href)
+                const Icon = item.icon
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-sidebar-accent text-sidebar-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
         </nav>
         <div className="border-t border-border p-3">
           <div className="flex items-center gap-3 px-2 py-2">
@@ -193,7 +231,7 @@ export function AppShell({
           </Button>
         </div>
         <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
-          {nav.map((item) => {
+          {flatNav.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"

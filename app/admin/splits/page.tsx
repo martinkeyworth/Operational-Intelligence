@@ -1,6 +1,5 @@
 import { requireOwner } from "@/lib/access"
 import { getLatestWeek, getBarberSplits } from "@/lib/data"
-import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { SplitRow } from "@/components/split-row"
 import { DEFAULT_BARBER_PCT } from "@/lib/split-config"
@@ -8,7 +7,7 @@ import { fmtWeekLong } from "@/lib/format"
 import { ShieldCheck } from "lucide-react"
 
 export default async function SplitsPage() {
-  const owner = await requireOwner()
+  await requireOwner()
   const week = await getLatestWeek()
 
   const rows = week ? await getBarberSplits(week) : []
@@ -27,7 +26,7 @@ export default async function SplitsPage() {
   ]
 
   return (
-    <AppShell user={owner}>
+    <>
       <PageHeader
         meta="Owners only · Martin & Cosmin"
         title="Profit Split"
@@ -61,6 +60,6 @@ export default async function SplitsPage() {
           ))}
         </div>
       </div>
-    </AppShell>
+    </>
   )
 }
