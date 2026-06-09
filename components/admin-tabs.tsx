@@ -3,17 +3,17 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Users, Scissors, Percent, Mail } from "lucide-react"
+import { Users, UsersRound, Percent, Mail } from "lucide-react"
 
 type Tab = { href: string; label: string; icon: typeof Users }
 
 export function AdminTabs({ isOwner }: { isOwner: boolean }) {
   const pathname = usePathname()
 
-  // People & Barbers are open to all admins; Splits & Email are owner-only.
+  // People & Team Area are open to all admins; Splits & Email are owner-only.
   const tabs: Tab[] = [
     { href: "/admin/people", label: "People & Access", icon: Users },
-    { href: "/admin/barbers", label: "Barbers", icon: Scissors },
+    { href: "/admin/team", label: "Team Area", icon: UsersRound },
     ...(isOwner
       ? [
           { href: "/admin/splits", label: "Profit Split", icon: Percent },
