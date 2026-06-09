@@ -91,7 +91,9 @@ export async function remindUsers(weekEnding = currentWeekEnding()) {
   return { sent, total: recipients.length }
 }
 
-// 18:00 — email leadership (owners) a chase of who is still outstanding.
+// 18:00 — chase outstanding submissions. Each department head receives a chase
+// listing ONLY their outstanding items; the owners (Martin + Cosmin) receive
+// the full overview of everything still outstanding.
 export async function submissionAlert(weekEnding = currentWeekEnding()) {
   const report = await getOrCreateReport(weekEnding)
   if (report.submissionAlertSentAt) return { skipped: true, reason: "already sent" }
@@ -99,30 +101,61 @@ export async function submissionAlert(weekEnding = currentWeekEnding()) {
   const status = await getSubmissionStatus(weekEnding)
   const url = appBaseUrl()
 
-  // Only the owners (Martin + Cosmin) receive the chase. Match against the
-  // registered company users so we use their actual names/casing.
-  const recipients = await getCompanyRecipients()
-  const leaders = recipients.filter((r) =>
+  // Resolve recipients against registered company users so we use their real
+  // names/casing and only email people who actually exist.
+  const companyUsers = await getCompanyRecipients()
+  const findUser = (email: string) =>
+    companyUsers.find((u) => u.email.toLowerCase() === email.toLowerCase())
+
+  const owners = companyUsers.filter((r) =>
     OWNER_EMAILS.includes(r.email.toLowerCase()),
   )
-  if (leaders.length === 0) return { skipped: true, reason: "no owners found" }
+
+  // Map an outstanding item to the department head responsible for chasing it.
+  const headFor = (item: (typeof status.outstanding)[number]): string | null => {
+    switch (item.category) {
+      case "Takings":
+      case "Confirmation":
+        return "mario@lessthanzerobarbers.com" // Head of Brands
+      case "Training":
+        return "ravi@lessthanzerobarbers.com" // Training Director
+      case "KPI":
+        return item.label.toLowerCase().startsWith("hr")
+          ? "luke@lessthanzerobarbers.com" // HR Director
+          : "mario@lessthanzerobarbers.com" // Marketing → Head of Brands
+      case "Subletting":
+      default:
+        return null // owners only
+    }
+  }
 
   const summaryRag = status.complete ? "green" : status.pct >= 75 ? "amber" : "red"
 
-  const outstandingHtml = status.complete
-    ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">All weekly submissions are in for w/e ${fmtWeekLong(
-        weekEnding,
-      )}. Nothing outstanding ahead of tonight's board report.</p>`
-    : `<p style="margin:0 0 12px;">The following <strong>${status.outstandingCount}</strong> ${
-        status.outstandingCount === 1 ? "item is" : "items are"
-      } still outstanding ahead of tonight's 20:00 board report:</p>
+  // Build the HTML body for a given recipient + their relevant items.
+  const buildHtml = (
+    items: typeof status.outstanding,
+    forOwner: boolean,
+  ) => {
+    const intro = status.complete
+      ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">All weekly submissions are in for w/e ${fmtWeekLong(
+          weekEnding,
+        )}. Nothing outstanding ahead of tonight's board report.</p>`
+      : items.length === 0
+        ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">Nothing outstanding in your area for w/e ${fmtWeekLong(
+            weekEnding,
+          )}. Thank you.</p>`
+        : `<p style="margin:0 0 12px;">The following <strong>${items.length}</strong> ${
+            items.length === 1 ? "item is" : "items are"
+          } still outstanding ahead of tonight's 20:00 board report${
+            forOwner ? "" : " in your area"
+          }:</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
          <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
            <th style="padding:0 0 6px;">Outstanding</th>
            <th style="padding:0 0 6px;">Owner</th>
            <th style="padding:0 0 6px;text-align:right;">Status</th>
          </tr></thead>
-         <tbody>${status.outstanding
+         <tbody>${items
            .map(
              (i) =>
                `<tr>
@@ -140,37 +173,75 @@ export async function submissionAlert(weekEnding = currentWeekEnding()) {
            .join("")}</tbody>
        </table>`
 
-  const html = emailShell(
-    `Submission status · w/e ${fmtWeekLong(weekEnding)}`,
-    `<p style="margin:0 0 8px;">Submission readiness: ${ragChip(summaryRag)} <strong>${
-      status.submittedCount
-    }/${status.total}</strong> in (${status.pct}%).</p>
-     ${outstandingHtml}
+    return emailShell(
+      `Submission status · w/e ${fmtWeekLong(weekEnding)}`,
+      `${
+        forOwner
+          ? `<p style="margin:0 0 8px;">Submission readiness: ${ragChip(summaryRag)} <strong>${
+              status.submittedCount
+            }/${status.total}</strong> in (${status.pct}%).</p>`
+          : ""
+      }
+     ${intro}
      <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>
      <p style="margin:0;color:#6b7280;">Sent at 18:00 so there's time to chase before the board report.</p>`,
-  )
+    )
+  }
 
   let sent = 0
-  for (const leader of leaders) {
+  const sendToUser = async (
+    userEntry: { email: string },
+    items: typeof status.outstanding,
+    forOwner: boolean,
+  ) => {
     const res = await sendEmail({
-      to: leader.email,
+      to: userEntry.email,
       subject: status.complete
         ? `Submissions complete (w/e ${fmtWeekLong(weekEnding)})`
-        : `${status.outstandingCount} submissions outstanding (w/e ${fmtWeekLong(
-            weekEnding,
-          )})`,
-      html,
+        : forOwner
+          ? `${status.outstandingCount} submissions outstanding (w/e ${fmtWeekLong(
+              weekEnding,
+            )})`
+          : `${items.length} outstanding in your area (w/e ${fmtWeekLong(
+              weekEnding,
+            )})`,
+      html: buildHtml(items, forOwner),
       kind: "submission_alert",
       weekEnding,
     })
     if (res.ok) sent++
   }
 
+  // 1) Owners always get the full overview.
+  for (const owner of owners) {
+    await sendToUser(owner, status.outstanding, true)
+  }
+
+  // 2) Department heads get a chase of only their outstanding items.
+  //    Skip anyone who is also an owner (already covered) and skip when there's
+  //    nothing outstanding overall.
+  if (!status.complete) {
+    const byHead = new Map<string, typeof status.outstanding>()
+    for (const item of status.outstanding) {
+      const head = headFor(item)
+      if (!head) continue
+      if (OWNER_EMAILS.includes(head.toLowerCase())) continue
+      const list = byHead.get(head) ?? []
+      list.push(item)
+      byHead.set(head, list)
+    }
+    for (const [head, items] of byHead) {
+      const userEntry = findUser(head)
+      if (!userEntry) continue // not a registered user → skip
+      await sendToUser(userEntry, items, false)
+    }
+  }
+
   await db
     .update(weeklyReports)
     .set({ submissionAlertSentAt: new Date() })
     .where(eq(weeklyReports.weekEnding, weekEnding))
-  return { sent, total: leaders.length, outstanding: status.outstandingCount }
+  return { sent, outstanding: status.outstandingCount }
 }
 
 // 18:50 — run the AI week-on-week analysis across all KPI areas.
