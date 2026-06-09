@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { RagDot } from "@/components/rag"
 import { BarberRtbChart } from "@/components/barber-rtb-chart"
 import { TeamSelfService } from "@/components/team-self-service"
-import { getBarberForUser, getBarberSelfView, RTB_TARGET } from "@/lib/team"
+import { getBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 import { CheckCircle2, AlertCircle, GraduationCap } from "lucide-react"
 
@@ -155,12 +155,7 @@ export default async function TeamHomePage({
                     .reverse()
                     .map((t) => {
                       const delta = t.actual - t.target
-                      const rag =
-                        t.actual >= t.target
-                          ? "green"
-                          : t.actual >= t.target * 0.9
-                            ? "amber"
-                            : "red"
+                      const rag = ragForWeekTakings(t.actual)
                       return (
                         <tr key={t.weekEnding} className="border-b border-border/50">
                           <td className="py-2 text-foreground">{fmtWeekLong(t.weekEnding)}</td>

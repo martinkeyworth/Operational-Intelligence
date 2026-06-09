@@ -39,9 +39,10 @@ export function ragForHoliday(remaining: number, allowance: number): Rag {
   return "green"
 }
 
-/** A single takings figure vs the £500 weekly RTB target. */
+/** A single takings figure vs the £500 weekly RTB target. RTB is a hard
+ *  target (matching ragForRtb): green only at/above £500, red below. */
 export function ragForWeekTakings(total: number): Rag {
-  return total >= RTB_TARGET ? "green" : total >= RTB_TARGET * 0.9 ? "amber" : "red"
+  return total >= RTB_TARGET ? "green" : "red"
 }
 
 // --- Leave-year helper -----------------------------------------------------
