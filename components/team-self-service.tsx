@@ -19,18 +19,24 @@ function fmtDate(iso: string) {
   })
 }
 
-export function TeamSelfService({ self }: { self: SelfView }) {
+export function TeamSelfService({
+  self,
+  readOnly = false,
+}: {
+  self: SelfView
+  readOnly?: boolean
+}) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <HolidayCard self={self} />
-      <SicknessCard self={self} />
+      <HolidayCard self={self} readOnly={readOnly} />
+      <SicknessCard self={self} readOnly={readOnly} />
       <OneToOneCard self={self} />
-      <ThreeSixtyCard self={self} />
+      <ThreeSixtyCard self={self} readOnly={readOnly} />
     </div>
   )
 }
 
-function HolidayCard({ self }: { self: SelfView }) {
+function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
@@ -53,7 +59,7 @@ function HolidayCard({ self }: { self: SelfView }) {
       </p>
       <p className="text-xs text-muted-foreground">{self.holiday.taken} days taken this year</p>
 
-      {!open ? (
+      {readOnly ? null : !open ? (
         <Button variant="outline" size="sm" className="mt-4" onClick={() => setOpen(true)}>
           Request holiday
         </Button>
@@ -100,7 +106,7 @@ function HolidayCard({ self }: { self: SelfView }) {
   )
 }
 
-function SicknessCard({ self }: { self: SelfView }) {
+function SicknessCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
@@ -120,7 +126,7 @@ function SicknessCard({ self }: { self: SelfView }) {
       </p>
       <p className="text-xs text-muted-foreground">5 = amber · 6+ = red</p>
 
-      {!open ? (
+      {readOnly ? null : !open ? (
         <Button variant="outline" size="sm" className="mt-4" onClick={() => setOpen(true)}>
           Log sickness
         </Button>
@@ -199,7 +205,7 @@ function OneToOneCard({ self }: { self: SelfView }) {
   )
 }
 
-function ThreeSixtyCard({ self }: { self: SelfView }) {
+function ThreeSixtyCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) {
   const cycle = self.openCycle
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
@@ -219,8 +225,8 @@ function ThreeSixtyCard({ self }: { self: SelfView }) {
       ) : allSubmitted && !done ? (
         <div className="mt-3">
           <p className="text-sm text-foreground">
-            Your 5 nominees for <strong>{cycle.period}</strong> have been invited (due{" "}
-            {fmtDate(cycle.dueOn)}):
+            {readOnly ? "Nominees" : "Your 5 nominees"} for <strong>{cycle.period}</strong> have
+            been invited (due {fmtDate(cycle.dueOn)}):
           </p>
           <ul className="mt-2 grid gap-1 sm:grid-cols-2">
             {cycle.nominees.map((n) => (
@@ -234,6 +240,13 @@ function ThreeSixtyCard({ self }: { self: SelfView }) {
             ))}
           </ul>
         </div>
+      ) : readOnly ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          A 360 cycle for <strong>{cycle.period}</strong> is open (due {fmtDate(cycle.dueOn)}).
+          {cycle.nominees.length > 0
+            ? ` ${cycle.nominees.length}/5 nominees submitted so far.`
+            : " No nominees submitted yet."}
+        </p>
       ) : (
         <>
           <p className="mt-3 text-sm text-muted-foreground">

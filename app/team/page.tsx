@@ -94,10 +94,12 @@ export default async function TeamHomePage({
           </div>
           <Link
             href="/data-entry"
-            className={buttonVariants({
+            className={`${buttonVariants({
               variant: submitted ? "outline" : "default",
               size: "sm",
-            })}
+            })} ${isPreview ? "pointer-events-none opacity-50" : ""}`}
+            aria-disabled={isPreview}
+            tabIndex={isPreview ? -1 : undefined}
           >
             {submitted ? "Edit takings" : "Submit takings"}
           </Link>
@@ -188,7 +190,7 @@ export default async function TeamHomePage({
         </Card>
 
         {/* 4. HR self-service: holiday, sickness, 1-2-1, 360. */}
-        <TeamSelfService self={self} />
+        <TeamSelfService self={self} readOnly={isPreview} />
       </div>
     </AppShell>
   )
