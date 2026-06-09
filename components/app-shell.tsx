@@ -317,16 +317,18 @@ export function AppShell({
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
-        {/* Mobile section tabs (top tier) */}
+        {/* Mobile section tabs (top tier) — tapping navigates to the section's
+            landing page and selects it, so each section shows distinct content. */}
         <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
           {sections.map((section) => {
             const SectionIcon = section.icon
             const selected = section.title === mobileSection
             const hasActive = section.title === activeSectionTitle
+            const landingHref = section.items[0]?.href ?? "/"
             return (
-              <button
+              <Link
                 key={section.title}
-                type="button"
+                href={landingHref}
                 onClick={() => setMobileSection(section.title)}
                 className={cn(
                   "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors",
@@ -339,7 +341,7 @@ export function AppShell({
               >
                 <SectionIcon className="h-4 w-4" />
                 {section.title}
-              </button>
+              </Link>
             )
           })}
         </div>
