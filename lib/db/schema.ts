@@ -422,6 +422,13 @@ export const oneToOnes = pgTable("one_to_ones", {
   inviteSentAt: timestamp("invite_sent_at"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
+  // Google Calendar sync: the event id on the shared calendar, plus the latest
+  // RSVP response read back from Google for each attendee.
+  googleEventId: text("google_event_id"),
+  calendarSyncedAt: timestamp("calendar_synced_at"),
+  barberResponse: text("barber_response").notNull().default("needsAction"), // needsAction | accepted | declined | tentative
+  managerResponse: text("manager_response").notNull().default("needsAction"),
+  rsvpSyncedAt: timestamp("rsvp_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -437,6 +444,10 @@ export const threeSixtyCycles = pgTable("three_sixty_cycles", {
   status: text("status").notNull().default("Open"), // Open | Complete
   inviteSentAt: timestamp("invite_sent_at"),
   completedAt: timestamp("completed_at"),
+  // Google Calendar sync: an all-day milestone event on the shared calendar
+  // marking the 360 due date, for leadership visibility.
+  googleEventId: text("google_event_id"),
+  calendarSyncedAt: timestamp("calendar_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 

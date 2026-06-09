@@ -32,7 +32,15 @@ function fmtDate(iso: string) {
   })
 }
 
-export function TeamMemberManager({ detail, users }: { detail: Detail; users: UserOpt[] }) {
+export function TeamMemberManager({
+  detail,
+  users,
+  calendarEnabled = false,
+}: {
+  detail: Detail
+  users: UserOpt[]
+  calendarEnabled?: boolean
+}) {
   const { self } = detail
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -219,7 +227,9 @@ export function TeamMemberManager({ detail, users }: { detail: Detail; users: Us
           <input type="hidden" name="barberId" value={self.barber.id} />
           <div className="flex-1">
             <Label htmlFor="when" className="text-xs">
-              Schedule next 1-2-1 (emails an .ics invite to {self.barber.name.split(" ")[0]} &amp; manager)
+              {calendarEnabled
+                ? `Schedule next 1-2-1 (creates a Google Calendar event for ${self.barber.name.split(" ")[0]} & manager on the shared LTZ calendar)`
+                : `Schedule next 1-2-1 (emails an .ics invite to ${self.barber.name.split(" ")[0]} & manager)`}
             </Label>
             <Input id="when" name="scheduledFor" type="datetime-local" className="text-base" />
           </div>
@@ -251,6 +261,7 @@ export function TeamMemberManager({ detail, users }: { detail: Detail; users: Us
                 </span>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">{o.status}</Badge>
+                  {o.googleEventId && <RsvpBadge barber={o.barberResponse} manager={o.managerResponse} />}
                   {o.status === "Scheduled" && (
                     <form action={(fd) => run(() => completeOneToOne(fd))}>
                       <input type="hidden" name="id" value={o.id} />
@@ -266,5 +277,23 @@ export function TeamMemberManager({ detail, users }: { detail: Detail; users: Us
         )}
       </Card>
     </div>
+  )
+}
+
+/** Compact badge summarising Google Calendar RSVP for a 1-2-1. */
+function RsvpBadge({ barber, manager }: { barber: string; manager: string }) {
+  const label = (s: string) =>
+    s === "accepted" ? "Accepted" : s === "declined" ? "Declined" : s === "tentative" ? "Maybe" : "No reply"
+  // Worst-case headline: a decline shows red; both accepted shows green.
+  const both = [barber, manager]
+  const variant: "default" | "secondary" | "destructive" | "outline" = both.includes("declined")
+    ? "destructive"
+    : both.every((s) => s === "accepted")
+      ? "default"
+      : "outline"
+  return (
+    <Badge variant={variant} className="text-[10px]" title={`Barber: ${label(barber)} · Manager: ${label(manager)}`}>
+      RSVP: {label(barber)}/{label(manager)}
+    </Badge>
   )
 }

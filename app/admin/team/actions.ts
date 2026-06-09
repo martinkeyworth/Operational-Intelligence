@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
 import { getBarberForUser } from "@/lib/team"
-import { scheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles } from "@/lib/team-schedule"
+import { scheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles, syncOneToOneRsvps } from "@/lib/team-schedule"
 
 function revalidateTeam(barberId?: number) {
   revalidatePath("/admin/team")
@@ -123,6 +123,7 @@ export async function runTeamScheduler() {
   await requireTeamAdmin()
   const oneToOnes = await autoScheduleOneToOnes()
   const threeSixties = await autoOpenThreeSixtyCycles()
+  const rsvpUpdates = await syncOneToOneRsvps()
   revalidateTeam()
-  return { ok: true, oneToOnes, threeSixties }
+  return { ok: true, oneToOnes, threeSixties, rsvpUpdates }
 }

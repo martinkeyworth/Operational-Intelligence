@@ -4,6 +4,7 @@ import { requireTeamAdmin, getAllUsers } from "@/lib/access"
 import { PageHeader } from "@/components/ui-bits"
 import { getTeamMemberDetail } from "@/lib/team"
 import { TeamMemberManager } from "@/components/team-member-manager"
+import { isCalendarConfigured } from "@/lib/google-calendar"
 import { ArrowLeft, Eye } from "lucide-react"
 
 export const dynamic = "force-dynamic"
@@ -46,6 +47,7 @@ export default async function TeamMemberPage({
         <TeamMemberManager
           detail={detail}
           users={users.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
+          calendarEnabled={isCalendarConfigured()}
         />
       </div>
     </>

@@ -3,9 +3,18 @@ import { db } from "@/lib/db"
 import { barbers, oneToOnes, threeSixtyCycles, user as userTable } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { sendOneToOneInvite } from "@/lib/team-notify"
+import {
+  isCalendarConfigured,
+  upsertCalendarEvent,
+  getEventRsvp,
+  type RsvpStatus,
+} from "@/lib/google-calendar"
+import { isNotNull } from "drizzle-orm"
 
-/** Create a 1-2-1 for a barber at the given time, then email .ics invites to
- *  the barber + their manager. Returns the new row id. */
+/** Create a 1-2-1 for a barber at the given time. When Google Calendar is
+ *  configured it creates an event on the shared LTZ calendar (which emails the
+ *  attendees so they can accept in Google and gives leadership visibility);
+ *  otherwise it falls back to emailing a .ics invite. Returns the new row id. */
 export async function scheduleOneToOne(barberId: number, when: Date): Promise<number> {
   const [barber] = await db.select().from(barbers).where(eq(barbers.id, barberId))
   if (!barber) throw new Error("Barber not found")
@@ -30,14 +39,39 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
     ? (await db.select().from(userTable).where(eq(userTable.id, barber.managerUserId)))[0]
     : null
 
-  await sendOneToOneInvite({
-    oneToOneId: row.id,
-    barberName: barber.name,
-    barberEmail,
-    managerName: manager?.name ?? null,
-    managerEmail: manager?.email ?? null,
-    scheduledFor: when,
-  })
+  if (isCalendarConfigured()) {
+    // Google Calendar path: create a real event on the shared calendar. Google
+    // sends the invite emails and tracks RSVPs natively.
+    const attendees = [
+      barberEmail ? { email: barberEmail, displayName: barber.name } : null,
+      manager?.email ? { email: manager.email, displayName: manager.name ?? "Manager" } : null,
+    ].filter(Boolean) as { email: string; displayName: string }[]
+
+    const event = await upsertCalendarEvent({
+      requestId: `1-2-1-${row.id}`,
+      summary: `1-2-1: ${barber.name}`,
+      description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
+      start: when,
+      durationMinutes: 30,
+      attendees,
+    })
+    if (event) {
+      await db
+        .update(oneToOnes)
+        .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
+        .where(eq(oneToOnes.id, row.id))
+    }
+  } else {
+    // Fallback: email a .ics calendar invite to the barber + their manager.
+    await sendOneToOneInvite({
+      oneToOneId: row.id,
+      barberName: barber.name,
+      barberEmail,
+      managerName: manager?.name ?? null,
+      managerEmail: manager?.email ?? null,
+      scheduledFor: when,
+    })
+  }
   return row.id
 }
 
@@ -88,13 +122,85 @@ export async function autoOpenThreeSixtyCycles(now = new Date()): Promise<number
     if (existing) continue
     const due = new Date(now)
     due.setDate(due.getDate() + 21)
-    await db.insert(threeSixtyCycles).values({
-      barberId: b.id,
-      period,
-      dueOn: due.toISOString().slice(0, 10),
-      status: "Open",
-    })
+    const [cycle] = await db
+      .insert(threeSixtyCycles)
+      .values({
+        barberId: b.id,
+        period,
+        dueOn: due.toISOString().slice(0, 10),
+        status: "Open",
+      })
+      .returning({ id: threeSixtyCycles.id })
+
+    // Put an all-day milestone on the shared LTZ calendar so leadership can see
+    // the 360 due date alongside everything else.
+    if (isCalendarConfigured()) {
+      const event = await upsertCalendarEvent({
+        requestId: `360-${cycle.id}`,
+        summary: `360 review due: ${b.name} (${period})`,
+        description: `360 feedback cycle for ${b.name}. Reviewers to complete by the due date.`,
+        start: due,
+        durationMinutes: 0,
+        attendees: [],
+        allDay: true,
+      })
+      if (event) {
+        await db
+          .update(threeSixtyCycles)
+          .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
+          .where(eq(threeSixtyCycles.id, cycle.id))
+      }
+    }
     opened++
   }
   return opened
+}
+
+/**
+ * Poll Google Calendar for RSVP changes on upcoming 1-2-1s and write the
+ * barber's / manager's accept-decline status back into the app, so leadership
+ * sees acceptance without leaving the dashboard. Idempotent; returns how many
+ * rows were updated. No-op when Google Calendar isn't configured.
+ */
+export async function syncOneToOneRsvps(): Promise<number> {
+  if (!isCalendarConfigured()) return 0
+
+  // Only sync events that exist in Google and are still scheduled (future or
+  // recent), to keep the API calls bounded.
+  const rows = await db
+    .select()
+    .from(oneToOnes)
+    .where(and(eq(oneToOnes.status, "Scheduled"), isNotNull(oneToOnes.googleEventId)))
+
+  let updated = 0
+  for (const o of rows) {
+    if (!o.googleEventId) continue
+    const rsvp = await getEventRsvp(o.googleEventId)
+    if (!rsvp) continue
+
+    // Resolve attendee emails so we can map responses to barber vs manager.
+    const [barber] = await db.select().from(barbers).where(eq(barbers.id, o.barberId))
+    const barberEmail = barber?.userId
+      ? (await db.select().from(userTable).where(eq(userTable.id, barber.userId)))[0]?.email
+      : null
+    const managerEmail = o.managerUserId
+      ? (await db.select().from(userTable).where(eq(userTable.id, o.managerUserId)))[0]?.email
+      : null
+
+    const lookup = (email?: string | null): RsvpStatus =>
+      (email && rsvp.perAttendee.find((a) => a.email === email.toLowerCase())?.status) ||
+      "needsAction"
+
+    const barberResponse = lookup(barberEmail)
+    const managerResponse = lookup(managerEmail)
+
+    if (barberResponse !== o.barberResponse || managerResponse !== o.managerResponse) {
+      await db
+        .update(oneToOnes)
+        .set({ barberResponse, managerResponse, rsvpSyncedAt: new Date() })
+        .where(eq(oneToOnes.id, o.id))
+      updated++
+    }
+  }
+  return updated
 }

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server"
-import { autoScheduleOneToOnes, autoOpenThreeSixtyCycles } from "@/lib/team-schedule"
+import {
+  autoScheduleOneToOnes,
+  autoOpenThreeSixtyCycles,
+  syncOneToOneRsvps,
+} from "@/lib/team-schedule"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -27,7 +31,10 @@ export async function GET(req: Request) {
   try {
     const oneToOnes = await autoScheduleOneToOnes()
     const threeSixties = await autoOpenThreeSixtyCycles()
-    return NextResponse.json({ ok: true, oneToOnes, threeSixties })
+    // Pull accept/decline responses back from Google Calendar so leadership
+    // sees RSVP status in the app.
+    const rsvpUpdates = await syncOneToOneRsvps()
+    return NextResponse.json({ ok: true, oneToOnes, threeSixties, rsvpUpdates })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error"
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
