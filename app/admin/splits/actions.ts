@@ -30,3 +30,23 @@ export async function setBarberSplit(formData: FormData) {
 
   revalidatePath("/admin/splits")
 }
+
+/**
+ * Remove a barber. Owner-only. This is a soft delete — the barber is marked
+ * inactive so they drop off data-entry, headcount tallies and the splits list,
+ * while their historical takings rows are preserved for reporting. Reversible
+ * by flipping `active` back on.
+ */
+export async function deactivateBarber(formData: FormData) {
+  await requireOwner()
+
+  const id = Number(formData.get("id"))
+  if (!id) throw new Error("Invalid barber")
+
+  await db.update(barbers).set({ active: false }).where(eq(barbers.id, id))
+
+  revalidatePath("/admin/splits")
+  revalidatePath("/data-entry")
+  revalidatePath("/")
+  revalidatePath("/sites")
+}

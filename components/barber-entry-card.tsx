@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2, MapPin } from "lucide-react"
+import { Check, Loader2, MapPin, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -32,9 +32,16 @@ export function BarberEntryCard({
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
+  // Once submitted, the card collapses to a confirmation with the inputs
+  // cleared so figures are stored and the form resets out of the way. The
+  // manager can reopen it with "Edit" if a correction is needed.
+  const [submitted, setSubmitted] = useState(false)
+  const [recordedTotal, setRecordedTotal] = useState(0)
   const [cash, setCash] = useState(barber.cash)
   const [card, setCard] = useState(barber.card)
   const [siteId, setSiteId] = useState(String(barber.siteId))
+  // Bumping this key remounts the form, clearing all uncontrolled inputs.
+  const [formKey, setFormKey] = useState(0)
 
   const total = (Number(cash) || 0) + (Number(card) || 0)
   const attainment =
@@ -45,17 +52,55 @@ export function BarberEntryCard({
     setSaved(false)
     try {
       await saveWeeklyTakings(formData)
+      setRecordedTotal((Number(cash) || 0) + (Number(card) || 0))
       setSaved(true)
+      setSubmitted(true)
+      // Reset the working fields and remount the form so nothing stale lingers.
+      setCash(0)
+      setCard(0)
+      setFormKey((k) => k + 1)
       router.refresh()
-      setTimeout(() => setSaved(false), 2500)
     } finally {
       setPending(false)
     }
   }
 
+  function reopen() {
+    setSubmitted(false)
+    setSaved(false)
+  }
+
+  if (submitted) {
+    return (
+      <Card className="flex items-center justify-between gap-3 border-rag-green/40 bg-rag-green/5 p-4 md:p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rag-green/15 text-rag-green">
+            <Check className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{barber.name}</p>
+            <p className="text-xs text-muted-foreground">
+              Submitted · {fmtGBP(recordedTotal)} recorded
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={reopen}
+          className="h-9 gap-1.5"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </Button>
+      </Card>
+    )
+  }
+
   return (
     <Card className="p-4 md:p-5">
-      <form action={action}>
+      <form key={formKey} action={action}>
         <input type="hidden" name="barberId" value={barber.id} />
         <input type="hidden" name="weekEnding" value={week} />
         <input type="hidden" name="siteId" value={siteId} />

@@ -2,12 +2,23 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2 } from "lucide-react"
+import { Check, Loader2, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { fmtGBP } from "@/lib/format"
-import { setBarberSplit } from "@/app/admin/splits/actions"
+import { setBarberSplit, deactivateBarber } from "@/app/admin/splits/actions"
 import type { BarberSplitRow } from "@/lib/data"
 
 export function SplitRow({ row }: { row: BarberSplitRow }) {
@@ -17,6 +28,7 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
   )
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   const parsed = pct === "" ? row.effectiveBarberPct : Number(pct)
   const business = Number.isFinite(parsed) ? 100 - parsed : 0
@@ -36,11 +48,24 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
     }
   }
 
+  async function remove() {
+    setRemoving(true)
+    try {
+      const fd = new FormData()
+      fd.set("id", String(row.id))
+      await deactivateBarber(fd)
+      router.refresh()
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
-    <form
-      action={action}
-      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
-    >
+    <div className="flex items-stretch gap-2">
+      <form
+        action={action}
+        className="flex flex-1 flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+      >
       <input type="hidden" name="id" value={row.id} />
 
       <div className="min-w-0 md:w-56">
@@ -118,6 +143,47 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
           {pending ? "Saving…" : saved ? "Saved" : "Set split"}
         </Button>
       )}
-    </form>
+      </form>
+
+      <AlertDialog>
+        <AlertDialogTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={removing}
+              aria-label={`Remove ${row.name}`}
+              className="h-auto self-stretch px-2 text-muted-foreground hover:text-rag-red"
+            />
+          }
+        >
+          {removing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {row.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {row.name} will be removed from data entry, headcount tallies and
+              the splits list. Their past takings stay in reporting history, and
+              this can be reversed later if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={remove}
+              className="bg-rag-red text-white hover:bg-rag-red/90"
+            >
+              Remove barber
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
