@@ -92,6 +92,9 @@ export type SendArgs = {
   html: string
   kind: string
   weekEnding?: string | null
+  // Optional file attachments (e.g. a .ics calendar invite). `content` is the
+  // raw file content as a string; Resend accepts a Buffer/string here.
+  attachments?: { filename: string; content: string; contentType?: string }[]
 }
 
 /** Send a single email via Resend and log the outcome. Never throws —
@@ -103,6 +106,7 @@ export async function sendEmail({
   html,
   kind,
   weekEnding = null,
+  attachments,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const resend = client()
   if (!resend) {
@@ -117,6 +121,15 @@ export async function sendEmail({
       to,
       subject,
       html,
+      ...(attachments && attachments.length
+        ? {
+            attachments: attachments.map((a) => ({
+              filename: a.filename,
+              content: Buffer.from(a.content, "utf-8"),
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
     })
     if (sendError) {
       const error = sendError.message || "Resend rejected the message"

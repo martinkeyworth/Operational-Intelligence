@@ -82,6 +82,14 @@ export async function requireAdmin(): Promise<AccessUser> {
   return user
 }
 
+/** A signed-in user who may manage the Team Area (HR roster + linking).
+ *  Company dashboard users; owners implicitly included. */
+export async function requireTeamAdmin(): Promise<AccessUser> {
+  const user = await requireUser()
+  if (!user.isCompany || !user.canViewDashboard) redirect("/no-access")
+  return user
+}
+
 /** Owners only (Martin & Cosmin). Gates the secure Split area. */
 export async function requireOwner(): Promise<AccessUser> {
   const user = await requireUser()

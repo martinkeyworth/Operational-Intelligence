@@ -116,6 +116,19 @@ export const barbers = pgTable("barbers", {
   barberPct: numeric("barber_pct"),
   splitSetBy: text("split_set_by"),
   splitSetAt: timestamp("split_set_at"),
+  // --- Team Area: links + HR profile -----------------------------------
+  // Links this operational barber record to their Better Auth login account,
+  // so a logged-in barber sees only their own self-service data. Null until an
+  // admin links them in the Team Area.
+  userId: text("user_id"),
+  // The user account of the manager who runs this barber's monthly 1-2-1s.
+  managerUserId: text("manager_user_id"),
+  // Apprentices are tracked against a 3-month "cutting + earning revenue" gate.
+  isApprentice: boolean("is_apprentice").notNull().default(false),
+  // Employment start date (drives apprentice 3-month gate + service length).
+  startDate: date("start_date"),
+  // Annual holiday entitlement in days (statutory default 28).
+  holidayAllowance: integer("holiday_allowance").notNull().default(28),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -369,5 +382,68 @@ export const activityLog = pgTable("activity_log", {
   weekEnding: date("week_ending").notNull(),
   count: integer("count").notNull().default(0),
   notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// --- Team Area: HR self-service --------------------------------------------
+// Holiday + sickness records for a barber. `kind` distinguishes the two so we
+// can run separate KPIs: holiday counts down from the 28-day allowance;
+// sickness days accumulate (0-4 green / 5 amber / 6+ red).
+export const leaveRequests = pgTable("leave_requests", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull(),
+  kind: text("kind").notNull().default("holiday"), // holiday | sickness
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  days: integer("days").notNull().default(1),
+  // holiday: Pending | Approved | Declined; sickness is logged as Recorded.
+  status: text("status").notNull().default("Pending"),
+  reason: text("reason"),
+  // Calendar year the days count against (for holiday allowance + sickness KPI).
+  leaveYear: integer("leave_year").notNull(),
+  requestedByUserId: text("requested_by_user_id"),
+  decidedByUserId: text("decided_by_user_id"),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Monthly 1-2-1 between a barber and their assigned manager. Auto-scheduled
+// once a month; `.ics` invite emailed to barber + manager on creation.
+export const oneToOnes = pgTable("one_to_ones", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull(),
+  managerUserId: text("manager_user_id"),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  status: text("status").notNull().default("Scheduled"), // Scheduled | Completed | Missed
+  autoScheduled: boolean("auto_scheduled").notNull().default(true),
+  inviteSentAt: timestamp("invite_sent_at"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// 360 review cycle (every 6 months). The barber nominates 5 reviewers; each
+// nominee is tracked to completion in three_sixty_nominees.
+export const threeSixtyCycles = pgTable("three_sixty_cycles", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull(),
+  // Period label, e.g. "2026-H1".
+  period: text("period").notNull(),
+  openedOn: date("opened_on").notNull().defaultNow(),
+  dueOn: date("due_on").notNull(),
+  status: text("status").notNull().default("Open"), // Open | Complete
+  inviteSentAt: timestamp("invite_sent_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+export const threeSixtyNominees = pgTable("three_sixty_nominees", {
+  id: serial("id").primaryKey(),
+  cycleId: integer("cycle_id").notNull(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  status: text("status").notNull().default("Invited"), // Invited | Completed
+  invitedAt: timestamp("invited_at"),
+  completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
