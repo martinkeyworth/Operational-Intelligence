@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
@@ -135,6 +135,12 @@ export function AppShell({
   const [mobileSection, setMobileSection] = useState<string>(
     () => activeSectionTitle ?? sections[0]?.title ?? "",
   )
+  // Keep the selected mobile section in sync with the route. AppShell does not
+  // remount on client-side navigation, so without this the second-tier strip
+  // would keep showing a stale section's sub-items after navigating.
+  useEffect(() => {
+    if (activeSectionTitle) setMobileSection(activeSectionTitle)
+  }, [activeSectionTitle])
   const mobileItems =
     sections.find((s) => s.title === mobileSection)?.items ?? []
 
@@ -147,6 +153,13 @@ export function AppShell({
   )
   const toggleSection = (title: string) =>
     setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }))
+  // Auto-open the section containing the current page after navigation, while
+  // preserving any sections the user manually opened/closed.
+  useEffect(() => {
+    if (activeSectionTitle) {
+      setOpenSections((prev) => ({ ...prev, [activeSectionTitle]: true }))
+    }
+  }, [activeSectionTitle])
 
   const initials = user.name
     .split(" ")
