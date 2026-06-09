@@ -149,13 +149,21 @@ export async function getSubmissionStatus(
             : `${reporting}/${declared} barbers entered`,
       })
 
+      // A weekly confirmation only counts when the underlying takings are
+      // actually in — you cannot validly sign off a week with no figures.
+      const confirmed = confirmedSites.has(s.id)
+      const confirmationValid = confirmed && takingsSubmitted
       items.push({
         key: `confirm-${s.id}`,
         category: "Confirmation",
         label: `${s.name} — weekly confirmation`,
         ownerRole: "Functional Leader",
-        submitted: confirmedSites.has(s.id),
-        detail: confirmedSites.has(s.id) ? "Confirmed" : "Not confirmed",
+        submitted: confirmationValid,
+        detail: confirmationValid
+          ? "Confirmed"
+          : confirmed
+            ? "Confirmed but takings missing"
+            : "Not confirmed",
       })
     }
 
