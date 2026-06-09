@@ -6,6 +6,20 @@
 
 import type { Rag } from "@/lib/format"
 import { PLAN_ASSUMPTIONS } from "@/lib/plan"
+import { SITE_BRAND_OPTIONS } from "@/lib/brands"
+
+// Functional areas whose KPIs are tracked separately per brand. Marketing &
+// Social is owned at the brand level (Mario, Head of Brands), so each brand
+// reports its own posts, rating, bookings, spend and free haircuts — and the
+// area RAG rolls up every brand × KPI cell (a missing brand counts as red).
+export const PER_BRAND_AREAS = ["Marketing"]
+
+/** The brands a per-brand area is scored across (the barbershop site brands). */
+export const KPI_BRANDS = SITE_BRAND_OPTIONS
+
+export function isPerBrandArea(areaKey: string): boolean {
+  return PER_BRAND_AREAS.includes(areaKey)
+}
 
 // Marketing budget derived from the plan: £2k/yr per brand across the active
 // brands, expressed as a weekly group budget for KPI scoring.
@@ -13,6 +27,11 @@ export const MARKETING_BRAND_COUNT = 3
 export const MARKETING_WEEKLY_BUDGET = Math.round(
   (PLAN_ASSUMPTIONS.marketingAnnualPerBrand * MARKETING_BRAND_COUNT) /
     PLAN_ASSUMPTIONS.weeksPerYear,
+)
+// Per-brand weekly marketing budget (one brand's £2k/yr expressed weekly). Used
+// to score the spend KPI when Marketing is tracked per brand.
+export const MARKETING_WEEKLY_BUDGET_PER_BRAND = Math.round(
+  PLAN_ASSUMPTIONS.marketingAnnualPerBrand / PLAN_ASSUMPTIONS.weeksPerYear,
 )
 
 export type KpiDirection = "higher_better" | "lower_better"
@@ -157,6 +176,22 @@ export const KPI_CATALOGUE: KpiDef[] = [
 
 export function kpisForArea(areaKey: string): KpiDef[] {
   return KPI_CATALOGUE.filter((k) => k.functionArea === areaKey)
+}
+
+/** KPI defs for a per-brand area, with budget-style thresholds scaled to a
+ *  single brand. For Marketing the spend KPI is measured against one brand's
+ *  weekly budget rather than the whole-group budget. */
+export function kpisForBrand(areaKey: string): KpiDef[] {
+  return kpisForArea(areaKey).map((def) => {
+    if (def.code === "mkt_spend") {
+      return {
+        ...def,
+        green: MARKETING_WEEKLY_BUDGET_PER_BRAND,
+        amber: Math.round(MARKETING_WEEKLY_BUDGET_PER_BRAND * 1.3),
+      }
+    }
+    return def
+  })
 }
 
 export function findKpi(code: string): KpiDef | undefined {

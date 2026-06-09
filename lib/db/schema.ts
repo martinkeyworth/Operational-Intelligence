@@ -199,6 +199,9 @@ export const kpiValues = pgTable("kpi_values", {
   id: serial("id").primaryKey(),
   kpiId: integer("kpi_id").notNull(),
   siteId: integer("site_id"),
+  // Optional brand scope. Per-brand KPIs (e.g. Marketing & Social) store one
+  // row per brand per week; group-level KPIs leave this null.
+  brand: text("brand"),
   period: text("period").notNull(),
   value: numeric("value").notNull().default("0"),
   rag: text("rag").notNull().default("green"),

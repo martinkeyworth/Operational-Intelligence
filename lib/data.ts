@@ -134,6 +134,7 @@ export async function getGroupRevenueBreakdown(
     .select({
       amount: sql<number>`coalesce(sum(${sublettingTakings.amount}), 0)`,
       target: sql<number>`coalesce(sum(${sublettingTakings.target}), 0)`,
+      rows: sql<number>`count(*)`,
     })
     .from(sublettingTakings)
     .where(eq(sublettingTakings.weekEnding, week))
@@ -158,8 +159,31 @@ export async function getGroupRevenueBreakdown(
   )
 
   const chairRevenue = Number(chair?.total ?? 0)
-  const subletRevenue = Number(sublet?.amount ?? 0)
-  const subletTarget = Number(sublet?.target ?? 0)
+  // Subletting is declared periodically (not every week). When the selected
+  // week has no entry, carry forward the most recently declared week so the
+  // dashboard reflects the latest known position rather than collapsing to £0
+  // (which previously read as 100% / green against a £0 target).
+  let subletRevenue = Number(sublet?.amount ?? 0)
+  let subletRows = Number(sublet?.rows ?? 0)
+  if (subletRows === 0) {
+    const [carry] = await db
+      .select({
+        amount: sql<number>`coalesce(sum(${sublettingTakings.amount}), 0)`,
+        week: sublettingTakings.weekEnding,
+      })
+      .from(sublettingTakings)
+      .where(sql`${sublettingTakings.weekEnding} <= ${week}`)
+      .groupBy(sublettingTakings.weekEnding)
+      .orderBy(desc(sublettingTakings.weekEnding))
+      .limit(1)
+    if (carry) {
+      subletRevenue = Number(carry.amount ?? 0)
+      subletRows = 1
+    }
+  }
+  // Target is always the fixed weekly policy target (£950) whenever subletting
+  // is tracked at all — never a £0 target derived from missing rows.
+  const subletTarget = subletRows > 0 ? SUBLET_WEEKLY_TARGET : 0
   const chairTarget = await chairTargetTotal()
 
   return {

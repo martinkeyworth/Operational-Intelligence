@@ -123,15 +123,20 @@ export function AppShell({
       : []),
   ].filter((s) => s.items.length > 0)
 
-  // Flat list for the mobile horizontal strip.
-  const flatNav = sections.flatMap((s) => s.items)
-
   // Which section a given path lives in (for active highlighting + auto-open).
   const isItemActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href)
   const activeSectionTitle = sections.find((s) =>
     s.items.some((i) => isItemActive(i.href)),
   )?.title
+
+  // Mobile uses a two-tier strip: a row of the ~5 section names, then the
+  // sub-items of whichever section is selected. Defaults to the active one.
+  const [mobileSection, setMobileSection] = useState<string>(
+    () => activeSectionTitle ?? sections[0]?.title ?? "",
+  )
+  const mobileItems =
+    sections.find((s) => s.title === mobileSection)?.items ?? []
 
   // Collapsible state: the section holding the current page starts open.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(
@@ -299,28 +304,56 @@ export function AppShell({
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
+        {/* Mobile section tabs (top tier) */}
         <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
-          {flatNav.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href)
+          {sections.map((section) => {
+            const SectionIcon = section.icon
+            const selected = section.title === mobileSection
+            const hasActive = section.title === activeSectionTitle
             return (
-              <Link
-                key={item.href}
-                href={item.href}
+              <button
+                key={section.title}
+                type="button"
+                onClick={() => setMobileSection(section.title)}
                 className={cn(
-                  "whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium",
-                  active
+                  "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors",
+                  selected
                     ? "bg-sidebar-accent text-foreground"
-                    : "text-muted-foreground",
+                    : hasActive
+                      ? "text-foreground"
+                      : "text-muted-foreground",
                 )}
               >
-                {item.label}
-              </Link>
+                <SectionIcon className="h-4 w-4" />
+                {section.title}
+              </button>
             )
           })}
         </div>
+        {/* Mobile sub-items (second tier) — hidden when section has a single item */}
+        {mobileItems.length > 1 && (
+          <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border bg-muted/30 px-2 py-2">
+            {mobileItems.map((item) => {
+              const active = isItemActive(item.href)
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium",
+                    active
+                      ? "bg-sidebar-accent text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        )}
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
