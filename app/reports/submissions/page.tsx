@@ -1,12 +1,18 @@
 import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
+import Link from "next/link"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagBadge, RagDot } from "@/components/rag"
-import { getWeeks, getLatestWeek } from "@/lib/data"
+import { getWeeks } from "@/lib/data"
 import { getSubmissionStatus } from "@/lib/submissions"
+import { currentWeekEnding, previousWeekEnding } from "@/lib/reporting"
 import type { Rag } from "@/lib/format"
 import { CheckCircle2, Clock } from "lucide-react"
 import { WeekPicker } from "@/components/week-picker"
+
+function ragFor(s: { complete: boolean; pct: number }): Rag {
+  return s.complete ? "green" : s.pct >= 75 ? "amber" : "red"
+}
 
 export const dynamic = "force-dynamic"
 
@@ -17,9 +23,22 @@ export default async function SubmissionsPage({
 }) {
   const user = await requireDashboard()
   const { week: weekParam } = await searchParams
-  const weeks = await getWeeks()
-  const latest = await getLatestWeek()
-  const week = weekParam && weeks.includes(weekParam) ? weekParam : latest
+
+  // Anchor the board to the live reporting week, not whatever week happens to
+  // have data. Always offer this week + last week so the two are comparable.
+  const thisWeek = currentWeekEnding()
+  const lastWeek = previousWeekEnding(thisWeek)
+  const dataWeeks = await getWeeks()
+  const weeks = Array.from(new Set([thisWeek, lastWeek, ...dataWeeks])).sort(
+    (a, b) => (a < b ? 1 : -1),
+  )
+  const week = weekParam && weeks.includes(weekParam) ? weekParam : thisWeek
+
+  // Headline status for the two relevant weeks (drives the quick switch).
+  const [thisStatus, lastStatus] = await Promise.all([
+    getSubmissionStatus(thisWeek),
+    getSubmissionStatus(lastWeek),
+  ])
 
   if (!week) {
     return (
@@ -39,11 +58,7 @@ export default async function SubmissionsPage({
   }
 
   const status = await getSubmissionStatus(week)
-  const summaryRag: Rag = status.complete
-    ? "green"
-    : status.pct >= 75
-      ? "amber"
-      : "red"
+  const summaryRag: Rag = ragFor(status)
 
   return (
     <AppShell user={user}>
@@ -64,6 +79,44 @@ export default async function SubmissionsPage({
       </PageHeader>
 
       <div className="space-y-6 px-5 py-6 md:px-8">
+        {/* This week vs last week quick switch */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: "This week", wk: thisWeek, s: thisStatus },
+            { label: "Last week", wk: lastWeek, s: lastStatus },
+          ].map(({ label, wk, s }) => {
+            const active = wk === week
+            return (
+              <Link
+                key={wk}
+                href={`/reports/submissions?week=${wk}`}
+                aria-current={active ? "true" : undefined}
+                className={`rounded-lg border p-4 transition-colors ${
+                  active
+                    ? "border-foreground bg-card"
+                    : "border-border bg-card/50 hover:bg-card"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {label}
+                  </p>
+                  <RagDot rag={ragFor(s)} />
+                </div>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                  {s.submittedCount}/{s.total}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {s.complete
+                    ? "All in"
+                    : `${s.outstandingCount} outstanding`}{" "}
+                  · w/e {s.weekLabel}
+                </p>
+              </Link>
+            )
+          })}
+        </div>
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <WeekPicker weeks={weeks} current={week} basePath="/reports/submissions" />
           <p className="text-xs text-muted-foreground">
