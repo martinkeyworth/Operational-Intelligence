@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,9 @@ import {
   Inbox,
   Settings,
   LogOut,
+  Crown,
+  Wrench,
+  ChevronDown,
 } from "lucide-react"
 
 type ShellUser = {
@@ -48,16 +52,18 @@ export function AppShell({
   const pathname = usePathname()
   const router = useRouter()
 
-  // Nav is grouped into labelled sections so the (long) list stays scannable.
+  // Nav is grouped into ~5 collapsible top-level sections so the list stays
+  // short; submenus flow naturally from each section.
   type NavItem = { href: string; label: string; icon: typeof Inbox }
-  type NavSection = { title: string; items: NavItem[] }
+  type NavSection = { title: string; icon: typeof Inbox; items: NavItem[] }
 
   const canEnterData = user.isBarber || user.canViewDashboard
   const isAdmin = Boolean(user.isCompany && user.canViewDashboard)
 
   const sections: NavSection[] = [
     {
-      title: "Work",
+      title: "My Work",
+      icon: Inbox,
       items: [
         { href: "/my-work", label: "My Work", icon: Inbox },
         ...(canEnterData
@@ -68,46 +74,45 @@ export function AppShell({
     ...(user.canViewDashboard
       ? [
           {
-            title: "Overview",
+            title: "Leadership",
+            icon: Crown,
             items: [
               { href: "/", label: "Group Overview", icon: LayoutDashboard },
               { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
-              { href: "/sites", label: "Sites", icon: Store },
-              { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
-            ],
-          },
-          {
-            title: "Reports",
-            items: [
               { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
               { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
-              { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
             ],
           },
           {
-            title: "Registers",
+            title: "Operational",
+            icon: Wrench,
             items: [
+              { href: "/sites", label: "Sites", icon: Store },
               { href: "/actions", label: "Action Register", icon: ListChecks },
               { href: "/operations", label: "Risk Register", icon: ShieldAlert },
               { href: "/decisions", label: "Decision Register", icon: Gavel },
-            ],
-          },
-          {
-            title: "Pipelines",
-            items: [
-              { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
-              { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
               { href: "/activity", label: "Activity Tracker", icon: Activity },
               { href: "/cadence", label: "Review Cadence", icon: CalendarClock },
             ],
           },
+          {
+            title: "Functions",
+            icon: LayoutGrid,
+            items: [
+              { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
+              { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
+              { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
+              { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
+            ],
+          },
         ]
       : []),
-    // All management lives behind a single Admin entry now.
+    // All management lives behind a single Admin entry.
     ...(isAdmin
       ? [
           {
             title: "Admin",
+            icon: Settings,
             items: [{ href: "/admin", label: "Admin", icon: Settings }],
           },
         ]
@@ -116,6 +121,23 @@ export function AppShell({
 
   // Flat list for the mobile horizontal strip.
   const flatNav = sections.flatMap((s) => s.items)
+
+  // Which section a given path lives in (for active highlighting + auto-open).
+  const isItemActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href)
+  const activeSectionTitle = sections.find((s) =>
+    s.items.some((i) => isItemActive(i.href)),
+  )?.title
+
+  // Collapsible state: the section holding the current page starts open.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(
+    () =>
+      Object.fromEntries(
+        sections.map((s) => [s.title, s.title === activeSectionTitle]),
+      ),
+  )
+  const toggleSection = (title: string) =>
+    setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }))
 
   const initials = user.name
     .split(" ")
@@ -150,36 +172,79 @@ export function AppShell({
             <p className="text-[11px] text-muted-foreground">Governance</p>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-4 overflow-y-auto">
-          {sections.map((section) => (
-            <div key={section.title} className="flex flex-col gap-1">
-              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {section.title}
-              </p>
-              {section.items.map((item) => {
-                const active =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href)
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
+        <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
+          {sections.map((section) => {
+            const SectionIcon = section.icon
+            const isOpen = openSections[section.title] ?? false
+            // Single-item sections (e.g. Admin) render as a direct link, no toggle.
+            if (section.items.length === 1) {
+              const item = section.items[0]
+              const active = isItemActive(item.href)
+              const Icon = item.icon
+              return (
+                <Link
+                  key={section.title}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-sidebar-accent text-sidebar-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {section.title}
+                </Link>
+              )
+            }
+            return (
+              <div key={section.title} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.title)}
+                  aria-expanded={isOpen}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    section.title === activeSectionTitle && !isOpen
+                      ? "text-sidebar-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                  )}
+                >
+                  <SectionIcon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">{section.title}</span>
+                  <ChevronDown
                     className={cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-sidebar-accent text-sidebar-foreground"
-                        : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                      "h-4 w-4 shrink-0 transition-transform",
+                      isOpen && "rotate-180",
                     )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                )
-              })}
-            </div>
-          ))}
+                  />
+                </button>
+                {isOpen && (
+                  <div className="mt-1 flex flex-col gap-1 pl-4">
+                    {section.items.map((item) => {
+                      const active = isItemActive(item.href)
+                      const Icon = item.icon
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={cn(
+                            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                            active
+                              ? "bg-sidebar-accent text-sidebar-foreground"
+                              : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
         <div className="border-t border-border p-3">
           <div className="flex items-center gap-3 px-2 py-2">
