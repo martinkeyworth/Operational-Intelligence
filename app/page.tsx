@@ -1,5 +1,4 @@
-import { requireUser } from "@/lib/access"
-import { redirect } from "next/navigation"
+import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { GroupDashboard } from "@/components/group-dashboard"
 import {
@@ -26,12 +25,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ week?: string }>
 }) {
-  const user = await requireUser()
-
-  // Non-dashboard users (barbers/apprentices) get their own self-service area.
-  if (!user.canViewDashboard) {
-    redirect("/team")
-  }
+  const user = await requireDashboard()
 
   const { week: weekParam } = await searchParams
   const weeks = await getWeeks()
