@@ -15,9 +15,10 @@ import {
   setActionStatus,
   assignActionOwner,
   setActionRisk,
+  setActionDueDate,
 } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
-import { AlertTriangle, Flag } from "lucide-react"
+import { AlertTriangle, Flag, Clock } from "lucide-react"
 
 const STATUSES = ["Open", "In Progress", "Blocked", "Closed"]
 const UNASSIGNED = "__none__"
@@ -33,6 +34,7 @@ export function OperationsActionCard({
   const [status, setStatus] = useState(action.status)
   const [ownerId, setOwnerId] = useState(action.ownerUserId ?? UNASSIGNED)
   const [isRisk, setIsRisk] = useState(action.isRisk)
+  const [dueDate, setDueDate] = useState(action.dueDate ?? "")
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -70,6 +72,14 @@ export function OperationsActionCard({
     run(() => setActionRisk(fd))
   }
 
+  function changeDueDate(next: string) {
+    setDueDate(next)
+    const fd = new FormData()
+    fd.set("id", String(action.id))
+    fd.set("dueDate", next)
+    run(() => setActionDueDate(fd))
+  }
+
   return (
     <Card
       className={`p-4 ${status === "Closed" ? "opacity-55" : ""} ${pending ? "opacity-70" : ""}`}
@@ -97,9 +107,33 @@ export function OperationsActionCard({
             {action.functionArea} · {action.siteName ?? "Group"} ·{" "}
             {action.priority} priority
           </p>
+          {action.overdue && status !== "Closed" && (
+            <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+              <Clock className="h-3 w-3" />
+              {action.daysOverdue} day{action.daysOverdue === 1 ? "" : "s"} overdue
+            </span>
+          )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <RagSelect id={action.id} rag={action.rag} />
+
+            <div className="inline-flex items-center gap-1.5">
+              <Clock
+                className={`h-3.5 w-3.5 ${action.overdue ? "text-rag-red" : "text-muted-foreground"}`}
+              />
+              <input
+                type="date"
+                value={dueDate}
+                disabled={pending}
+                onChange={(e) => changeDueDate(e.target.value)}
+                aria-label="Due date"
+                className={`h-8 w-[150px] rounded-md border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  action.overdue
+                    ? "border-rag-red/50 text-rag-red"
+                    : "border-border"
+                }`}
+              />
+            </div>
 
             <Select value={status} onValueChange={changeStatus} disabled={pending}>
               <SelectTrigger className="h-8 w-[140px] text-xs">
