@@ -27,14 +27,20 @@ import {
 import { StatCard } from "@/components/ui-bits"
 import { fmtGBP } from "@/lib/format"
 import type { JobPosting, JobReferral } from "@/lib/jobs"
+import type { SiteOption } from "@/lib/data"
 import { submitReferral } from "@/app/jobs/actions"
+import { JobDialog, AdvertDialog, JobDeleteButton } from "@/components/jobs-board"
 
 export function OpeningsView({
   jobs,
   myReferrals,
+  canManage = false,
+  sites = [],
 }: {
   jobs: JobPosting[]
   myReferrals: JobReferral[]
+  canManage?: boolean
+  sites?: SiteOption[]
 }) {
   const myHires = myReferrals.filter((r) => r.status === "hired").length
   const myEarned = myReferrals
@@ -66,7 +72,15 @@ export function OpeningsView({
         <div className="grid gap-4 md:grid-cols-2">
           {jobs.map((job) => {
             const mine = myReferrals.filter((r) => r.jobId === job.id)
-            return <OpeningCard key={job.id} job={job} myReferrals={mine} />
+            return (
+              <OpeningCard
+                key={job.id}
+                job={job}
+                myReferrals={mine}
+                canManage={canManage}
+                sites={sites}
+              />
+            )
           })}
         </div>
       )}
@@ -77,9 +91,13 @@ export function OpeningsView({
 function OpeningCard({
   job,
   myReferrals,
+  canManage,
+  sites,
 }: {
   job: JobPosting
   myReferrals: JobReferral[]
+  canManage: boolean
+  sites: SiteOption[]
 }) {
   return (
     <div className="flex flex-col rounded-lg border border-border bg-card p-5">
@@ -129,6 +147,17 @@ function OpeningCard({
           </span>
         )}
       </div>
+
+      {canManage && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dashed border-border pt-3">
+          <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Manage
+          </span>
+          <JobDialog sites={sites} job={job} />
+          <AdvertDialog job={job} />
+          <JobDeleteButton job={job} />
+        </div>
+      )}
     </div>
   )
 }

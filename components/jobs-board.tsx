@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode, ReactElement } from "react"
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -216,14 +217,6 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
     })
   }
 
-  function remove() {
-    if (!confirm("Delete this posting and its referrals?")) return
-    startTransition(async () => {
-      await deleteJob(job.id)
-      router.refresh()
-    })
-  }
-
   return (
     <div className="flex flex-col rounded-lg border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-3">
@@ -290,18 +283,59 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
             <SelectItem value="closed">Closed</SelectItem>
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
-          onClick={remove}
-          disabled={pending}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete
-        </Button>
+        <div className="ml-auto">
+          <ConfirmDialog
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </Button>
+            }
+            title="Delete this posting?"
+            description="This removes the posting and any referrals attached to it. This cannot be undone."
+            onConfirm={async () => {
+              await deleteJob(job.id)
+              router.refresh()
+            }}
+          />
+        </div>
       </div>
     </div>
+  )
+}
+
+export function JobDeleteButton({ job }: { job: JobPosting }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+
+  function remove() {
+    if (
+      !confirm(
+        `Delete the "${job.title}" posting and its referrals? This cannot be undone.`,
+      )
+    )
+      return
+    startTransition(async () => {
+      await deleteJob(job.id)
+      router.refresh()
+    })
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
+      onClick={remove}
+      disabled={pending}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+      {pending ? "Deleting…" : "Delete"}
+    </Button>
   )
 }
 
@@ -333,34 +367,86 @@ function LoadAllSuggestions({ count }: { count: number }) {
   )
 }
 
-function DeleteAllJobs({ count }: { count: number }) {
-  const router = useRouter()
+/** Reusable confirmation dialog built on the existing Dialog primitives.
+ *  Replaces window.confirm(), which is unreliable inside the preview iframe. */
+function ConfirmDialog({
+  trigger,
+  title,
+  description,
+  confirmLabel = "Delete",
+  pendingLabel = "Deleting…",
+  onConfirm,
+}: {
+  trigger: ReactNode
+  title: string
+  description: string
+  confirmLabel?: string
+  pendingLabel?: string
+  onConfirm: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
-  function removeAll() {
-    if (
-      !confirm(
-        `Delete all ${count} posting${count === 1 ? "" : "s"} and their referrals? This cannot be undone.`,
-      )
-    )
-      return
+  function confirm() {
     startTransition(async () => {
-      await deleteAllJobs()
-      router.refresh()
+      await onConfirm()
+      setOpen(false)
     })
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={removeAll}
-      disabled={pending}
-      className="text-muted-foreground hover:text-rag-red"
-    >
-      <Trash2 className="h-4 w-4" />
-      {pending ? "Clearing…" : "Delete all"}
-    </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={trigger as ReactElement} />
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:justify-end">
+          <Button
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={pending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirm}
+            disabled={pending}
+            className="bg-rag-red text-white hover:bg-rag-red/90"
+          >
+            {pending ? pendingLabel : confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteAllJobs({ count }: { count: number }) {
+  const router = useRouter()
+
+  return (
+    <ConfirmDialog
+      trigger={
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-muted-foreground hover:text-rag-red"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete all
+        </Button>
+      }
+      title={`Delete all ${count} posting${count === 1 ? "" : "s"}?`}
+      description="This permanently removes every posting and its referrals. This cannot be undone."
+      confirmLabel="Delete all"
+      pendingLabel="Clearing…"
+      onConfirm={async () => {
+        await deleteAllJobs()
+        router.refresh()
+      }}
+    />
   )
 }
 
@@ -560,7 +646,7 @@ function fieldClass() {
   return "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
 }
 
-function JobDialog({
+export function JobDialog({
   sites,
   job,
 }: {
@@ -746,7 +832,7 @@ function JobDialog({
   )
 }
 
-function AdvertDialog({ job }: { job: JobPosting }) {
+export function AdvertDialog({ job }: { job: JobPosting }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
