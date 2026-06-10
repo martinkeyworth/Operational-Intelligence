@@ -466,3 +466,49 @@ export const threeSixtyNominees = pgTable("three_sixty_nominees", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+// --- Strategic roadmap -----------------------------------------------------
+// The 5x5 plan made explicit: time-phased milestones, the editable financial
+// assumptions that flow from it (academy economics, tax, dividend policy),
+// and the leadership salary schedule. lib/roadmap.ts reads these to build the
+// projection that the dashboard and other surfaces reference.
+
+// Editable key/value assumptions driving the projection. `isPlaceholder`
+// flags figures (e.g. dividend %) that are indicative until finalised.
+export const planAssumptions = pgTable("plan_assumptions", {
+  key: text("key").primaryKey(),
+  value: numeric("value").notNull(),
+  label: text("label").notNull(),
+  unit: text("unit").notNull().default("number"), // number | gbp | pct | year | months
+  description: text("description"),
+  isPlaceholder: boolean("is_placeholder").notNull().default(false),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+// Board & director salary schedule. Performance-gated, commencing 2027.
+export const leadershipSalaries = pgTable("leadership_salaries", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull(),
+  holder: text("holder"),
+  annualSalary: numeric("annual_salary").notNull().default("0"),
+  shareClass: text("share_class"), // A | B | C | D
+  startDate: date("start_date").notNull().default("2027-01-01"),
+  performanceGated: boolean("performance_gated").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Time-phased milestones: shop openings, governance and finance events.
+export const roadmapMilestones = pgTable("roadmap_milestones", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  detail: text("detail"),
+  category: text("category").notNull().default("Expansion"), // Expansion | Governance | Finance | Milestone
+  targetYear: integer("target_year").notNull(),
+  targetMonth: integer("target_month"),
+  status: text("status").notNull().default("Planned"), // Planned | In progress | Done | At risk
+  brand: text("brand"), // Mid | Youth | Elite
+  location: text("location"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})

@@ -27,6 +27,7 @@ import {
   Wrench,
   UserRound,
   ChevronDown,
+  Map,
 } from "lucide-react"
 
 type ShellUser = {
@@ -78,6 +79,7 @@ export function AppShell({
             icon: Crown,
             items: [
               { href: "/", label: "Group Overview", icon: LayoutDashboard },
+              { href: "/roadmap", label: "Growth Roadmap", icon: Map },
               { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
               { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
               { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },

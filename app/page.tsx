@@ -1,6 +1,7 @@
 import { requireDashboard } from "@/lib/access"
 import { AppShell } from "@/components/app-shell"
 import { GroupDashboard } from "@/components/group-dashboard"
+import { RoadmapSummaryCard } from "@/components/roadmap-summary-card"
 import {
   getWeeks,
   getLatestWeek,
@@ -86,6 +87,9 @@ export default async function Page({
         submissions={submissions}
         recruitment={recruitment}
       />
+      <div className="px-5 pb-8 md:px-8">
+        <RoadmapSummaryCard />
+      </div>
     </AppShell>
   )
 }
