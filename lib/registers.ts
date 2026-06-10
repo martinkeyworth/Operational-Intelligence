@@ -10,6 +10,7 @@ import {
   user as userTable,
 } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
+import { computeAutoRag } from "@/lib/data"
 import {
   ACTIVITY_TYPES,
   RECRUITMENT_STAGES,
@@ -76,9 +77,24 @@ export async function sweepAutoEscalations(): Promise<number> {
   let escalated = 0
   for (const a of open) {
     let reason: string | null = null
+    // Effective RAG: respects the manual pin, otherwise auto-calculates from
+    // age, priority, KPI flag and the 5x5 (Strategy) rule.
+    const effectiveRag = computeAutoRag({
+      status: a.status,
+      priority: a.priority,
+      functionArea: a.functionArea,
+      dueDate: a.dueDate ? String(a.dueDate) : null,
+      createdAt: a.createdAt,
+      ragOverride: a.ragOverride,
+      now,
+    })
     if (a.dueDate && String(a.dueDate) <= sevenDaysAgo) {
       reason = "Overdue by 7+ days"
-    } else if (a.rag === "red" && a.createdAt && a.createdAt <= fourteenDaysAgo) {
+    } else if (
+      effectiveRag === "red" &&
+      a.createdAt &&
+      a.createdAt <= fourteenDaysAgo
+    ) {
       reason = "Red for 2+ weeks without resolution"
     }
     if (reason) {
