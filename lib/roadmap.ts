@@ -12,8 +12,6 @@ import {
   PLAN_TARGET_YEAR,
   PLAN_SALES_GOAL,
   milestoneFor,
-  cumulativeShopsByMonth,
-  OPENING_SCHEDULE,
 } from "@/lib/plan"
 
 // ---------------------------------------------------------------------------
@@ -118,23 +116,32 @@ export async function getLeadershipSalaries(): Promise<LeadershipSalary[]> {
   }))
 }
 
-export async function getMilestones(): Promise<Milestone[]> {
+export async function getMilestones(now: Date = new Date()): Promise<Milestone[]> {
   const rows = await db
     .select()
     .from(roadmapMilestones)
     .orderBy(asc(roadmapMilestones.sortOrder))
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    detail: r.detail,
-    category: r.category as MilestoneCategory,
-    targetYear: r.targetYear,
-    targetMonth: r.targetMonth,
-    status: r.status as MilestoneStatus,
-    brand: r.brand,
-    location: r.location,
-    sortOrder: r.sortOrder,
-  }))
+  const nowIdx = now.getFullYear() * 12 + now.getMonth()
+  return rows.map((r) => {
+    let status = r.status as MilestoneStatus
+    // Date-aware self-correction: any item still "Planned" whose target month
+    // has already passed is surfaced as "At risk" so the roadmap never shows a
+    // stale future-looking status for work that should already have happened.
+    const targetIdx = r.targetYear * 12 + ((r.targetMonth ?? 1) - 1)
+    if (status === "Planned" && targetIdx < nowIdx) status = "At risk"
+    return {
+      id: r.id,
+      title: r.title,
+      detail: r.detail,
+      category: r.category as MilestoneCategory,
+      targetYear: r.targetYear,
+      targetMonth: r.targetMonth,
+      status,
+      brand: r.brand,
+      location: r.location,
+      sortOrder: r.sortOrder,
+    }
+  })
 }
 
 // --- Academy economics -----------------------------------------------------
@@ -268,7 +275,7 @@ export type RoadmapProgress = {
 }
 
 export async function getRoadmapProgress(now: Date = new Date()): Promise<RoadmapProgress> {
-  const milestones = await getMilestones()
+  const milestones = await getMilestones(now)
   const year = now.getFullYear()
   const current = milestoneFor(year)
 
@@ -290,9 +297,15 @@ export async function getRoadmapProgress(now: Date = new Date()): Promise<Roadma
         (b.targetYear * 12 + ((b.targetMonth ?? 1) - 1)),
     )
 
+  // Shops open is driven by the actual reconciled milestones (a site counts as
+  // open once its expansion milestone is marked Done), not the aspirational
+  // opening schedule — so the headline reflects reality, not the plan's intent.
+  const expansion = milestones.filter((m) => m.category === "Expansion")
+  const shopsOpen = expansion.filter((m) => m.status === "Done").length
+
   return {
-    shopsOpen: cumulativeShopsByMonth(now),
-    shopsPlanned: OPENING_SCHEDULE.length,
+    shopsOpen,
+    shopsPlanned: expansion.length,
     yearsElapsed,
     yearsTotal,
     pctThroughPlan: Math.round((yearsElapsed / yearsTotal) * 100),

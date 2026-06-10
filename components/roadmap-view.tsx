@@ -84,9 +84,10 @@ const CATEGORY_ICON: Record<MilestoneCategory, typeof Building2> = {
 }
 
 const BRAND_DOT: Record<string, string> = {
-  Mid: "bg-chart-1",
-  Youth: "bg-chart-2",
-  Elite: "bg-chart-4",
+  "Less Than Zero": "bg-chart-1",
+  "F.AF": "bg-chart-2",
+  Kairos: "bg-chart-4",
+  "Velvet Ash": "bg-chart-3",
 }
 
 function fmtAssumption(a: Assumption): string {
