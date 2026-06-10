@@ -61,9 +61,10 @@ export const BRAND_TIERS: Record<BrandTierName, BrandTier> = {
   Mid: { name: "Mid", basePerBarberRevenue: 50_000, growth: 0.1, launchYear: 2025 },
   Youth: { name: "Youth", basePerBarberRevenue: 40_000, growth: 0.1, launchYear: 2025 },
   Elite: { name: "Elite", basePerBarberRevenue: 60_000, growth: 0.1, launchYear: 2027 },
-  // Velvet Ash (unisex hairdressers) — placeholder per-stylist economics until
-  // real hairdressing figures are provided. Edit basePerBarberRevenue here.
-  Hairdressing: { name: "Hairdressing", basePerBarberRevenue: 45_000, growth: 0.1, launchYear: 2019 },
+  // Velvet Ash (unisex hairdressers). Modelled to return the same flat £500/week
+  // RTB as a barber: at the 50% house split that is £1,000/week gross =
+  // £52,000/year per stylist. Included in group revenue and the RTB goal.
+  Hairdressing: { name: "Hairdressing", basePerBarberRevenue: 52_000, growth: 0.1, launchYear: 2019 },
 }
 
 /** Per-barber gross revenue per YEAR for a tier in a given year (+10%/yr). */
