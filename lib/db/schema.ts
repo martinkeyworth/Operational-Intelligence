@@ -548,6 +548,9 @@ export const jobPostings = pgTable("job_postings", {
   brand: text("brand"), // Mid | Youth | Elite
   role: text("role"), // Manager | Barber | Apprentice | etc.
   description: text("description"),
+  // Optional manually-edited advert copy. When null/empty the advert is
+  // auto-generated from the posting fields; once edited it overrides that.
+  advertText: text("advert_text"),
   employmentType: text("employment_type").notNull().default("Full-time"),
   status: text("status").notNull().default("open"), // open | closed | filled
   finderBonus: numeric("finder_bonus").notNull().default("0"),

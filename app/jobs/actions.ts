@@ -71,6 +71,27 @@ export async function saveJob(input: {
   }
 }
 
+/** Save (or clear) a posting's manually-edited advert copy. Dashboard only.
+ *  Pass an empty string to revert to the auto-generated advert. */
+export async function saveAdvert(
+  id: number,
+  advertText: string,
+): Promise<ActionResult> {
+  await requireDashboard()
+  try {
+    const trimmed = advertText.trim()
+    await db
+      .update(jobPostings)
+      .set({ advertText: trimmed || null, updatedAt: new Date() })
+      .where(eq(jobPostings.id, id))
+    revalidateJobs()
+    return { ok: true }
+  } catch (err) {
+    console.error("[v0] saveAdvert failed:", err)
+    return { ok: false, error: "Could not save the advert." }
+  }
+}
+
 /** Set a posting's status (open | closed | filled). */
 export async function setJobStatus(
   id: number,
@@ -104,6 +125,22 @@ export async function deleteJob(id: number): Promise<ActionResult> {
   } catch (err) {
     console.error("[v0] deleteJob failed:", err)
     return { ok: false, error: "Could not delete the job." }
+  }
+}
+
+/** Delete every posting (and its referrals) to clear the board. Dashboard only. */
+export async function deleteAllJobs(): Promise<ActionResult & { removed?: number }> {
+  await requireDashboard()
+  try {
+    const rows = await db.select({ id: jobPostings.id }).from(jobPostings)
+    if (rows.length === 0) return { ok: true, removed: 0 }
+    await db.delete(jobReferrals)
+    await db.delete(jobPostings)
+    revalidateJobs()
+    return { ok: true, removed: rows.length }
+  } catch (err) {
+    console.error("[v0] deleteAllJobs failed:", err)
+    return { ok: false, error: "Could not clear the board." }
   }
 }
 

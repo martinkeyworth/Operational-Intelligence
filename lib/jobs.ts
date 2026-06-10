@@ -28,6 +28,7 @@ export type JobPosting = {
   brand: string | null
   role: string | null
   description: string | null
+  advertText: string | null
   employmentType: string
   status: JobStatus
   finderBonus: number
@@ -250,6 +251,8 @@ export async function getSuggestedJobs(): Promise<SuggestedJob[]> {
 /** Build a ready-to-post job advert from a posting. Suitable for pasting into
  *  social media or a careers page. */
 export function formatJobAdvert(job: JobPosting): string {
+  // A saved manual edit always wins over the auto-generated copy.
+  if (job.advertText && job.advertText.trim()) return job.advertText
   return formatAdvert(job)
 }
 
@@ -309,6 +312,7 @@ function mapPosting(
     brand: job.brand ?? null,
     role: job.role ?? null,
     description: job.description ?? null,
+    advertText: job.advertText ?? null,
     employmentType: job.employmentType,
     status: job.status as JobStatus,
     finderBonus: Number(job.finderBonus ?? 0),

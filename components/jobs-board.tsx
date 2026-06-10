@@ -54,8 +54,10 @@ import type {
 import type { SiteOption } from "@/lib/data"
 import {
   saveJob,
+  saveAdvert,
   setJobStatus,
   deleteJob,
+  deleteAllJobs,
   publishSuggestion,
   publishAllSuggestions,
   setReferralStatus,
@@ -130,7 +132,8 @@ export function JobsBoard({
         </TabsList>
 
         <TabsContent value="postings" className="mt-4">
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex items-center justify-end gap-2">
+            {jobs.length > 0 && <DeleteAllJobs count={jobs.length} />}
             <JobDialog sites={sites} />
           </div>
           {jobs.length === 0 ? (
@@ -327,6 +330,37 @@ function LoadAllSuggestions({ count }: { count: number }) {
       </Button>
       {error && <p className="text-xs text-rag-red">{error}</p>}
     </div>
+  )
+}
+
+function DeleteAllJobs({ count }: { count: number }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+
+  function removeAll() {
+    if (
+      !confirm(
+        `Delete all ${count} posting${count === 1 ? "" : "s"} and their referrals? This cannot be undone.`,
+      )
+    )
+      return
+    startTransition(async () => {
+      await deleteAllJobs()
+      router.refresh()
+    })
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={removeAll}
+      disabled={pending}
+      className="text-muted-foreground hover:text-rag-red"
+    >
+      <Trash2 className="h-4 w-4" />
+      {pending ? "Clearing…" : "Delete all"}
+    </Button>
   )
 }
 
@@ -713,13 +747,32 @@ function JobDialog({
 }
 
 function AdvertDialog({ job }: { job: JobPosting }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const advert = formatJobAdvert(job)
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  // The auto-generated advert (from posting fields) is the fallback/default.
+  const generated = formatJobAdvert({ ...job, advertText: null })
+  // What's shown/edited: a saved manual edit if present, else the generated copy.
+  const [draft, setDraft] = useState(job.advertText?.trim() ? job.advertText : generated)
+  const isCustom = Boolean(job.advertText?.trim())
+
+  // Re-sync the draft whenever the dialog is (re)opened so it reflects the
+  // latest saved state and any field edits made via the Edit dialog.
+  function onOpenChange(next: boolean) {
+    if (next) {
+      setError(null)
+      setCopied(false)
+      setDraft(job.advertText?.trim() ? job.advertText : generated)
+    }
+    setOpen(next)
+  }
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(advert)
+      await navigator.clipboard.writeText(draft)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -727,37 +780,76 @@ function AdvertDialog({ job }: { job: JobPosting }) {
     }
   }
 
+  function save() {
+    setError(null)
+    startTransition(async () => {
+      const res = await saveAdvert(job.id, draft)
+      if (res.ok) {
+        router.refresh()
+        setOpen(false)
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
+  function resetToAuto() {
+    setDraft(generated)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger
         render={<Button variant="outline" size="sm" className="h-8 text-xs" />}
       >
         <Megaphone className="h-3.5 w-3.5" />
         Advert
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Social-ready advert</DialogTitle>
+          <DialogTitle>Edit advert</DialogTitle>
           <DialogDescription>
-            Copy this and post it to your social channels or careers page.
+            Fine-tune the copy below, then save it or copy it to your social
+            channels or careers page.
           </DialogDescription>
         </DialogHeader>
-        <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground">
-          {advert}
-        </pre>
-        <DialogFooter>
-          <Button onClick={copy}>
-            {copied ? (
-              <>
-                <Check className="h-4 w-4" />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy className="h-4 w-4" />
-                Copy advert
-              </>
-            )}
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={14}
+          className="max-h-[50vh] resize-y whitespace-pre-wrap text-xs leading-relaxed"
+        />
+        <p className="text-xs text-muted-foreground">
+          {isCustom
+            ? "This advert has been edited manually."
+            : "Auto-generated from the posting details. Edit and save to customise."}
+        </p>
+        {error && <p className="text-sm text-rag-red">{error}</p>}
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={resetToAuto}
+              disabled={pending || draft === generated}
+            >
+              Reset to auto
+            </Button>
+            <Button variant="outline" onClick={copy} disabled={pending}>
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </div>
+          <Button onClick={save} disabled={pending}>
+            {pending ? "Saving…" : "Save advert"}
           </Button>
         </DialogFooter>
       </DialogContent>
