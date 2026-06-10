@@ -39,31 +39,11 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
     ? (await db.select().from(userTable).where(eq(userTable.id, barber.managerUserId)))[0]
     : null
 
-  if (isCalendarConfigured()) {
-    // Google Calendar path: create a real event on the shared calendar. Google
-    // sends the invite emails and tracks RSVPs natively.
-    const attendees = [
-      barberEmail ? { email: barberEmail, displayName: barber.name } : null,
-      manager?.email ? { email: manager.email, displayName: manager.name ?? "Manager" } : null,
-    ].filter(Boolean) as { email: string; displayName: string }[]
-
-    const event = await upsertCalendarEvent({
-      requestId: `1-2-1-${row.id}`,
-      summary: `1-2-1: ${barber.name}`,
-      description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
-      start: when,
-      durationMinutes: 30,
-      attendees,
-    })
-    if (event) {
-      await db
-        .update(oneToOnes)
-        .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
-        .where(eq(oneToOnes.id, row.id))
-    }
-  } else {
-    // Fallback: email a .ics calendar invite to the barber + their manager.
-    await sendOneToOneInvite({
+  // Email a .ics calendar invite to the barber + their manager. Used as the
+  // primary path when Google Calendar isn't configured, and as the automatic
+  // fallback if the Google Calendar call fails for any reason.
+  const sendIcsFallback = () =>
+    sendOneToOneInvite({
       oneToOneId: row.id,
       barberName: barber.name,
       barberEmail,
@@ -71,6 +51,45 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
       managerEmail: manager?.email ?? null,
       scheduledFor: when,
     })
+
+  if (isCalendarConfigured()) {
+    // Google Calendar path: create a real event on the shared calendar. Google
+    // sends the invite emails and tracks RSVPs natively. If this fails at
+    // runtime (bad credentials, delegation not granted, API error), we degrade
+    // gracefully to the .ics email instead of throwing — the 1-2-1 row has
+    // already been created, so the schedule itself is never lost.
+    const attendees = [
+      barberEmail ? { email: barberEmail, displayName: barber.name } : null,
+      manager?.email ? { email: manager.email, displayName: manager.name ?? "Manager" } : null,
+    ].filter(Boolean) as { email: string; displayName: string }[]
+
+    try {
+      const event = await upsertCalendarEvent({
+        requestId: `1-2-1-${row.id}`,
+        summary: `1-2-1: ${barber.name}`,
+        description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
+        start: when,
+        durationMinutes: 30,
+        attendees,
+      })
+      if (event) {
+        await db
+          .update(oneToOnes)
+          .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
+          .where(eq(oneToOnes.id, row.id))
+      } else {
+        // Calendar unconfigured at call time — use the email invite.
+        await sendIcsFallback()
+      }
+    } catch (err) {
+      console.error(
+        `[v0] 1-2-1 calendar event failed for barber ${barberId}; falling back to .ics email:`,
+        err instanceof Error ? err.message : err,
+      )
+      await sendIcsFallback()
+    }
+  } else {
+    await sendIcsFallback()
   }
   return row.id
 }
@@ -100,8 +119,17 @@ export async function autoScheduleOneToOnes(now = new Date()): Promise<number> {
     const when = new Date(now)
     when.setDate(when.getDate() + 5)
     when.setHours(10, 0, 0, 0)
-    await scheduleOneToOne(b.id, when)
-    created++
+    // Isolate each barber: a failure scheduling one must not abort the whole
+    // run, otherwise a single bad row blocks everyone behind it.
+    try {
+      await scheduleOneToOne(b.id, when)
+      created++
+    } catch (err) {
+      console.error(
+        `[v0] Failed to auto-schedule 1-2-1 for barber ${b.id} (${b.name}):`,
+        err instanceof Error ? err.message : err,
+      )
+    }
   }
   return created
 }
@@ -133,22 +161,30 @@ export async function autoOpenThreeSixtyCycles(now = new Date()): Promise<number
       .returning({ id: threeSixtyCycles.id })
 
     // Put an all-day milestone on the shared LTZ calendar so leadership can see
-    // the 360 due date alongside everything else.
+    // the 360 due date alongside everything else. The cycle row is already
+    // saved, so a calendar failure here must not abort the run — log and move on.
     if (isCalendarConfigured()) {
-      const event = await upsertCalendarEvent({
-        requestId: `360-${cycle.id}`,
-        summary: `360 review due: ${b.name} (${period})`,
-        description: `360 feedback cycle for ${b.name}. Reviewers to complete by the due date.`,
-        start: due,
-        durationMinutes: 0,
-        attendees: [],
-        allDay: true,
-      })
-      if (event) {
-        await db
-          .update(threeSixtyCycles)
-          .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
-          .where(eq(threeSixtyCycles.id, cycle.id))
+      try {
+        const event = await upsertCalendarEvent({
+          requestId: `360-${cycle.id}`,
+          summary: `360 review due: ${b.name} (${period})`,
+          description: `360 feedback cycle for ${b.name}. Reviewers to complete by the due date.`,
+          start: due,
+          durationMinutes: 0,
+          attendees: [],
+          allDay: true,
+        })
+        if (event) {
+          await db
+            .update(threeSixtyCycles)
+            .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
+            .where(eq(threeSixtyCycles.id, cycle.id))
+        }
+      } catch (err) {
+        console.error(
+          `[v0] 360 calendar event failed for barber ${b.id} (${b.name}):`,
+          err instanceof Error ? err.message : err,
+        )
       }
     }
     opened++
