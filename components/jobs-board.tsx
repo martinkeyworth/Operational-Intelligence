@@ -294,11 +294,17 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
 function SuggestionCard({ suggestion }: { suggestion: SuggestedJob }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   function publish() {
+    setError(null)
     startTransition(async () => {
-      await publishSuggestion(suggestion.sourceKey)
-      router.refresh()
+      const res = await publishSuggestion(suggestion.sourceKey)
+      if (res.ok) {
+        router.refresh()
+      } else {
+        setError(res.error)
+      }
     })
   }
 
@@ -340,6 +346,7 @@ function SuggestionCard({ suggestion }: { suggestion: SuggestedJob }) {
           {pending ? "Publishing…" : "Publish"}
         </Button>
       </div>
+      {error && <p className="mt-2 text-xs text-rag-red">{error}</p>}
     </div>
   )
 }
@@ -522,17 +529,21 @@ function JobDialog({
       <DialogTrigger
         render={
           editing ? (
-            <Button variant="outline" size="sm" className="h-8 text-xs">
-              Edit
-            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs" />
           ) : (
-            <Button size="sm">
-              <Plus className="h-4 w-4" />
-              Add job
-            </Button>
+            <Button size="sm" />
           )
         }
-      />
+      >
+        {editing ? (
+          "Edit"
+        ) : (
+          <>
+            <Plus className="h-4 w-4" />
+            Add job
+          </>
+        )}
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit posting" : "New posting"}</DialogTitle>
@@ -680,13 +691,11 @@ function AdvertDialog({ job }: { job: JobPosting }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={
-          <Button variant="outline" size="sm" className="h-8 text-xs">
-            <Megaphone className="h-3.5 w-3.5" />
-            Advert
-          </Button>
-        }
-      />
+        render={<Button variant="outline" size="sm" className="h-8 text-xs" />}
+      >
+        <Megaphone className="h-3.5 w-3.5" />
+        Advert
+      </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Social-ready advert</DialogTitle>

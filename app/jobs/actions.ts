@@ -115,23 +115,31 @@ export async function publishSuggestion(sourceKey: string): Promise<ActionResult
     const s = suggestions.find((x) => x.sourceKey === sourceKey)
     if (!s) return { ok: false, error: "Suggestion no longer available." }
 
-    await db
-      .insert(jobPostings)
-      .values({
-        title: s.title,
-        siteId: s.siteId,
-        location: s.location,
-        brand: s.brand,
-        role: s.role,
-        description: s.description,
-        employmentType: "Full-time",
-        finderBonus: String(s.suggestedBonus),
-        status: "open",
-        source: s.source,
-        sourceKey: s.sourceKey,
-        createdByUserId: user.id,
-      })
-      .onConflictDoNothing({ target: jobPostings.sourceKey })
+    // The unique index on source_key is partial (WHERE source_key IS NOT NULL),
+    // so ON CONFLICT inference is unreliable. Guard with an explicit check.
+    const existing = await db
+      .select({ id: jobPostings.id })
+      .from(jobPostings)
+      .where(eq(jobPostings.sourceKey, s.sourceKey))
+    if (existing.length > 0) {
+      revalidateJobs()
+      return { ok: true }
+    }
+
+    await db.insert(jobPostings).values({
+      title: s.title,
+      siteId: s.siteId,
+      location: s.location,
+      brand: s.brand,
+      role: s.role,
+      description: s.description,
+      employmentType: "Full-time",
+      finderBonus: String(s.suggestedBonus),
+      status: "open",
+      source: s.source,
+      sourceKey: s.sourceKey,
+      createdByUserId: user.id,
+    })
     revalidateJobs()
     return { ok: true }
   } catch (err) {
