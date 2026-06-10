@@ -57,6 +57,7 @@ import {
   setJobStatus,
   deleteJob,
   publishSuggestion,
+  publishAllSuggestions,
   setReferralStatus,
   setBonusStatus,
 } from "@/app/jobs/actions"
@@ -155,11 +156,21 @@ export function JobsBoard({
               body="Every current role gap and pipeline role is already on the board, or all shops are fully staffed."
             />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {suggestions.map((s) => (
-                <SuggestionCard key={s.sourceKey} suggestion={s} />
-              ))}
-            </div>
+            <>
+              <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  These {suggestions.length} role{suggestions.length === 1 ? "" : "s"} are derived from
+                  your current staffing gaps and opening pipeline. Publish them
+                  individually, or load them all onto the board at once.
+                </p>
+                <LoadAllSuggestions count={suggestions.length} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {suggestions.map((s) => (
+                  <SuggestionCard key={s.sourceKey} suggestion={s} />
+                ))}
+              </div>
+            </>
           )}
         </TabsContent>
 
@@ -287,6 +298,34 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
           <span className="sr-only">Delete posting</span>
         </Button>
       </div>
+    </div>
+  )
+}
+
+function LoadAllSuggestions({ count }: { count: number }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  function loadAll() {
+    setError(null)
+    startTransition(async () => {
+      const res = await publishAllSuggestions()
+      if (res.ok) {
+        router.refresh()
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1 sm:items-end">
+      <Button size="sm" onClick={loadAll} disabled={pending} className="shrink-0">
+        <Sparkles className="h-4 w-4" />
+        {pending ? "Loading…" : `Load all ${count} jobs`}
+      </Button>
+      {error && <p className="text-xs text-rag-red">{error}</p>}
     </div>
   )
 }

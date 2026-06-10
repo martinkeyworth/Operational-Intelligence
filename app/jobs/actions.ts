@@ -148,6 +148,50 @@ export async function publishSuggestion(sourceKey: string): Promise<ActionResult
   }
 }
 
+/** Publish every current auto-suggested job in one go (manual bulk load). */
+export async function publishAllSuggestions(): Promise<
+  ActionResult & { added?: number }
+> {
+  const user = await requireDashboard()
+  try {
+    const suggestions = await getSuggestedJobs()
+    if (suggestions.length === 0) return { ok: true, added: 0 }
+
+    // Skip any sourceKeys already on the board (partial unique index means
+    // ON CONFLICT inference is unreliable, so filter explicitly).
+    const existing = await db
+      .select({ sourceKey: jobPostings.sourceKey })
+      .from(jobPostings)
+    const taken = new Set(existing.map((e) => e.sourceKey).filter(Boolean))
+
+    const rows = suggestions
+      .filter((s) => !taken.has(s.sourceKey))
+      .map((s) => ({
+        title: s.title,
+        siteId: s.siteId,
+        location: s.location,
+        brand: s.brand,
+        role: s.role,
+        description: s.description,
+        employmentType: "Full-time",
+        finderBonus: String(s.suggestedBonus),
+        status: "open",
+        source: s.source,
+        sourceKey: s.sourceKey,
+        createdByUserId: user.id,
+      }))
+
+    if (rows.length === 0) return { ok: true, added: 0 }
+
+    await db.insert(jobPostings).values(rows)
+    revalidateJobs()
+    return { ok: true, added: rows.length }
+  } catch (err) {
+    console.error("[v0] publishAllSuggestions failed:", err)
+    return { ok: false, error: "Could not load the suggested jobs." }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Referrals (staff submit, dashboard manages bonuses)
 // ---------------------------------------------------------------------------
