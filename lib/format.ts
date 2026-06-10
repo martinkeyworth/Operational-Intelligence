@@ -54,3 +54,50 @@ export function fmtDate(iso: string): string {
     year: "numeric",
   })
 }
+
+// ---------------------------------------------------------------------------
+// Reporting week + submission deadline
+// ---------------------------------------------------------------------------
+// Submissions run Saturday-to-Saturday and are due by 18:00 (Europe/London) on
+// the week-ending Saturday. The "current" reporting week is therefore the
+// UPCOMING Saturday — e.g. on Wed 10 Jun the live week ends Sat 13 Jun. A
+// submission only becomes "outstanding" once that Saturday 6pm deadline has
+// passed; before then a missing entry is simply still awaited, not overdue.
+
+const SUBMISSION_DEADLINE_HOUR = 18 // 6pm
+
+/** Build a yyyy-mm-dd string from a Date's local (London wall-clock) parts. */
+function toISODate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+/** Now, expressed as a Date carrying Europe/London wall-clock components. */
+function londonNow(now: Date): Date {
+  return new Date(now.toLocaleString("en-US", { timeZone: "Europe/London" }))
+}
+
+/** The Saturday (yyyy-mm-dd) ending the current reporting week, in UK time.
+ *  Returns the UPCOMING Saturday (today, if today is Saturday). */
+export function currentWeekEnding(now: Date = new Date()): string {
+  const london = londonNow(now)
+  const day = london.getDay() // 0 Sun ... 6 Sat
+  const daysUntilSat = (6 - day + 7) % 7 // 0 when today is Saturday
+  const sat = new Date(london)
+  sat.setDate(london.getDate() + daysUntilSat)
+  return toISODate(sat)
+}
+
+/** Whether the 18:00 Saturday submission deadline for a week has passed. */
+export function isPastSubmissionDeadline(
+  weekEnding: string,
+  now: Date = new Date(),
+): boolean {
+  const [y, m, d] = weekEnding.split("-").map(Number)
+  // Deadline and "now" are both built as Dates representing London wall-clock,
+  // so a direct time comparison is valid.
+  const deadline = new Date(y, m - 1, d, SUBMISSION_DEADLINE_HOUR, 0, 0, 0)
+  return londonNow(now).getTime() >= deadline.getTime()
+}

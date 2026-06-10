@@ -20,8 +20,8 @@ import { CapacityCard } from "@/components/capacity-card"
 import { TrainingCard } from "@/components/training-card"
 import { WeekSelector } from "@/components/week-selector"
 import {
-  getWeeks,
-  getLatestWeek,
+  getSelectableWeeks,
+  getDefaultWeek,
   getSite,
   getSiteWeek,
   getBarberWeek,
@@ -48,9 +48,9 @@ export default async function SiteDetailPage({
   if (!site) notFound()
 
   const { week: weekParam } = await searchParams
-  const weeks = await getWeeks()
+  const weeks = await getSelectableWeeks()
   const week =
-    weekParam && weeks.includes(weekParam) ? weekParam : await getLatestWeek()
+    weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
 
   const siteWeekRows = week ? await getSiteWeek(week) : []
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
@@ -285,9 +285,13 @@ export default async function SiteDetailPage({
                           <TableCell>
                             {b.reported ? (
                               <RagBadge rag={b.rag} />
-                            ) : (
+                            ) : b.pending ? (
                               <span className="text-xs text-muted-foreground">
-                                Not reported
+                                Awaited
+                              </span>
+                            ) : (
+                              <span className="text-xs text-rag-red">
+                                Outstanding
                               </span>
                             )}
                           </TableCell>

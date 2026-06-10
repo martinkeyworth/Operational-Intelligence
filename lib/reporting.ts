@@ -8,6 +8,7 @@ import {
   getBusinessScorecard,
   fmtWeekLong,
   fmtGBP,
+  currentWeekEnding,
   type BusinessScorecard,
 } from "@/lib/data"
 import { getPlanProgress } from "@/lib/vision"
@@ -27,24 +28,9 @@ export function appBaseUrl(): string {
   )
 }
 
-/** The Saturday (YYYY-MM-DD) for the current reporting week, in UK time. */
-export function currentWeekEnding(now = new Date()): string {
-  // Work in Europe/London local date.
-  const london = new Date(
-    now.toLocaleString("en-US", { timeZone: "Europe/London" }),
-  )
-  const day = london.getDay() // 0 Sun ... 6 Sat
-  const diff = (6 - day + 7) % 7 // days until Saturday
-  // If today is Saturday, use today; otherwise the most recent past Saturday.
-  const sat = new Date(london)
-  if (day === 6) {
-    // keep today
-  } else {
-    sat.setDate(london.getDate() - ((day + 1) % 7))
-  }
-  void diff
-  return sat.toISOString().slice(0, 10)
-}
+/** The Saturday (YYYY-MM-DD) for the current reporting week, in UK time.
+ *  Re-exported from the canonical helper so existing imports keep working. */
+export { currentWeekEnding }
 
 /** Previous Saturday for week-on-week comparison. */
 export function previousWeekEnding(weekEnding: string): string {

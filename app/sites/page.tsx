@@ -11,8 +11,8 @@ import { AddSiteDialog } from "@/components/add-site-dialog"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
 import { WeekSelector } from "@/components/week-selector"
 import {
-  getWeeks,
-  getLatestWeek,
+  getSelectableWeeks,
+  getDefaultWeek,
   getSiteWeek,
   fmtGBP,
   fmtWeekLong,
@@ -27,9 +27,9 @@ export default async function SitesPage({
   const user = await requireDashboard()
 
   const { week: weekParam } = await searchParams
-  const weeks = await getWeeks()
+  const weeks = await getSelectableWeeks()
   const week =
-    weekParam && weeks.includes(weekParam) ? weekParam : await getLatestWeek()
+    weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
 
   const sites = week ? await getSiteWeek(week) : []
   const confirmedCount = sites.filter((s) => s.confirmed).length

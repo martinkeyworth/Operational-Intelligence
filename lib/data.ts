@@ -16,6 +16,8 @@ import {
   fmtGBP,
   fmtWeek,
   fmtWeekLong,
+  currentWeekEnding,
+  isPastSubmissionDeadline,
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { VISION } from "@/lib/vision"
@@ -49,7 +51,15 @@ import {
 } from "@/lib/kpi-config"
 
 export type { Rag }
-export { rollUpRag, ragFromAttainment, fmtGBP, fmtWeek, fmtWeekLong }
+export {
+  rollUpRag,
+  ragFromAttainment,
+  fmtGBP,
+  fmtWeek,
+  fmtWeekLong,
+  currentWeekEnding,
+  isPastSubmissionDeadline,
+}
 
 // ---------------------------------------------------------------------------
 // Weeks
@@ -67,6 +77,30 @@ export async function getWeeks(): Promise<string[]> {
 export async function getLatestWeek(): Promise<string | null> {
   const weeks = await getWeeks()
   return weeks[0] ?? null
+}
+
+/**
+ * The week pages should open on by default. This is the CURRENT reporting week
+ * (the upcoming Saturday, e.g. Sat 13 Jun when today is Wed 10 Jun) — NOT the
+ * latest week that happens to have data, which can be a future seeded week.
+ * The current week is always included even before any takings are entered, so
+ * the dashboard correctly shows it as in-progress / awaiting submissions.
+ */
+export async function getDefaultWeek(): Promise<string> {
+  return currentWeekEnding()
+}
+
+/**
+ * All weeks to offer in the week selector: every week that has data, plus the
+ * current reporting week (so you can always open the in-progress week even
+ * before anyone has submitted), newest first.
+ */
+export async function getSelectableWeeks(): Promise<string[]> {
+  const weeks = await getWeeks()
+  const current = currentWeekEnding()
+  const set = new Set<string>(weeks)
+  set.add(current)
+  return Array.from(set).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
 }
 
 function prevWeekOf(weeks: string[], week: string): string | null {
@@ -304,6 +338,9 @@ export type SiteWeekRow = {
 }
 
 export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
+  // Before the 18:00 Saturday submission deadline, a site with no takings yet
+  // is "awaited", not failing — so unreported RTB is amber, not red.
+  const pastDeadline = isPastSubmissionDeadline(week)
   // Training/academy sites always sort last (after the barbershops).
   const siteRows = await db
     .select()
@@ -369,7 +406,13 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
     const rtbActual = Number(rev?.rent ?? 0)
     const rtbExpected = activeBarbers * Number(s.rtbPerBarber ?? 500)
     const rtbReported = Number(rev?.reporting ?? 0) > 0
-    const rtbRag = rtbReported ? ragForRtb(rtbActual, rtbExpected) : "red"
+    // Not reported: red only once the Saturday 6pm deadline has passed,
+    // otherwise amber (still awaited).
+    const rtbRag = rtbReported
+      ? ragForRtb(rtbActual, rtbExpected)
+      : pastDeadline
+        ? "red"
+        : "amber"
 
     // Training throughput (academy sites).
     const tw = trainingRows.find((r) => r.siteId === s.id)
@@ -526,6 +569,9 @@ export type BarberWeekRow = {
   manager: string
   comments: string | null
   reported: boolean
+  /** Not yet reported, but the Saturday 6pm deadline has NOT passed — still
+   *  awaited rather than outstanding. UIs should show this as neutral, not red. */
+  pending: boolean
 }
 
 export async function getBarberWeek(
@@ -534,6 +580,9 @@ export async function getBarberWeek(
 ): Promise<BarberWeekRow[]> {
   const weeks = await getWeeks()
   const prevWeek = prevWeekOf(weeks, week)
+  // Before the 18:00 Saturday deadline, a missing submission is "pending", not
+  // "outstanding" — so we don't flag it red.
+  const pastDeadline = isPastSubmissionDeadline(week)
 
   const barberRows = await db
     .select()
@@ -585,12 +634,16 @@ export async function getBarberWeek(
         revenue,
         prevRevenue: p ? Number(p.total) : 0,
         attainmentPct,
-        rag: !t ? "red" : ragFromAttainment(attainmentPct),
+        // Reported → score it. Not reported and past the 6pm Saturday deadline
+        // → red (outstanding). Not reported but still before the deadline →
+        // amber/neutral "pending", not a red failure.
+        rag: t ? ragFromAttainment(attainmentPct) : pastDeadline ? "red" : "amber",
         cash: t ? Number(t.cash) : 0,
         card: t ? Number(t.card) : 0,
         manager: t?.manager ?? "",
         comments: t?.comments ?? null,
         reported: !!t,
+        pending: !t && !pastDeadline,
       }
     })
     .sort((a, b) => b.revenue - a.revenue)
@@ -1606,6 +1659,10 @@ export async function getCapacityKpis(
   const privateLearners = tw ? Number(tw.privateLearners) : 0
   const apprentices = tw ? Number(tw.apprentices) : 0
 
+  // Before the Saturday 18:00 deadline, a site that hasn't reported yet is
+  // "awaited" (amber), not a red failure.
+  const pastDeadline = isPastSubmissionDeadline(week)
+
   return {
     siteId,
     siteType: site.siteType ?? "barbershop",
@@ -1619,7 +1676,11 @@ export async function getCapacityKpis(
     rtbExpected,
     rtbActual,
     rtbAttainmentPct: rtbExpected > 0 ? (rtbActual / rtbExpected) * 100 : 0,
-    rtbRag: ragForRtb(rtbActual, rtbExpected),
+    rtbRag: rtbReported
+      ? ragForRtb(rtbActual, rtbExpected)
+      : pastDeadline
+        ? "red"
+        : "amber",
     rtbReported,
     learnerCapacity: site.learnerCapacity ?? 0,
     apprenticeCapacity: site.apprenticeCapacity ?? 0,
@@ -1632,7 +1693,9 @@ export async function getCapacityKpis(
           apprentices,
           site.apprenticeCapacity ?? 0,
         )
-      : "red",
+      : pastDeadline
+        ? "red"
+        : "amber",
     trainingReported: !!tw,
   }
 }

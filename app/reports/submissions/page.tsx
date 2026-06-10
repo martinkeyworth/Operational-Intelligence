@@ -10,8 +10,16 @@ import type { Rag } from "@/lib/format"
 import { CheckCircle2, Clock } from "lucide-react"
 import { WeekPicker } from "@/components/week-picker"
 
-function ragFor(s: { complete: boolean; pct: number }): Rag {
-  return s.complete ? "green" : s.pct >= 75 ? "amber" : "red"
+function ragFor(s: {
+  complete: boolean
+  pct: number
+  pastDeadline: boolean
+}): Rag {
+  if (s.complete) return "green"
+  // Before the Saturday 6pm deadline, missing data is still "awaited" — amber
+  // at worst, never a red failure. Red is reserved for genuinely overdue weeks.
+  if (!s.pastDeadline) return "amber"
+  return s.pct >= 75 ? "amber" : "red"
 }
 
 export const dynamic = "force-dynamic"
@@ -59,6 +67,9 @@ export default async function SubmissionsPage({
 
   const status = await getSubmissionStatus(week)
   const summaryRag: Rag = ragFor(status)
+  // "Outstanding" implies overdue; before the Saturday 6pm deadline the right
+  // word is "awaited". Use it consistently across the board.
+  const missingWord = status.pastDeadline ? "outstanding" : "awaited"
 
   return (
     <AppShell user={user}>
@@ -72,7 +83,7 @@ export default async function SubmissionsPage({
           label={
             status.complete
               ? "All in"
-              : `${status.outstandingCount} outstanding`
+              : `${status.outstandingCount} ${missingWord}`
           }
           className="px-3 py-1 text-sm"
         />
@@ -109,7 +120,9 @@ export default async function SubmissionsPage({
                 <p className="text-xs text-muted-foreground">
                   {s.complete
                     ? "All in"
-                    : `${s.outstandingCount} outstanding`}{" "}
+                    : `${s.outstandingCount} ${
+                        s.pastDeadline ? "outstanding" : "awaited"
+                      }`}{" "}
                   · w/e {s.weekLabel}
                 </p>
               </Link>
@@ -130,14 +143,18 @@ export default async function SubmissionsPage({
             value={`${status.submittedCount}/${status.total}`}
             sub={`${status.pct}% complete`}
           />
-          <StatCard label="Outstanding" value={status.outstandingCount} />
+          <StatCard
+            label={status.pastDeadline ? "Outstanding" : "Awaited"}
+            value={status.outstandingCount}
+            sub={status.pastDeadline ? "Past deadline" : "Before 18:00 Sat"}
+          />
           <StatCard
             label="Status"
             value={status.complete ? "Complete" : "In progress"}
           />
           <StatCard
             label="Alert at 18:00"
-            value={status.complete ? "None" : "Sent"}
+            value={status.complete ? "None" : status.pastDeadline ? "Sent" : "Pending"}
             sub="Leadership chase"
           />
         </div>
@@ -165,13 +182,24 @@ export default async function SubmissionsPage({
           })}
         </div>
 
-        {/* Outstanding list */}
+        {/* Outstanding / awaited list */}
         {status.outstanding.length > 0 && (
           <section>
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Clock className="h-4 w-4 text-rag-amber" />
-              Outstanding ({status.outstanding.length})
+              <Clock
+                className={`h-4 w-4 ${
+                  status.pastDeadline ? "text-rag-red" : "text-rag-amber"
+                }`}
+              />
+              {status.pastDeadline ? "Outstanding" : "Awaited"} (
+              {status.outstanding.length})
             </h2>
+            {!status.pastDeadline && (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Still within the reporting window — these are due by 18:00 on
+                Saturday {status.weekLabel} and are not yet overdue.
+              </p>
+            )}
             <ul className="divide-y divide-border rounded-lg border border-border">
               {status.outstanding.map((item) => (
                 <li

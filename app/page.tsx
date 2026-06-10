@@ -3,8 +3,8 @@ import { AppShell } from "@/components/app-shell"
 import { GroupDashboard } from "@/components/group-dashboard"
 import { RoadmapSummaryCard } from "@/components/roadmap-summary-card"
 import {
-  getWeeks,
-  getLatestWeek,
+  getSelectableWeeks,
+  getDefaultWeek,
   getGroupSummary,
   getSiteWeek,
   getGroupTrend,
@@ -29,8 +29,9 @@ export default async function Page({
   const user = await requireDashboard()
 
   const { week: weekParam } = await searchParams
-  const weeks = await getWeeks()
-  const week = weekParam && weeks.includes(weekParam) ? weekParam : (await getLatestWeek())
+  const weeks = await getSelectableWeeks()
+  const week =
+    weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
 
   if (!week) {
     return (

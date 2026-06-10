@@ -8,7 +8,7 @@ import {
   trainingWeeks,
 } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
-import { fmtWeekLong } from "@/lib/format"
+import { fmtWeekLong, isPastSubmissionDeadline } from "@/lib/format"
 import { getManualKpiResults } from "@/lib/data"
 
 // ---------------------------------------------------------------------------
@@ -55,6 +55,13 @@ export type SubmissionSummary = {
   pct: number
   complete: boolean
   byCategory: SubmissionCategorySummary[]
+  /** Whether the 18:00 Saturday submission deadline for this week has passed.
+   *  Before the deadline, unsubmitted items are "awaited", not overdue. */
+  pastDeadline: boolean
+  /** Unsubmitted items that are genuinely overdue (deadline passed). Empty
+   *  before the Saturday 6pm deadline. */
+  overdue: SubmissionItem[]
+  overdueCount: number
 }
 
 /** Build the full submission status for a given week. */
@@ -200,6 +207,11 @@ export async function getSubmissionStatus(
   const total = items.length
   const pct = total === 0 ? 100 : Math.round((submittedCount / total) * 100)
 
+  // Submissions are only "overdue" once the 18:00 Saturday deadline has passed.
+  // Before then, unsubmitted items are simply still awaited.
+  const pastDeadline = isPastSubmissionDeadline(week)
+  const overdue = pastDeadline ? outstanding : []
+
   const categories: SubmissionCategory[] = [
     "Takings",
     "Confirmation",
@@ -229,5 +241,8 @@ export async function getSubmissionStatus(
     pct,
     complete: outstanding.length === 0,
     byCategory,
+    pastDeadline,
+    overdue,
+    overdueCount: overdue.length,
   }
 }
