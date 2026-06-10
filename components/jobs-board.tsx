@@ -291,14 +291,14 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
           </SelectContent>
         </Select>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="ml-auto h-8 text-muted-foreground hover:text-rag-red"
+          className="ml-auto h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
           onClick={remove}
           disabled={pending}
         >
-          <Trash2 className="h-4 w-4" />
-          <span className="sr-only">Delete posting</span>
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
         </Button>
       </div>
     </div>
