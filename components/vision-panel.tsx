@@ -35,10 +35,11 @@ export function VisionPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            {targetYear} Vision · {fmtGBP(salesGoal)} chair sales
+            {targetYear} Vision · {fmtGBP(salesGoal)} group revenue
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
-            {fmtGBP(salesGoal)} barbering turnover by {targetYear} (per the LTZ
+            {fmtGBP(salesGoal)} total group revenue by {targetYear} — barbering,
+            Velvet Ash hairdressing and the Training Academy combined (per the LTZ
             2025–2030 plan), with RTB at the 50% house split (
             {fmtGBP(rtbGoal)}). Per-barber targets follow the brand tier (~
             {fmtGBP(grossPerBarberWeekly)} gross / {fmtGBP(rtbPerBarberWeekly)}{" "}
