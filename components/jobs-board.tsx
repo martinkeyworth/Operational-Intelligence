@@ -310,32 +310,26 @@ function JobCard({ job, sites }: { job: JobPosting; sites: SiteOption[] }) {
 
 export function JobDeleteButton({ job }: { job: JobPosting }) {
   const router = useRouter()
-  const [pending, startTransition] = useTransition()
-
-  function remove() {
-    if (
-      !confirm(
-        `Delete the "${job.title}" posting and its referrals? This cannot be undone.`,
-      )
-    )
-      return
-    startTransition(async () => {
-      await deleteJob(job.id)
-      router.refresh()
-    })
-  }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
-      onClick={remove}
-      disabled={pending}
-    >
-      <Trash2 className="h-3.5 w-3.5" />
-      {pending ? "Deleting…" : "Delete"}
-    </Button>
+    <ConfirmDialog
+      trigger={
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs text-muted-foreground hover:border-rag-red hover:text-rag-red"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </Button>
+      }
+      title={`Delete the "${job.title}" posting?`}
+      description="This removes the posting and any referrals attached to it. This cannot be undone."
+      onConfirm={async () => {
+        await deleteJob(job.id)
+        router.refresh()
+      }}
+    />
   )
 }
 
