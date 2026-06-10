@@ -5,9 +5,10 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { weeklyTakings, barbers } from "@/lib/db/schema"
 import { requireDataEntry } from "@/lib/access"
+import { getBarberForUser } from "@/lib/team"
 
 export async function saveWeeklyTakings(formData: FormData) {
-  await requireDataEntry()
+  const user = await requireDataEntry()
 
   const barberId = Number(formData.get("barberId"))
   const weekEnding = String(formData.get("weekEnding"))
@@ -21,6 +22,15 @@ export async function saveWeeklyTakings(formData: FormData) {
   const comments = String(formData.get("comments") ?? "").trim() || null
 
   if (!barberId || !weekEnding) throw new Error("Barber and week are required")
+
+  // Ownership guard: a barber who can't view the dashboard may only submit
+  // their own takings. Managers/dashboard users may submit on behalf of any
+  // barber. This prevents a barber forging another barber's id in the form.
+  if (!user.canViewDashboard) {
+    const ownBarber = await getBarberForUser(user.id)
+    if (!ownBarber) throw new Error("Your account isn't linked to a barber")
+    if (ownBarber.id !== barberId) throw new Error("Not authorised for this barber")
+  }
 
   // Resolve the barber's site for the denormalised siteId column. The barber
   // confirms their base/working location each week on submission — if it has

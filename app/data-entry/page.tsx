@@ -1,4 +1,5 @@
 import { requireDataEntry, canInputArea } from "@/lib/access"
+import { getBarberForUser } from "@/lib/team"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
@@ -23,13 +24,24 @@ export default async function DataEntryPage({
 }) {
   const user = await requireDataEntry()
 
+  // A barber who can't view the dashboard is restricted to their own entry
+  // card — they must never see colleagues' takings. Managers/dashboard users
+  // keep the full multi-barber, multi-site view.
+  const isManager = user.canViewDashboard
+  const linkedBarber = isManager ? null : await getBarberForUser(user.id)
+  const ownScope = !isManager
+
   const { week: weekParam } = await searchParams
   const weeks = await getEntryWeeks()
   const week = weekParam && weeks.includes(weekParam) ? weekParam : weeks[0]
 
-  const sites = week ? await getDataEntrySites(week) : []
+  const sites =
+    week && (!ownScope || linkedBarber)
+      ? await getDataEntrySites(week, linkedBarber?.id)
+      : []
   const siteOptions = await getSiteOptions()
-  const trainingSites = week ? await getTrainingSitesForWeek(week) : []
+  // Only managers see the training-academy input section.
+  const trainingSites = week && isManager ? await getTrainingSitesForWeek(week) : []
   // Training academies have their own input card; keep them out of the
   // per-barber takings list.
   const trainingIds = new Set(trainingSites.map((t) => t.id))
@@ -46,7 +58,11 @@ export default async function DataEntryPage({
       <PageHeader
         meta="Weekly Input"
         title="Weekly Takings"
-        subtitle="Enter each barber's cash and card takings for the selected week. Save each barber as you go — entries update live across the group."
+        subtitle={
+          ownScope
+            ? "Enter your cash and card takings for the selected week, then save."
+            : "Enter each barber's cash and card takings for the selected week. Save each barber as you go — entries update live across the group."
+        }
       >
         {week && <WeekSelector weeks={weeks} current={week} />}
       </PageHeader>
@@ -82,6 +98,11 @@ export default async function DataEntryPage({
         {!week ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No weeks available.
+          </Card>
+        ) : ownScope && !linkedBarber ? (
+          <Card className="p-8 text-center text-sm text-muted-foreground text-pretty">
+            Your login isn&apos;t linked to a barber record yet. Ask a manager
+            to link your account on the Team page before entering takings.
           </Card>
         ) : barberSites.length === 0 && trainingSites.length === 0 ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">

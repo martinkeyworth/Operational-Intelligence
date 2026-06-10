@@ -1360,13 +1360,22 @@ export type DataEntrySite = {
   barbers: DataEntryBarber[]
 }
 
-/** All active barbers grouped by site, pre-filled with the given week's takings. */
-export async function getDataEntrySites(week: string): Promise<DataEntrySite[]> {
+/** All active barbers grouped by site, pre-filled with the given week's takings.
+ *  When `onlyBarberId` is provided, the result is scoped to just that barber —
+ *  used so a logged-in barber only ever sees their own entry card. */
+export async function getDataEntrySites(
+  week: string,
+  onlyBarberId?: number,
+): Promise<DataEntrySite[]> {
   const siteRows = await db.select().from(sites).orderBy(sites.name)
   const barberRows = await db
     .select()
     .from(barbers)
-    .where(eq(barbers.active, true))
+    .where(
+      onlyBarberId
+        ? and(eq(barbers.active, true), eq(barbers.id, onlyBarberId))
+        : eq(barbers.active, true),
+    )
     .orderBy(asc(barbers.name))
   const takingRows = await db
     .select()
