@@ -51,6 +51,7 @@ export function GovernanceHub({
   const searchParams = useSearchParams()
   const tab = searchParams.get("tab") ?? "actions"
   const value = TABS.some((t) => t.value === tab) ? tab : "actions"
+  const focusId = Number(searchParams.get("focus")) || null
 
   function onValueChange(next: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -80,6 +81,7 @@ export function GovernanceHub({
           register={register}
           owners={owners}
           sites={sites}
+          focusId={focusId}
         />
       </TabsContent>
 

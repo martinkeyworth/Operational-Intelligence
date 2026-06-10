@@ -26,12 +26,16 @@ export function ActionsRegister({
   register,
   owners,
   sites,
+  focusId,
 }: {
   actions: ActionRow[]
   register: RiskRegister
   owners: AssignableOwner[]
   sites: SiteOption[]
+  focusId?: number | null
 }) {
+  // When deep-linked to a specific action (e.g. from the dashboard's Key Risks
+  // panel), open on the flat table so the focused row can be highlighted.
   const [view, setView] = useState<View>("all")
 
   return (
@@ -93,7 +97,7 @@ export function ActionsRegister({
       </div>
 
       {view === "all" ? (
-        <ActionsTable actions={actions} owners={owners} />
+        <ActionsTable actions={actions} owners={owners} focusId={focusId} />
       ) : register.groups.length === 0 ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">
           No live actions. New actions you raise will appear here grouped by

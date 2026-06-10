@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { cn } from "@/lib/utils"
 import { Card } from "@/components/ui/card"
 import { RagSelect } from "@/components/rag-select"
 import {
@@ -232,10 +233,22 @@ function RiskToggle({ id, isRisk }: { id: number; isRisk: boolean }) {
 export function ActionsTable({
   actions,
   owners,
+  focusId,
 }: {
   actions: ActionRow[]
   owners: AssignableOwner[]
+  focusId?: number | null
 }) {
+  const focusRef = useRef<HTMLTableRowElement>(null)
+
+  // When deep-linked from another surface (e.g. the dashboard Key Risks panel),
+  // scroll the targeted action into view so it's obvious which row to edit.
+  useEffect(() => {
+    if (focusId && focusRef.current) {
+      focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
+    }
+  }, [focusId])
+
   return (
     <Card className="p-0">
       <div className="overflow-x-auto">
@@ -255,10 +268,16 @@ export function ActionsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {actions.map((a) => (
+            {actions.map((a) => {
+              const focused = focusId === a.id
+              return (
               <TableRow
                 key={a.id}
-                className={a.status === "Closed" ? "opacity-55" : undefined}
+                ref={focused ? focusRef : undefined}
+                className={cn(
+                  a.status === "Closed" && "opacity-55",
+                  focused && "bg-primary/5 ring-1 ring-inset ring-primary/40",
+                )}
               >
                 <TableCell>
                   <div className="flex items-start gap-2">
@@ -266,9 +285,18 @@ export function ActionsTable({
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rag-red" />
                     )}
                     <div>
-                      <p className="text-sm font-medium text-foreground">
+                      <EditActionDialog
+                        action={a}
+                        owners={owners}
+                        trigger={
+                          <button
+                            type="button"
+                            className="text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                          />
+                        }
+                      >
                         {a.title}
-                      </p>
+                      </EditActionDialog>
                       {a.description && (
                         <p className="text-xs text-muted-foreground">
                           {a.description}
@@ -322,7 +350,8 @@ export function ActionsTable({
                   <EditActionDialog action={a} />
                 </TableCell>
               </TableRow>
-            ))}
+              )
+            })}
             {actions.length === 0 && (
               <TableRow>
                 <TableCell

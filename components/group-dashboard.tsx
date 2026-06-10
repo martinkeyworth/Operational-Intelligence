@@ -846,9 +846,10 @@ export function GroupDashboard({
             ) : (
               <div className="flex flex-col gap-3">
                 {risks.map((r) => (
-                  <div
+                  <Link
                     key={r.id}
-                    className="rounded-lg border border-border bg-background p-3"
+                    href={`/governance?tab=actions&focus=${r.id}`}
+                    className="block rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/50"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm font-medium text-foreground">
@@ -866,7 +867,7 @@ export function GroupDashboard({
                       {r.siteName ? ` · ${r.siteName}` : " · Group"} · Owner:{" "}
                       {r.ownerLabel}
                     </p>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
