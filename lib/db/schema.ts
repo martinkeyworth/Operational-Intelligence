@@ -7,6 +7,7 @@ import {
   integer,
   numeric,
   date,
+  unique,
 } from "drizzle-orm/pg-core"
 
 // --- Better Auth required tables -------------------------------------------
@@ -497,6 +498,29 @@ export const leadershipSalaries = pgTable("leadership_salaries", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+// Editable per-opening headcount for the planned opening pipeline. The base
+// OPENING_SCHEDULE (lib/plan.ts) defaults every site to 1 manager / 4 barbers /
+// 1 apprentice, but real headcount depends on the size of the unit rented, so
+// these rows override the defaults per opening (keyed by location+year+month).
+export const openingRoleOverrides = pgTable(
+  "opening_role_overrides",
+  {
+    id: serial("id").primaryKey(),
+    location: text("location").notNull(),
+    targetYear: integer("target_year").notNull(),
+    targetMonth: integer("target_month").notNull(),
+    managerCount: integer("manager_count").notNull().default(1),
+    barberCount: integer("barber_count").notNull().default(4),
+    apprenticeCount: integer("apprentice_count").notNull().default(1),
+    updatedBy: text("updated_by"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique("opening_role_overrides_key").on(t.location, t.targetYear, t.targetMonth),
+  }),
+)
 
 // Time-phased milestones: shop openings, governance and finance events.
 export const roadmapMilestones = pgTable("roadmap_milestones", {

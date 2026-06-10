@@ -1,6 +1,6 @@
 import "server-only"
 import { db } from "@/lib/db"
-import { sites, barbers } from "@/lib/db/schema"
+import { sites, barbers, openingRoleOverrides } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
 import { tierForBrand, OPENING_SCHEDULE } from "@/lib/plan"
 
@@ -135,6 +135,11 @@ export type PlannedOpeningPlan = {
   cuttingRole: RoleBucket
   roles: PipelineRole[]
   totalRoles: number
+  // Raw editable counts + whether they've been customised away from defaults.
+  managerCount: number
+  barberCount: number
+  apprenticeCount: number
+  isCustomised: boolean
 }
 
 export type RecruitmentPlan = {
@@ -307,7 +312,7 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
   const totalGap = byRole.reduce((a, r) => a + r.gap, 0)
 
   // Forward pipeline: roles needed for upcoming planned openings.
-  const pipeline = buildPipeline()
+  const pipeline = await buildPipeline()
   const pipelineAgg = new Map<RoleBucket, number>()
   for (const op of pipeline) {
     for (const r of op.roles) {
@@ -333,10 +338,18 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
 /**
  * Build the forward recruitment pipeline from the plan's opening schedule:
  * every opening still in the future needs a Manager, brand cutting staff, and
- * an Apprentice.
+ * an Apprentice. Per-opening overrides (opening_role_overrides) replace the
+ * default 1/4/1 headcount where the size of the unit rented differs.
  */
-function buildPipeline(now: Date = new Date()): PlannedOpeningPlan[] {
+async function buildPipeline(now: Date = new Date()): Promise<PlannedOpeningPlan[]> {
   const idx = now.getFullYear() * 12 + now.getMonth()
+
+  // Load any saved overrides, keyed by location|year|month.
+  const overrideRows = await db.select().from(openingRoleOverrides)
+  const overrides = new Map(
+    overrideRows.map((r) => [`${r.location}|${r.targetYear}|${r.targetMonth}`, r]),
+  )
+
   return OPENING_SCHEDULE.filter(
     (op) => op.year * 12 + (op.month - 1) >= idx,
   ).map((op) => {
@@ -347,10 +360,16 @@ function buildPipeline(now: Date = new Date()): PlannedOpeningPlan[] {
         : op.tier === "Youth"
           ? "Junior Barber"
           : "Barber"
+
+    const ov = overrides.get(`${op.location}|${op.year}|${op.month}`)
+    const managerCount = ov?.managerCount ?? op.manager
+    const barberCount = ov?.barberCount ?? op.barbers
+    const apprenticeCount = ov?.apprenticeCount ?? op.apprentices
+
     const roles: PipelineRole[] = [
-      { role: "Manager", count: op.manager },
-      { role: roleForTier, count: op.barbers },
-      { role: "Apprentice", count: op.apprentices },
+      { role: "Manager", count: managerCount },
+      { role: roleForTier, count: barberCount },
+      { role: "Apprentice", count: apprenticeCount },
     ]
     return {
       location: op.location,
@@ -360,6 +379,10 @@ function buildPipeline(now: Date = new Date()): PlannedOpeningPlan[] {
       cuttingRole: roleForTier,
       roles,
       totalRoles: roles.reduce((a, r) => a + r.count, 0),
+      managerCount,
+      barberCount,
+      apprenticeCount,
+      isCustomised: Boolean(ov),
     }
   })
 }
