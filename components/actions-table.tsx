@@ -294,9 +294,7 @@ export function ActionsTable({
                             className="text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
                           />
                         }
-                      >
-                        {a.title}
-                      </EditActionDialog>
+                      />
                       {a.description && (
                         <p className="text-xs text-muted-foreground">
                           {a.description}
@@ -347,7 +345,7 @@ export function ActionsTable({
                   <StatusSelect id={a.id} status={a.status} />
                 </TableCell>
                 <TableCell>
-                  <EditActionDialog action={a} />
+                  <EditActionDialog action={a} owners={owners} />
                 </TableCell>
               </TableRow>
               )

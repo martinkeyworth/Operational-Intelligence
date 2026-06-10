@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useTransition, type ReactNode } from "react"
+import { useState, useTransition, type ReactElement } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Flag } from "lucide-react"
+import { Flag, Pencil } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -205,7 +205,7 @@ export function EditActionDialog({
 }: {
   action: ActionRow
   owners?: AssignableOwner[]
-  trigger?: ReactNode
+  trigger?: ReactElement
 }) {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
@@ -227,9 +227,7 @@ export function EditActionDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          trigger ? (
-            (trigger as React.ReactElement)
-          ) : (
+          trigger ?? (
             <Button
               variant="ghost"
               size="icon"
@@ -239,7 +237,7 @@ export function EditActionDialog({
           )
         }
       >
-        {trigger ? undefined : <span className="sr-only">Edit action</span>}
+        {trigger ? action.title : <Pencil className="h-3.5 w-3.5" />}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
