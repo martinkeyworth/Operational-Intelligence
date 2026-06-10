@@ -1583,6 +1583,16 @@ export type CapacityKpis = {
   rtbAttainmentPct: number
   rtbRag: Rag
   rtbReported: boolean
+  // In-progress week handling: until the Saturday 18:00 KPI deadline we don't
+  // flag a shortfall. Instead we surface last week's confirmed RTB and a
+  // run-rate projection for the current week.
+  pastDeadline: boolean
+  allReported: boolean
+  inProgress: boolean
+  lastWeekActual: number | null
+  lastWeekReported: boolean
+  rtbProjected: number | null
+  barbersReported: number
   // Training (academy sites)
   learnerCapacity: number
   apprenticeCapacity: number
@@ -1636,7 +1646,8 @@ export async function getCapacityKpis(
       ),
     )
   const rtbActual = Number(rentAgg?.rent ?? 0)
-  const rtbReported = Number(rentAgg?.reporting ?? 0) > 0
+  const barbersReported = Number(rentAgg?.reporting ?? 0)
+  const rtbReported = barbersReported > 0
   // RTB per barber per week is a flat board assumption of £500. A site's stored
   // figure overrides it only if explicitly set higher. Expected RTB scales with
   // every barber on the floor (not capped to chairs).
@@ -1645,6 +1656,49 @@ export async function getCapacityKpis(
     Number(site.rtbPerBarber ?? 0),
   )
   const rtbExpected = staffedBarbers * rtbPerBarber
+
+  // Last week's confirmed RTB (the most recent week with data before this one),
+  // shown while the current week is still in progress. The current week may not
+  // itself appear in the data weeks yet, so find the latest week strictly before
+  // it rather than relying on its index.
+  const weeks = await getWeeks()
+  const prevWeek = weeks.find((w) => w < week) ?? null
+  let lastWeekActual: number | null = null
+  let lastWeekReported = false
+  if (prevWeek) {
+    const [prevAgg] = await db
+      .select({
+        rent: sql<number>`coalesce(sum(${weeklyTakings.cashRent} + ${weeklyTakings.cardRent}), 0)`,
+        reporting: sql<number>`count(distinct ${weeklyTakings.barberId})`,
+      })
+      .from(weeklyTakings)
+      .where(
+        and(
+          eq(weeklyTakings.siteId, siteId),
+          eq(weeklyTakings.weekEnding, prevWeek),
+        ),
+      )
+    lastWeekReported = Number(prevAgg?.reporting ?? 0) > 0
+    lastWeekActual = lastWeekReported ? Number(prevAgg?.rent ?? 0) : null
+  }
+
+  // Before the Saturday 18:00 deadline, a site that hasn't fully reported is
+  // "in progress", not failing. We show last week + a run-rate projection
+  // rather than a shortfall.
+  const pastDeadline = isPastSubmissionDeadline(week)
+  const allReported = staffedBarbers > 0 && barbersReported >= staffedBarbers
+  const inProgress = !pastDeadline && !allReported
+  // Run-rate projection: average RTB across barbers who've already submitted,
+  // scaled to the full active roster. Falls back to last week's actual when
+  // nobody has submitted yet.
+  let rtbProjected: number | null = null
+  if (inProgress) {
+    if (barbersReported > 0) {
+      rtbProjected = (rtbActual / barbersReported) * staffedBarbers
+    } else if (lastWeekActual != null) {
+      rtbProjected = lastWeekActual
+    }
+  }
 
   // Training throughput for the week (academy sites only).
   const [tw] = await db
@@ -1659,10 +1713,6 @@ export async function getCapacityKpis(
   const privateLearners = tw ? Number(tw.privateLearners) : 0
   const apprentices = tw ? Number(tw.apprentices) : 0
 
-  // Before the Saturday 18:00 deadline, a site that hasn't reported yet is
-  // "awaited" (amber), not a red failure.
-  const pastDeadline = isPastSubmissionDeadline(week)
-
   return {
     siteId,
     siteType: site.siteType ?? "barbershop",
@@ -1676,12 +1726,21 @@ export async function getCapacityKpis(
     rtbExpected,
     rtbActual,
     rtbAttainmentPct: rtbExpected > 0 ? (rtbActual / rtbExpected) * 100 : 0,
-    rtbRag: rtbReported
-      ? ragForRtb(rtbActual, rtbExpected)
-      : pastDeadline
-        ? "red"
-        : "amber",
+    // While the week is still in progress, don't penalise — show neutral.
+    // Once the deadline passes (or everyone is in) we grade the real figure.
+    rtbRag: inProgress
+      ? "green"
+      : rtbReported
+        ? ragForRtb(rtbActual, rtbExpected)
+        : "red",
     rtbReported,
+    pastDeadline,
+    allReported,
+    inProgress,
+    lastWeekActual,
+    lastWeekReported,
+    rtbProjected,
+    barbersReported,
     learnerCapacity: site.learnerCapacity ?? 0,
     apprenticeCapacity: site.apprenticeCapacity ?? 0,
     privateLearners,
@@ -1693,9 +1752,9 @@ export async function getCapacityKpis(
           apprentices,
           site.apprenticeCapacity ?? 0,
         )
-      : pastDeadline
-        ? "red"
-        : "amber",
+      : inProgress
+        ? "green"
+        : "red",
     trainingReported: !!tw,
   }
 }
