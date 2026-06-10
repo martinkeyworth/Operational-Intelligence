@@ -2,7 +2,10 @@
 // Every projection, target, and report in the app should trace back to these
 // figures so the dashboard stays faithful to the board-approved plan.
 
-export type BrandTierName = "Mid" | "Youth" | "Elite"
+// Economics tiers. Mid/Youth/Elite are the three BARBERING tiers; Hairdressing
+// is a separate vertical (Velvet Ash unisex hairdressers) carried for per-head
+// economics but excluded from the £5m barbering goal and the shop roll-out.
+export type BrandTierName = "Mid" | "Youth" | "Elite" | "Hairdressing"
 
 /** Annual barbering turnover milestones (gross, excludes Training Academy). */
 export type PlanMilestone = {
@@ -58,6 +61,9 @@ export const BRAND_TIERS: Record<BrandTierName, BrandTier> = {
   Mid: { name: "Mid", basePerBarberRevenue: 50_000, growth: 0.1, launchYear: 2025 },
   Youth: { name: "Youth", basePerBarberRevenue: 40_000, growth: 0.1, launchYear: 2025 },
   Elite: { name: "Elite", basePerBarberRevenue: 60_000, growth: 0.1, launchYear: 2027 },
+  // Velvet Ash (unisex hairdressers) — placeholder per-stylist economics until
+  // real hairdressing figures are provided. Edit basePerBarberRevenue here.
+  Hairdressing: { name: "Hairdressing", basePerBarberRevenue: 45_000, growth: 0.1, launchYear: 2019 },
 }
 
 /** Per-barber gross revenue per YEAR for a tier in a given year (+10%/yr). */
@@ -79,7 +85,8 @@ export const BRAND_TIER_MAP: Record<string, BrandTierName> = {
   ltz: "Mid",
   "f.af": "Youth",
   faf: "Youth",
-  "velvet ash": "Elite",
+  kairos: "Elite",
+  "velvet ash": "Hairdressing",
 }
 
 export function tierForBrand(brand: string | null | undefined): BrandTierName {
@@ -105,35 +112,50 @@ const o = (
   location: string,
 ): PlannedOpening => ({ year, month, tier, location, barbers: 4, manager: 1, apprentices: 1 })
 
+// Re-derived from the reconciled roadmap (roadmap_milestones), using the real
+// brands and economics tiers (Less Than Zero=Mid, F.AF=Youth, Kairos=Elite,
+// Velvet Ash=Hairdressing). The two 2019 founding sites (Soresby, Woodseats)
+// and the in-progress F.AF Cavendish anchor the actual estate; everything from
+// Mansfield onward is the forward plan. This keeps dashboard/vision/monthly/HR
+// forecasts in step with the roadmap page.
 export const OPENING_SCHEDULE: PlannedOpening[] = [
-  o(2025, 6, "Mid", "Claycross"),
-  o(2025, 8, "Youth", "Chesterfield"),
-  o(2026, 4, "Youth", "Rotherham"),
+  o(2019, 1, "Mid", "Soresby"), // LTZ — founding
+  o(2019, 1, "Hairdressing", "Woodseats"), // Velvet Ash (rebrand from LTZ) — founding
+  o(2026, 4, "Youth", "Rotherham"), // F.AF — slipped/at risk
+  o(2026, 6, "Youth", "Cavendish"), // F.AF — in progress
   o(2026, 7, "Mid", "Mansfield"),
   o(2026, 9, "Youth", "Derby"),
   o(2026, 10, "Mid", "Dronfield"),
   o(2027, 3, "Mid", "Nottingham"),
   o(2027, 7, "Youth", "Leicester"),
-  o(2027, 10, "Elite", "Sheffield"),
+  o(2027, 10, "Elite", "Sheffield"), // Kairos
   o(2028, 3, "Mid", "Sheffield"),
   o(2028, 7, "Youth", "Birmingham"),
-  o(2028, 10, "Elite", "Manchester"),
+  o(2028, 10, "Elite", "Manchester"), // Kairos
   o(2029, 4, "Youth", "Liverpool"),
   o(2029, 8, "Mid", "Leeds"),
-  o(2029, 10, "Elite", "London"),
+  o(2029, 10, "Elite", "London"), // Kairos
 ]
 
-/** Cumulative shops open as of a given date, per the plan schedule. */
+/**
+ * Cumulative BARBERING shops open as of a given date, per the plan schedule.
+ * Excludes the Hairdressing vertical (Velvet Ash) so the count stays aligned
+ * with the barbering-only PLAN_MILESTONES and the shops × 4 headcount model.
+ */
 export function cumulativeShopsByMonth(date: Date = new Date()): number {
   const idx = date.getFullYear() * 12 + date.getMonth() // 0-based month
-  return OPENING_SCHEDULE.filter((s) => s.year * 12 + (s.month - 1) <= idx).length
+  return OPENING_SCHEDULE.filter(
+    (s) => s.tier !== "Hairdressing" && s.year * 12 + (s.month - 1) <= idx,
+  ).length
 }
 
-/** The next planned opening on/after the given date (null if all open). */
+/** The next planned BARBERING opening on/after the given date (null if none). */
 export function nextPlannedOpening(date: Date = new Date()): PlannedOpening | null {
   const idx = date.getFullYear() * 12 + date.getMonth()
   return (
-    OPENING_SCHEDULE.find((s) => s.year * 12 + (s.month - 1) >= idx) ?? null
+    OPENING_SCHEDULE.find(
+      (s) => s.tier !== "Hairdressing" && s.year * 12 + (s.month - 1) >= idx,
+    ) ?? null
   )
 }
 
