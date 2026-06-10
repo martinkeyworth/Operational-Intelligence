@@ -16,18 +16,20 @@ import { revalidatePath } from "next/cache"
 import { requireDashboard, requireDataEntry } from "@/lib/access"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
-import { defaultOwnerEmailForArea } from "@/lib/area-owners"
+import { defaultOwnerEmailForAction } from "@/lib/area-owners"
 
 /**
- * Resolve the default owner for a function area into a { id, name } record,
- * using the leadership ownership matrix (HR→Luke, Training→Ravi,
- * Marketing/Capacity/RTB/Subletting→Mario, Strategy→Cosmin). Returns null if
- * the mapped user can't be found, so callers can fall back gracefully.
+ * Resolve the default owner for an action into a { id, name } record, using the
+ * leadership ownership matrix plus keyword routing (e.g. "apprentice" → Ravi,
+ * "lease/property" → Cosmin). Falls back to the function-area mapping when no
+ * keyword matches. Returns null if the mapped user can't be found.
  */
 async function resolveDefaultOwner(
   functionArea: string,
+  title?: string | null,
+  description?: string | null,
 ): Promise<{ id: string; name: string } | null> {
-  const email = defaultOwnerEmailForArea(functionArea)
+  const email = defaultOwnerEmailForAction({ functionArea, title, description })
   const [owner] = await db
     .select({ id: user.id, name: user.name })
     .from(user)
@@ -59,7 +61,11 @@ async function syncKpiAction(opts: {
   if (opts.open) {
     // Auto-raised KPI reds are owned by the area's default lead so they land
     // with the accountable person (and match reliably in the daily red email).
-    const defaultOwner = await resolveDefaultOwner(opts.functionArea)
+    const defaultOwner = await resolveDefaultOwner(
+      opts.functionArea,
+      opts.title,
+      opts.description,
+    )
     if (existing.length === 0) {
       await db.insert(actions).values({
         title: opts.title,
@@ -207,11 +213,11 @@ export async function createAction(formData: FormData) {
     entryType === "Risk" || String(formData.get("isRisk")) === "true"
 
   // Resolve the owner's display name so the free-text owner stays in sync.
-  // When no owner is chosen, fall back to the area's default lead (HR→Luke,
-  // Training→Ravi, Marketing/Capacity/RTB/Subletting→Mario, Strategy→Cosmin).
+  // When no owner is chosen, fall back to the keyword/area routing (e.g.
+  // "apprentice" → Ravi, "lease" → Cosmin, else the area lead).
   let ownerName = "Unassigned"
   if (!ownerUserId) {
-    const fallback = await resolveDefaultOwner(functionArea)
+    const fallback = await resolveDefaultOwner(functionArea, title, description)
     if (fallback) {
       ownerUserId = fallback.id
       ownerName = fallback.name

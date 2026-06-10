@@ -1,12 +1,14 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { ListChecks, Gavel, Activity as ActivityIcon, CalendarClock } from "lucide-react"
+import { ListChecks, Gavel, Activity as ActivityIcon, CalendarClock, Network } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ActionsRegister } from "@/components/actions-register"
 import { DecisionRegister } from "@/components/decision-register"
 import { ActivityTracker } from "@/components/activity-tracker"
 import { CadencePanel, type CadenceCeremony } from "@/components/cadence-panel"
+import { RolesResponsibilities } from "@/components/roles-responsibilities"
+import { getRoles } from "@/lib/roles"
 import type { ActionRow, AssignableOwner, RiskRegister } from "@/lib/data"
 import type {
   ActivitySummary,
@@ -18,6 +20,7 @@ const TABS = [
   { value: "actions", label: "Actions & Risks", icon: ListChecks },
   { value: "decisions", label: "Decisions", icon: Gavel },
   { value: "activity", label: "Activity", icon: ActivityIcon },
+  { value: "roles", label: "Roles", icon: Network },
   { value: "cadence", label: "Cadence", icon: CalendarClock },
 ] as const
 
@@ -86,6 +89,10 @@ export function GovernanceHub({
 
       <TabsContent value="activity" className="pt-2">
         <ActivityTracker summary={activity} sites={sites} />
+      </TabsContent>
+
+      <TabsContent value="roles" className="pt-2">
+        <RolesResponsibilities roles={getRoles()} />
       </TabsContent>
 
       <TabsContent value="cadence" className="pt-2">
