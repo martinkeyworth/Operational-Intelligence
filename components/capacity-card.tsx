@@ -16,13 +16,6 @@ type CapacityKpis = {
   rtbAttainmentPct: number
   rtbRag: Rag
   rtbReported: boolean
-  inProgress: boolean
-  pastDeadline: boolean
-  allReported: boolean
-  lastWeekActual: number | null
-  lastWeekReported: boolean
-  rtbProjected: number | null
-  barbersReported: number
 }
 
 export function CapacityCard({
@@ -115,105 +108,50 @@ export function CapacityCard({
               </p>
             </div>
           </div>
-          {kpis.inProgress ? (
-            <span className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              In progress
-            </span>
-          ) : (
-            <RagBadge rag={kpis.rtbRag} />
-          )}
+          <RagBadge rag={kpis.rtbRag} />
         </div>
 
-        {kpis.inProgress ? (
-          <>
-            {/* Current week still open: show last week + a run-rate projection
-                rather than a premature shortfall. */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Last week</p>
-                <p className="text-xl font-semibold tabular-nums text-foreground">
-                  {kpis.lastWeekActual != null
-                    ? fmtGBP(kpis.lastWeekActual)
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  This week (proj.)
-                </p>
-                <p className="text-xl font-semibold tabular-nums text-foreground">
-                  {kpis.rtbProjected != null
-                    ? fmtGBP(kpis.rtbProjected)
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Submitted</p>
-                <p className="text-xl font-semibold tabular-nums text-foreground">
-                  {kpis.barbersReported}/{kpis.rtbBarbers}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              {kpis.barbersReported > 0
-                ? `Projection is a run-rate from the ${kpis.barbersReported} barber${
-                    kpis.barbersReported === 1 ? "" : "s"
-                  } in so far. Final RTB is graded after the Saturday 18:00 deadline.`
-                : "Awaiting this week's submissions. Final RTB is graded against the agreed KPI after the Saturday 18:00 deadline."}
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Returned</p>
+            <p className="text-xl font-semibold tabular-nums text-foreground">
+              {kpis.rtbReported ? fmtGBP(kpis.rtbActual) : "—"}
             </p>
-          </>
-        ) : (
-          <>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Returned</p>
-                <p className="text-xl font-semibold tabular-nums text-foreground">
-                  {kpis.rtbReported ? fmtGBP(kpis.rtbActual) : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Expected</p>
-                <p className="text-xl font-semibold tabular-nums text-foreground">
-                  {fmtGBP(kpis.rtbExpected)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {rtbShortfall > 0 ? "Shortfall" : "Surplus"}
-                </p>
-                <p
-                  className={
-                    "text-xl font-semibold tabular-nums " +
-                    (rtbShortfall > 0 ? "text-rag-red" : "text-rag-green")
-                  }
-                >
-                  {kpis.rtbReported
-                    ? `${rtbShortfall > 0 ? "-" : "+"}${fmtGBP(
-                        Math.abs(rtbShortfall),
-                      )}`
-                    : "—"}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground">
-              Expected = {kpis.rtbBarbers} barbers × {fmtGBP(kpis.rtbPerBarber)}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Expected</p>
+            <p className="text-xl font-semibold tabular-nums text-foreground">
+              {fmtGBP(kpis.rtbExpected)}
             </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              {rtbShortfall > 0 ? "Shortfall" : "Surplus"}
+            </p>
+            <p
+              className={
+                "text-xl font-semibold tabular-nums " +
+                (rtbShortfall > 0 ? "text-rag-red" : "text-rag-green")
+              }
+            >
+              {kpis.rtbReported
+                ? `${rtbShortfall > 0 ? "-" : "+"}${fmtGBP(
+                    Math.abs(rtbShortfall),
+                  )}`
+                : "—"}
+            </p>
+          </div>
+        </div>
 
-            {kpis.rtbReported && kpis.rtbActual < kpis.rtbExpected && (
-              <p className="mt-3 rounded-md border border-rag-red/30 bg-rag-red/5 px-3 py-2 text-xs text-rag-red">
-                Below the {fmtGBP(kpis.rtbPerBarber)}/barber assumption — an RTB
-                action has been raised.
-              </p>
-            )}
-            {!kpis.rtbReported && (
-              <p className="mt-3 rounded-md border border-rag-red/30 bg-rag-red/5 px-3 py-2 text-xs text-rag-red">
-                No takings submitted by the Saturday 18:00 deadline — this is now
-                outstanding.
-              </p>
-            )}
-          </>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Expected = {kpis.rtbBarbers} barbers × {fmtGBP(kpis.rtbPerBarber)}
+        </p>
+
+        {kpis.rtbReported && kpis.rtbActual < kpis.rtbExpected && (
+          <p className="mt-3 rounded-md border border-rag-red/30 bg-rag-red/5 px-3 py-2 text-xs text-rag-red">
+            Below the {fmtGBP(kpis.rtbPerBarber)}/barber assumption — an RTB
+            action has been raised.
+          </p>
         )}
       </Card>
     </div>
