@@ -4,6 +4,7 @@ import { jobPostings, jobReferrals, sites } from "@/lib/db/schema"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { getRecruitmentPlan, type RoleBucket } from "@/lib/hr"
 import { tierForBrand } from "@/lib/plan"
+import { formatJobAdvert as formatAdvert } from "@/lib/jobs-format"
 
 // ---------------------------------------------------------------------------
 // Jobs board
@@ -249,29 +250,7 @@ export async function getSuggestedJobs(): Promise<SuggestedJob[]> {
 /** Build a ready-to-post job advert from a posting. Suitable for pasting into
  *  social media or a careers page. */
 export function formatJobAdvert(job: JobPosting): string {
-  const lines: string[] = []
-  const brand = job.brand ? `${job.brand} ` : ""
-  lines.push(`We're hiring: ${job.title}`)
-  lines.push("")
-  if (job.location) lines.push(`📍 Location: ${job.location}`)
-  if (job.brand) lines.push(`✂️ Brand: ${job.brand}`)
-  if (job.role) lines.push(`👤 Role: ${job.role}`)
-  lines.push(`🕒 ${job.employmentType}`)
-  lines.push("")
-  lines.push(
-    job.description ||
-      `Join the ${brand}team and grow your career with us.`,
-  )
-  lines.push("")
-  if (job.finderBonus > 0) {
-    lines.push(
-      `💷 Know someone perfect? Refer them and earn a £${job.finderBonus} finder's bonus when they're hired.`,
-    )
-    lines.push("")
-  }
-  lines.push("Apply or refer a friend through the team app today.")
-  lines.push("#hiring #barberjobs" + (job.location ? ` #${job.location.replace(/\s+/g, "")}` : ""))
-  return lines.join("\n")
+  return formatAdvert(job)
 }
 
 // ---------------------------------------------------------------------------

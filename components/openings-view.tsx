@@ -155,12 +155,14 @@ function ReferDialog({ job }: { job: JobPosting }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <UserPlus className="h-4 w-4" />
-          Refer someone
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button size="sm">
+            <UserPlus className="h-4 w-4" />
+            Refer someone
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Refer a candidate</DialogTitle>

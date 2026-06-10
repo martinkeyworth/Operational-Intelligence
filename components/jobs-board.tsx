@@ -60,7 +60,7 @@ import {
   setReferralStatus,
   setBonusStatus,
 } from "@/app/jobs/actions"
-import { formatJobAdvert } from "@/lib/jobs"
+import { formatJobAdvert } from "@/lib/jobs-format"
 
 const ROLE_OPTIONS = [
   "Manager",
@@ -519,18 +519,20 @@ function JobDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {editing ? (
-          <Button variant="outline" size="sm" className="h-8 text-xs">
-            Edit
-          </Button>
-        ) : (
-          <Button size="sm">
-            <Plus className="h-4 w-4" />
-            Add job
-          </Button>
-        )}
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          editing ? (
+            <Button variant="outline" size="sm" className="h-8 text-xs">
+              Edit
+            </Button>
+          ) : (
+            <Button size="sm">
+              <Plus className="h-4 w-4" />
+              Add job
+            </Button>
+          )
+        }
+      />
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit posting" : "New posting"}</DialogTitle>
@@ -677,12 +679,14 @@ function AdvertDialog({ job }: { job: JobPosting }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 text-xs">
-          <Megaphone className="h-3.5 w-3.5" />
-          Advert
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8 text-xs">
+            <Megaphone className="h-3.5 w-3.5" />
+            Advert
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Social-ready advert</DialogTitle>
