@@ -754,7 +754,7 @@ function AdvertDialog({ job }: { job: JobPosting }) {
   const [error, setError] = useState<string | null>(null)
 
   // The auto-generated advert (from posting fields) is the fallback/default.
-  const generated = formatJobAdvert({ ...job, advertText: null })
+  const generated = formatJobAdvert(job)
   // What's shown/edited: a saved manual edit if present, else the generated copy.
   const [draft, setDraft] = useState(job.advertText?.trim() ? job.advertText : generated)
   const isCustom = Boolean(job.advertText?.trim())
