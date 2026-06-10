@@ -226,7 +226,12 @@ export const actions = pgTable("actions", {
   createdByUserId: text("created_by_user_id"),
   priority: text("priority").notNull().default("Medium"),
   status: text("status").notNull().default("Open"),
+  // Stored RAG. With auto-RAG this is treated as a cached/last value; the
+  // effective colour is computed unless `ragOverride` pins it manually.
   rag: text("rag").notNull().default("amber"),
+  // Manual RAG pin. NULL = auto-calculate from age, priority, KPI and the 5x5
+  // (Strategy) rule. A value ('red'|'amber'|'green') forces that colour.
+  ragOverride: text("rag_override"),
   dueDate: date("due_date"),
   escalated: boolean("escalated").notNull().default(false),
   // Auto-escalation tracking. `escalatedAt` is set when an action is escalated

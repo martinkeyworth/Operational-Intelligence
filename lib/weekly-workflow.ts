@@ -8,7 +8,8 @@ import {
   weeklyTakings,
   sites,
 } from "@/lib/db/schema"
-import { fmtWeekLong } from "@/lib/data"
+import { fmtWeekLong, getActions } from "@/lib/data"
+import { canonicalAreaKey } from "@/lib/function-areas"
 import { fmtGBP } from "@/lib/format"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import { getSubmissionStatus } from "@/lib/submissions"
@@ -511,14 +512,14 @@ export async function sendBrandRtbSummary(weekEnding = currentWeekEnding()) {
 
 // Daily 07:00 — email each owner the open RED actions assigned to them, so the
 // person responsible gets a direct daily nudge (not just a leadership digest).
-// Actions are matched to a user by ownerUserId where set, otherwise by the
+// RED is the *effective* RAG from getActions() — i.e. the auto-calculated colour
+// (age + priority + KPI + the 5x5/Strategy "red until done" rule) or a manual
+// pin. Actions are matched to a user by ownerUserId where set, otherwise by the
 // owner name matching a registered user's name. Actions with no resolvable
 // email are skipped (and reported) so nothing fails silently.
 export async function remindRedActionOwners() {
-  const redOpen = await db
-    .select()
-    .from(actions)
-    .where(and(ne(actions.status, "Closed"), eq(actions.rag, "red")))
+  const all = await getActions()
+  const redOpen = all.filter((a) => a.rag === "red" && a.status !== "Closed")
 
   if (redOpen.length === 0) {
     return { owners: 0, emailsSent: 0, actions: 0, unassigned: 0 }
@@ -559,20 +560,27 @@ export async function remindRedActionOwners() {
   for (const r of groups.values()) {
     actionsCovered += r.items.length
     const rowsHtml = r.items
-      .map(
-        (a) =>
-          `<tr>
+      .map((a) => {
+        const reason = a.overdue
+          ? `${a.daysOverdue} day${a.daysOverdue === 1 ? "" : "s"} overdue`
+          : canonicalAreaKey(a.functionArea) === "Strategy"
+            ? "5x5 plan — red until done"
+            : `${a.priority} priority`
+        return `<tr>
             <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;">${esc(
               a.title,
             )}</td>
             <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;color:#6b7280;">${esc(
               a.functionArea,
             )}</td>
+            <td style="padding:8px 8px 8px 0;border-bottom:1px solid #f0f0f0;color:#6b7280;">${esc(
+              reason,
+            )}</td>
             <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:${
               a.dueDate ? "#dc2626" : "#6b7280"
             };">${a.dueDate ? `Due ${String(a.dueDate)}` : "No due date"}</td>
-          </tr>`,
-      )
+          </tr>`
+      })
       .join("")
 
     const html = emailShell(
@@ -589,11 +597,12 @@ export async function remindRedActionOwners() {
          <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
            <th style="padding:0 0 6px;">Action</th>
            <th style="padding:0 0 6px;">Area</th>
+           <th style="padding:0 0 6px;">Why red</th>
            <th style="padding:0 0 6px;text-align:right;">Due</th>
          </tr></thead>
          <tbody>${rowsHtml}</tbody>
        </table>
-       <p style="margin:16px 0;"><a href="${url}/actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review my actions</a></p>
+       <p style="margin:16px 0;"><a href="${url}/governance?tab=actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review my actions</a></p>
        <p style="margin:0;color:#6b7280;">This is an automated daily reminder sent at 07:00.</p>`,
     )
 

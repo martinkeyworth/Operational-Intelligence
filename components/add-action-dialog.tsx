@@ -185,9 +185,10 @@ export function AddActionDialog({
                 <select
                   id="rag"
                   name="rag"
-                  defaultValue="amber"
+                  defaultValue="auto"
                   className={fieldClass()}
                 >
+                  <option value="auto">Auto (calculated)</option>
                   <option value="red">Red</option>
                   <option value="amber">Amber</option>
                   <option value="green">Green</option>

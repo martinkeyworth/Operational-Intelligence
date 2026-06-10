@@ -16,11 +16,14 @@ import {
   assignActionOwner,
   setActionRisk,
   setActionDueDate,
+  editActionDetails,
 } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
 import { AlertTriangle, Flag, Clock } from "lucide-react"
+import { EditActionDialog } from "@/components/edit-action-dialog"
 
 const STATUSES = ["Open", "In Progress", "Blocked", "Closed"]
+const PRIORITIES = ["High", "Medium", "Low"]
 const UNASSIGNED = "__none__"
 
 /** Editable operational-meeting card. All edits write back to the action register. */
@@ -35,6 +38,7 @@ export function OperationsActionCard({
   const [ownerId, setOwnerId] = useState(action.ownerUserId ?? UNASSIGNED)
   const [isRisk, setIsRisk] = useState(action.isRisk)
   const [dueDate, setDueDate] = useState(action.dueDate ?? "")
+  const [priority, setPriority] = useState(action.priority)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -80,6 +84,17 @@ export function OperationsActionCard({
     run(() => setActionDueDate(fd))
   }
 
+  function changePriority(next: string | null) {
+    if (!next) return
+    setPriority(next)
+    const fd = new FormData()
+    fd.set("id", String(action.id))
+    fd.set("title", action.title)
+    fd.set("description", action.description ?? "")
+    fd.set("priority", next)
+    run(() => editActionDetails(fd))
+  }
+
   return (
     <Card
       className={`p-4 ${status === "Closed" ? "opacity-55" : ""} ${pending ? "opacity-70" : ""}`}
@@ -97,6 +112,9 @@ export function OperationsActionCard({
                 Risk
               </span>
             )}
+            <span className="ml-auto">
+              <EditActionDialog action={action} />
+            </span>
           </div>
           {action.description && (
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -104,8 +122,7 @@ export function OperationsActionCard({
             </p>
           )}
           <p className="mt-1.5 text-xs text-muted-foreground">
-            {action.functionArea} · {action.siteName ?? "Group"} ·{" "}
-            {action.priority} priority
+            {action.functionArea} · {action.siteName ?? "Group"}
           </p>
           {action.overdue && status !== "Closed" && (
             <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
@@ -115,7 +132,20 @@ export function OperationsActionCard({
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <RagSelect id={action.id} rag={action.rag} />
+            <RagSelect id={action.id} rag={action.rag} overridden={action.ragOverridden} />
+
+            <Select value={priority} onValueChange={changePriority} disabled={pending}>
+              <SelectTrigger className="h-8 w-[110px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITIES.map((p) => (
+                  <SelectItem key={p} value={p} className="text-xs">
+                    {p} priority
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <div className="inline-flex items-center gap-1.5">
               <Clock

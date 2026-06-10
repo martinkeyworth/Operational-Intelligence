@@ -12,7 +12,10 @@ import {
 import { setActionRag } from "@/app/actions/governance"
 import type { Rag } from "@/lib/data"
 
-const RAGS: { value: Rag; label: string; dot: string }[] = [
+type RagValue = Rag | "auto"
+
+const RAGS: { value: RagValue; label: string; dot: string }[] = [
+  { value: "auto", label: "Auto", dot: "bg-muted-foreground" },
   { value: "red", label: "Red", dot: "bg-rag-red" },
   { value: "amber", label: "Amber", dot: "bg-rag-amber" },
   { value: "green", label: "Green", dot: "bg-rag-green" },
@@ -24,19 +27,38 @@ const TRIGGER_STYLE: Record<Rag, string> = {
   green: "border-rag-green/40 bg-rag-green/10 text-rag-green",
 }
 
-/** Editable RAG status. Writes straight back to the shared action register. */
-export function RagSelect({ id, rag }: { id: number; rag: Rag }) {
+/**
+ * Editable RAG status. By default RAG is auto-calculated from age, priority,
+ * KPI flags and the 5x5 (Strategy) rule; selecting a colour pins it manually,
+ * and selecting "Auto" reverts to the calculated value. `overridden` marks a
+ * currently-pinned value (shown with a dot) vs an auto value.
+ */
+export function RagSelect({
+  id,
+  rag,
+  overridden = false,
+}: {
+  id: number
+  rag: Rag
+  overridden?: boolean
+}) {
+  // The select reflects the effective colour, plus whether it's pinned.
   const [value, setValue] = useState<Rag>(rag)
+  const [pinned, setPinned] = useState(overridden)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
   function onChange(next: string | null) {
     if (!next) return
-    const r = next as Rag
-    setValue(r)
     const fd = new FormData()
     fd.set("id", String(id))
-    fd.set("rag", r)
+    fd.set("rag", next)
+    if (next === "auto") {
+      setPinned(false)
+    } else {
+      setValue(next as Rag)
+      setPinned(true)
+    }
     startTransition(async () => {
       await setActionRag(fd)
       router.refresh()
@@ -44,11 +66,15 @@ export function RagSelect({ id, rag }: { id: number; rag: Rag }) {
   }
 
   return (
-    <Select value={value} onValueChange={onChange} disabled={pending}>
+    <Select value={pinned ? value : "auto"} onValueChange={onChange} disabled={pending}>
       <SelectTrigger
-        className={`h-8 w-[110px] text-xs font-semibold capitalize ${TRIGGER_STYLE[value]}`}
+        className={`h-8 w-[120px] text-xs font-semibold capitalize ${TRIGGER_STYLE[value]}`}
+        title={pinned ? "Manually pinned RAG" : "Auto-calculated RAG"}
       >
-        <SelectValue />
+        <span className="flex items-center gap-1.5">
+          <span className={`h-2 w-2 rounded-full ${pinned ? "bg-current" : "opacity-0"}`} />
+          <SelectValue />
+        </span>
       </SelectTrigger>
       <SelectContent>
         {RAGS.map((r) => (

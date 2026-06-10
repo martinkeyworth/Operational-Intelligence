@@ -19,18 +19,57 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { setActionStatus, assignActionOwner, setActionRisk, setActionDueDate } from "@/app/actions/governance"
+import { setActionStatus, assignActionOwner, setActionRisk, setActionDueDate, editActionDetails } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
 import { AlertTriangle, Flag, Clock } from "lucide-react"
+import { EditActionDialog } from "@/components/edit-action-dialog"
 
 const STATUSES = ["Open", "In Progress", "Blocked", "Closed"]
 
+const PRIORITIES = ["High", "Medium", "Low"]
+
 const UNASSIGNED = "__none__"
 
-const PRIORITY_STYLE: Record<string, string> = {
-  High: "text-rag-red",
-  Medium: "text-rag-amber",
-  Low: "text-muted-foreground",
+const PRIORITY_TRIGGER: Record<string, string> = {
+  High: "border-rag-red/40 bg-rag-red/10 text-rag-red",
+  Medium: "border-rag-amber/40 bg-rag-amber/10 text-rag-amber",
+  Low: "border-border text-muted-foreground",
+}
+
+/** Inline priority editor. Priority drives the auto-RAG escalation thresholds. */
+function PrioritySelect({ id, priority }: { id: number; priority: string }) {
+  const [value, setValue] = useState(priority)
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function onChange(next: string | null) {
+    if (!next) return
+    setValue(next)
+    const fd = new FormData()
+    fd.set("id", String(id))
+    fd.set("priority", next)
+    startTransition(async () => {
+      await editActionDetails(fd)
+      router.refresh()
+    })
+  }
+
+  return (
+    <Select value={value} onValueChange={onChange} disabled={pending}>
+      <SelectTrigger
+        className={`h-8 w-[110px] text-xs font-semibold ${PRIORITY_TRIGGER[value] ?? "border-border"}`}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {PRIORITIES.map((p) => (
+          <SelectItem key={p} value={p} className="text-xs">
+            {p}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 function StatusSelect({ id, status }: { id: number; status: string }) {
@@ -212,6 +251,7 @@ export function ActionsTable({
               <TableHead>Due</TableHead>
               <TableHead>RAG</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="sr-only">Edit</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -267,27 +307,26 @@ export function ActionsTable({
                   <RiskToggle id={a.id} isRisk={a.isRisk} />
                 </TableCell>
                 <TableCell>
-                  <span
-                    className={`text-xs font-semibold ${PRIORITY_STYLE[a.priority] ?? "text-muted-foreground"}`}
-                  >
-                    {a.priority}
-                  </span>
+                  <PrioritySelect id={a.id} priority={a.priority} />
                 </TableCell>
                 <TableCell>
                   <DueDateInput id={a.id} dueDate={a.dueDate} overdue={a.overdue} />
                 </TableCell>
                 <TableCell>
-                  <RagSelect id={a.id} rag={a.rag} />
+                  <RagSelect id={a.id} rag={a.rag} overridden={a.ragOverridden} />
                 </TableCell>
                 <TableCell>
                   <StatusSelect id={a.id} status={a.status} />
+                </TableCell>
+                <TableCell>
+                  <EditActionDialog action={a} />
                 </TableCell>
               </TableRow>
             ))}
             {actions.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   No actions on the register.

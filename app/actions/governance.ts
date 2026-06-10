@@ -49,18 +49,21 @@ async function syncKpiAction(opts: {
         priority: opts.priority ?? "High",
         status: "Open",
         rag: "red",
+        // KPI-driven reds are pinned so the auto-RAG engine keeps them red
+        // until the underlying KPI recovers (which closes the action below).
+        ragOverride: "red",
         escalated: false,
       })
     } else {
       await db
         .update(actions)
-        .set({ description: opts.description, rag: "red", status: "Open" })
+        .set({ description: opts.description, rag: "red", ragOverride: "red", status: "Open" })
         .where(eq(actions.id, existing[0].id))
     }
   } else if (existing.length > 0) {
     await db
       .update(actions)
-      .set({ status: "Closed", rag: "green" })
+      .set({ status: "Closed", rag: "green", ragOverride: "green" })
       .where(eq(actions.id, existing[0].id))
   }
 }
@@ -165,8 +168,9 @@ export async function createAction(formData: FormData) {
     ? priorityRaw
     : "Medium"
 
-  const ragRaw = String(formData.get("rag") ?? "amber").trim()
-  const rag = ["red", "amber", "green"].includes(ragRaw) ? ragRaw : "amber"
+  const ragRaw = String(formData.get("rag") ?? "auto").trim()
+  // "auto" (default) leaves RAG auto-calculated; a colour pins it manually.
+  const ragOverride = ["red", "amber", "green"].includes(ragRaw) ? ragRaw : null
 
   const entryTypeRaw = String(formData.get("entryType") ?? "Action").trim()
   const entryType = ["Action", "Risk", "Issue"].includes(entryTypeRaw)
@@ -201,7 +205,8 @@ export async function createAction(formData: FormData) {
     createdByUserId: u.id,
     priority,
     status: "Open",
-    rag,
+    rag: ragOverride ?? "amber",
+    ragOverride,
     dueDate,
     isRisk,
   })
@@ -271,15 +276,53 @@ export async function setActionRisk(formData: FormData) {
 
 /**
  * Amend an action's RAG status. Used in the action register and live during
- * the weekly operational meeting — the change writes straight back to the
+ * the weekly operational meeting. Passing "auto" clears the manual pin and
+ * returns the item to the auto-calculated RAG (age + priority + KPI + 5x5);
+ * a colour value pins it manually. The change writes straight back to the
  * shared action register.
  */
 export async function setActionRag(formData: FormData) {
   await requireUser()
   const id = Number(formData.get("id"))
   const rag = String(formData.get("rag"))
-  if (!id || !["red", "amber", "green"].includes(rag)) return
-  await db.update(actions).set({ rag }).where(eq(actions.id, id))
+  if (!id) return
+  if (rag === "auto") {
+    await db.update(actions).set({ ragOverride: null }).where(eq(actions.id, id))
+  } else if (["red", "amber", "green"].includes(rag)) {
+    await db
+      .update(actions)
+      .set({ ragOverride: rag, rag })
+      .where(eq(actions.id, id))
+  } else {
+    return
+  }
+  revalidatePath("/governance")
+  revalidatePath("/actions")
+  revalidatePath("/operations")
+  revalidatePath("/")
+}
+
+/**
+ * Edit an action's core fields — title, description and priority — inline from
+ * the register. Priority feeds the auto-RAG escalation, so changing it can
+ * change the computed colour. Owner, due date and RAG have their own actions.
+ */
+export async function editActionDetails(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  const title = String(formData.get("title") ?? "").trim()
+  if (!title) return
+  const description = String(formData.get("description") ?? "").trim() || null
+  const priorityRaw = String(formData.get("priority") ?? "Medium").trim()
+  const priority = ["High", "Medium", "Low"].includes(priorityRaw)
+    ? priorityRaw
+    : "Medium"
+
+  await db
+    .update(actions)
+    .set({ title, description, priority, updatedAt: new Date() })
+    .where(eq(actions.id, id))
   revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/operations")

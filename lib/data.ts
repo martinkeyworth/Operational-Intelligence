@@ -633,6 +633,8 @@ export type ActionRow = {
   priority: string
   status: string
   rag: Rag
+  // True when `rag` is a manual pin; false when auto-calculated.
+  ragOverridden: boolean
   dueDate: string | null
   escalated: boolean
   // True when the auto-escalation engine raised it (vs a manual escalation).
@@ -679,6 +681,86 @@ export function computeOverdue(
   return { overdue: true, daysOverdue: Math.floor(diffMs / 86_400_000) }
 }
 
+// Function areas that represent the 5x5 expansion plan. Any open item tagged to
+// one of these is automatically RED until it is closed — the 5x5 plan is the
+// board's top priority, so an unfinished 5x5 item can never read green/amber.
+const FIVE_BY_FIVE_AREAS = new Set(["Strategy", "Expansion", "Expansion Strategy"])
+
+/** Whole days since a date (0 if missing/future). */
+function daysSince(date: Date | string | null, now: Date = new Date()): number {
+  if (!date) return 0
+  const d = typeof date === "string" ? new Date(date) : date
+  if (Number.isNaN(d.getTime())) return 0
+  const diff = now.getTime() - d.getTime()
+  return diff <= 0 ? 0 : Math.floor(diff / 86_400_000)
+}
+
+/**
+ * Compute the effective RAG for an action from its age, priority, KPI flag and
+ * the 5x5 (Strategy) rule. Returns the worst applicable colour. A manual
+ * `ragOverride` short-circuits everything so leadership can pin a colour.
+ *
+ * Rules (worst wins), for open (non-Closed) items only:
+ *  - Manual override → that colour.
+ *  - Closed → green.
+ *  - 5x5 / Strategy area → red (top priority, red until done).
+ *  - Overdue: High priority red immediately; Medium red after 3 days (amber
+ *    before); Low red after 7 days (amber before).
+ *  - Age since raised with no resolution: High → amber 7d / red 21d;
+ *    Medium → amber 21d / red 45d; Low → amber 45d / red 90d.
+ *  - Otherwise green.
+ */
+export function computeAutoRag(opts: {
+  status: string
+  priority: string
+  functionArea: string
+  dueDate: string | null
+  createdAt: Date | string | null
+  ragOverride?: string | null
+  now?: Date
+}): Rag {
+  const now = opts.now ?? new Date()
+
+  // Manual pin always wins.
+  if (opts.ragOverride && ["red", "amber", "green"].includes(opts.ragOverride)) {
+    return opts.ragOverride as Rag
+  }
+  if (opts.status === "Closed") return "green"
+
+  const priority = opts.priority || "Medium"
+  let worst: Rag = "green"
+  const escalate = (r: Rag) => {
+    const rank: Record<Rag, number> = { green: 2, amber: 1, red: 0 }
+    if (rank[r] < rank[worst]) worst = r
+  }
+
+  // 5x5 expansion plan — red until closed.
+  if (FIVE_BY_FIVE_AREAS.has(canonicalAreaKey(opts.functionArea))) {
+    escalate("red")
+  }
+
+  // Overdue escalation, weighted by priority.
+  const { overdue, daysOverdue } = computeOverdue(opts.dueDate, opts.status, now)
+  if (overdue) {
+    if (priority === "High") escalate("red")
+    else if (priority === "Medium") escalate(daysOverdue >= 3 ? "red" : "amber")
+    else escalate(daysOverdue >= 7 ? "red" : "amber")
+  }
+
+  // Age since raised (the action lingering open), weighted by priority.
+  const age = daysSince(opts.createdAt, now)
+  const ageThresholds: Record<string, { amber: number; red: number }> = {
+    High: { amber: 7, red: 21 },
+    Medium: { amber: 21, red: 45 },
+    Low: { amber: 45, red: 90 },
+  }
+  const t = ageThresholds[priority] ?? ageThresholds.Medium
+  if (age >= t.red) escalate("red")
+  else if (age >= t.amber) escalate("amber")
+
+  return worst
+}
+
 export async function getActions(): Promise<ActionRow[]> {
   const siteRows = await db.select().from(sites)
   const userRows = await db
@@ -691,6 +773,15 @@ export async function getActions(): Promise<ActionRow[]> {
     .map((a) => {
       const dueDate = a.dueDate ? String(a.dueDate) : null
       const { overdue, daysOverdue } = computeOverdue(dueDate, a.status)
+      const ragOverride = a.ragOverride ?? null
+      const effectiveRag = computeAutoRag({
+        status: a.status,
+        priority: a.priority,
+        functionArea: a.functionArea,
+        dueDate,
+        createdAt: a.createdAt,
+        ragOverride,
+      })
       const ownerName = a.ownerUserId
         ? (userRows.find((u) => u.id === a.ownerUserId)?.name ?? null)
         : null
@@ -716,7 +807,9 @@ export async function getActions(): Promise<ActionRow[]> {
         entryType: a.entryType ?? "Action",
         priority: a.priority,
         status: a.status,
-        rag: a.rag as Rag,
+        rag: effectiveRag,
+        // Whether the colour is a manual pin (true) or auto-calculated (false).
+        ragOverridden: ragOverride != null,
         dueDate,
         escalated: a.escalated,
         autoEscalated: a.autoEscalated,
