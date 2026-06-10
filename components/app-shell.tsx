@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
   Store,
-  ListChecks,
   ClipboardEdit,
   ShieldAlert,
   LayoutGrid,
@@ -19,11 +18,8 @@ import {
   ClipboardCheck,
   CalendarRange,
   UserPlus,
-  Gavel,
   UserSearch,
   GraduationCap,
-  Activity,
-  CalendarClock,
   Inbox,
   Settings,
   LogOut,
@@ -92,11 +88,7 @@ export function AppShell({
             icon: Wrench,
             items: [
               { href: "/sites", label: "Sites", icon: Store },
-              { href: "/actions", label: "Action Register", icon: ListChecks },
-              { href: "/operations", label: "Risk Register", icon: ShieldAlert },
-              { href: "/decisions", label: "Decision Register", icon: Gavel },
-              { href: "/activity", label: "Activity Tracker", icon: Activity },
-              { href: "/cadence", label: "Review Cadence", icon: CalendarClock },
+              { href: "/governance", label: "Governance", icon: ShieldAlert },
             ],
           },
           {

@@ -56,6 +56,7 @@ export async function createDecision(formData: FormData) {
     decidedOn,
     status: "Active",
   })
+  revalidatePath("/governance")
   revalidatePath("/decisions")
 }
 
@@ -68,6 +69,7 @@ export async function setDecisionStatus(formData: FormData) {
     .update(decisions)
     .set({ status, updatedAt: new Date() })
     .where(eq(decisions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/decisions")
 }
 
@@ -244,6 +246,7 @@ export async function logActivity(formData: FormData) {
     count,
     notes,
   })
+  revalidatePath("/governance")
   revalidatePath("/activity")
   revalidatePath("/data-entry")
 }

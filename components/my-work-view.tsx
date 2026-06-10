@@ -142,7 +142,7 @@ export function MyWorkView({
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Link
-            href="/actions"
+            href="/governance?tab=actions"
             className="inline-flex h-10 items-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             View action register

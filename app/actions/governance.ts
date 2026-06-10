@@ -142,12 +142,83 @@ export async function editSite(formData: FormData) {
   revalidatePath("/")
 }
 
+/**
+ * Manually raise a new action/risk on the register. This is the human entry
+ * point that complements the KPI-driven auto-raised actions. Captures title,
+ * area, scope, owner, priority, due date, RAG and the RAID entry type, and
+ * optionally flags it as a risk for the weekly operational meeting.
+ */
+export async function createAction(formData: FormData) {
+  const u = await requireUser()
+  const title = String(formData.get("title") ?? "").trim()
+  const functionArea = String(formData.get("functionArea") ?? "").trim()
+  if (!title || !functionArea) {
+    throw new Error("Title and area are required")
+  }
+
+  const description = String(formData.get("description") ?? "").trim() || null
+  const siteId = Number(formData.get("siteId")) || null
+  const ownerUserId = String(formData.get("ownerUserId") ?? "").trim() || null
+
+  const priorityRaw = String(formData.get("priority") ?? "Medium").trim()
+  const priority = ["High", "Medium", "Low"].includes(priorityRaw)
+    ? priorityRaw
+    : "Medium"
+
+  const ragRaw = String(formData.get("rag") ?? "amber").trim()
+  const rag = ["red", "amber", "green"].includes(ragRaw) ? ragRaw : "amber"
+
+  const entryTypeRaw = String(formData.get("entryType") ?? "Action").trim()
+  const entryType = ["Action", "Risk", "Issue"].includes(entryTypeRaw)
+    ? entryTypeRaw
+    : "Action"
+
+  const dueRaw = String(formData.get("dueDate") ?? "").trim()
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(dueRaw) ? dueRaw : null
+
+  // A "Risk" entry type implies the risk flag for the weekly meeting register.
+  const isRisk =
+    entryType === "Risk" || String(formData.get("isRisk")) === "true"
+
+  // Resolve the owner's display name so the free-text owner stays in sync.
+  let ownerName = "Unassigned"
+  if (ownerUserId) {
+    const [owner] = await db
+      .select({ name: user.name })
+      .from(user)
+      .where(eq(user.id, ownerUserId))
+    ownerName = owner?.name ?? "Unassigned"
+  }
+
+  await db.insert(actions).values({
+    title,
+    description,
+    functionArea,
+    entryType,
+    siteId,
+    owner: ownerName,
+    ownerUserId,
+    createdByUserId: u.id,
+    priority,
+    status: "Open",
+    rag,
+    dueDate,
+    isRisk,
+  })
+
+  revalidatePath("/governance")
+  revalidatePath("/actions")
+  revalidatePath("/operations")
+  revalidatePath("/")
+}
+
 export async function setActionStatus(formData: FormData) {
   await requireUser()
   const id = Number(formData.get("id"))
   const status = String(formData.get("status"))
   if (!id || !status) return
   await db.update(actions).set({ status }).where(eq(actions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/")
 }
@@ -179,6 +250,7 @@ export async function assignActionOwner(formData: FormData) {
       ...(ownerName ? { owner: ownerName } : {}),
     })
     .where(eq(actions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/operations")
   revalidatePath("/")
@@ -191,6 +263,7 @@ export async function setActionRisk(formData: FormData) {
   if (!id) return
   const isRisk = String(formData.get("isRisk")) === "true"
   await db.update(actions).set({ isRisk }).where(eq(actions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/operations")
   revalidatePath("/")
@@ -207,6 +280,7 @@ export async function setActionRag(formData: FormData) {
   const rag = String(formData.get("rag"))
   if (!id || !["red", "amber", "green"].includes(rag)) return
   await db.update(actions).set({ rag }).where(eq(actions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/operations")
   revalidatePath("/")
@@ -224,6 +298,7 @@ export async function setActionDueDate(formData: FormData) {
   // Accept YYYY-MM-DD from the date input, or clear when empty.
   const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null
   await db.update(actions).set({ dueDate }).where(eq(actions.id, id))
+  revalidatePath("/governance")
   revalidatePath("/actions")
   revalidatePath("/operations")
   revalidatePath("/")

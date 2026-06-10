@@ -1,42 +1,5 @@
-import { requireDashboard } from "@/lib/access"
-import { AppShell } from "@/components/app-shell"
-import { PageHeader } from "@/components/ui-bits"
-import { ActionsTable } from "@/components/actions-table"
-import { getActions, getAssignableOwners } from "@/lib/data"
-import { sweepAutoEscalations } from "@/lib/registers"
-import Link from "next/link"
-import { CalendarClock } from "lucide-react"
+import { redirect } from "next/navigation"
 
-export default async function ActionsPage() {
-  const user = await requireDashboard()
-
-  // Run the auto-escalation sweep before loading, so overdue / persistently-red
-  // actions are flagged on every visit. Render-safe (no cache revalidation).
-  await sweepAutoEscalations()
-
-  const [actions, owners] = await Promise.all([
-    getActions(),
-    getAssignableOwners(),
-  ])
-
-  return (
-    <AppShell user={user}>
-      <PageHeader
-        meta="Action Management"
-        title="Action Register"
-        subtitle="Owned, tracked and escalated actions across all functions. Assign an owner and flag risks to feed the weekly operational meeting. Update status inline as work progresses."
-      >
-        <Link
-          href="/operations"
-          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-        >
-          <CalendarClock className="h-4 w-4" />
-          Operational meeting
-        </Link>
-      </PageHeader>
-      <div className="px-5 py-6 md:px-8">
-        <ActionsTable actions={actions} owners={owners} />
-      </div>
-    </AppShell>
-  )
+export default function ActionsRedirect() {
+  redirect("/governance?tab=actions")
 }

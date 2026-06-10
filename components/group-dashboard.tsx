@@ -832,7 +832,7 @@ export function GroupDashboard({
                 </p>
               </div>
               <Link
-                href="/actions"
+                href="/governance?tab=actions"
                 className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
                 Register

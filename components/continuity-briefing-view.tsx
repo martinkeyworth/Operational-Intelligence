@@ -246,7 +246,7 @@ export function ContinuityBriefingView({ data }: { data: ContinuityBriefing }) {
 
       <div className="flex flex-wrap gap-3">
         <Link
-          href="/actions"
+          href="/governance?tab=actions"
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
         >
           Open action register <ArrowRight className="h-3.5 w-3.5" />
