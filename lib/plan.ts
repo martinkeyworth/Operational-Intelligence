@@ -3,15 +3,21 @@
 // figures so the dashboard stays faithful to the board-approved plan.
 
 // Economics tiers. Mid/Youth/Elite are the three BARBERING tiers; Hairdressing
-// is a separate vertical (Velvet Ash unisex hairdressers) carried for per-head
-// economics but excluded from the £5m barbering goal and the shop roll-out.
+// is a separate vertical (Velvet Ash unisex hairdressers). All three streams —
+// barbering, hairdressing and the Training Academy — count toward the £5m
+// group revenue goal.
 export type BrandTierName = "Mid" | "Youth" | "Elite" | "Hairdressing"
 
-/** Annual barbering turnover milestones (gross, excludes Training Academy). */
+/**
+ * Annual turnover milestones. The headline £5m goal is TOTAL group revenue:
+ * barbering (LTZ/F.AF/Kairos) + hairdressing (Velvet Ash) + Training Academy.
+ * Each stream is tracked separately so the dashboard can show the breakdown.
+ */
 export type PlanMilestone = {
   year: number
-  shops: number
+  shops: number // barbering shops only (drives barber headcount)
   barberingTurnover: number
+  hairdressingTurnover: number // Velvet Ash (unisex hairdressers)
   academyTurnover: number
   get totalTurnover(): number
 }
@@ -20,33 +26,37 @@ function milestone(
   year: number,
   shops: number,
   barberingTurnover: number,
+  hairdressingTurnover: number,
   academyTurnover: number,
 ): PlanMilestone {
   return {
     year,
     shops,
     barberingTurnover,
+    hairdressingTurnover,
     academyTurnover,
     get totalTurnover() {
-      return this.barberingTurnover + this.academyTurnover
+      return this.barberingTurnover + this.hairdressingTurnover + this.academyTurnover
     },
   }
 }
 
-// Barbering gross turnover + Training Academy income (Academy sits on top and is
-// excluded from the £5m barbering goal).
+// Barbering gross turnover + Velvet Ash hairdressing + Training Academy income.
+// Hairdressing = Woodseats (4 chairs) at the Hairdressing tier economics
+// (£52k/stylist 2025 base, +10%/yr, full chair utilisation): 4 × perBarber.
+// All three streams sum into the £5m TOTAL group revenue goal.
 export const PLAN_MILESTONES: PlanMilestone[] = [
-  milestone(2025, 2, 450_000, 0),
-  milestone(2026, 6, 1_485_000, 70_000),
-  milestone(2027, 9, 2_508_000, 98_000),
-  milestone(2028, 12, 3_720_750, 137_200),
-  milestone(2029, 15, 5_150_970, 192_080),
-  milestone(2030, 15, 5_666_067, 268_912),
+  milestone(2025, 2, 450_000, 208_000, 0),
+  milestone(2026, 6, 1_485_000, 228_800, 70_000),
+  milestone(2027, 9, 2_508_000, 251_680, 98_000),
+  milestone(2028, 12, 3_720_750, 276_848, 137_200),
+  milestone(2029, 15, 5_150_970, 304_533, 192_080),
+  milestone(2030, 15, 5_666_067, 334_986, 268_912),
 ]
 
 export const PLAN_BASE_YEAR = PLAN_MILESTONES[0].year
 export const PLAN_TARGET_YEAR = PLAN_MILESTONES[PLAN_MILESTONES.length - 1].year
-/** Headline goal: £5m barbering turnover (first crossed in 2029). */
+/** Headline goal: £5m TOTAL group revenue (barbering + hairdressing + academy). */
 export const PLAN_SALES_GOAL = 5_000_000
 
 /** Brand tier economics: per-barber GROSS revenue per year, +10% annually. */
@@ -63,8 +73,8 @@ export const BRAND_TIERS: Record<BrandTierName, BrandTier> = {
   Elite: { name: "Elite", basePerBarberRevenue: 60_000, growth: 0.1, launchYear: 2027 },
   // Velvet Ash (unisex hairdressers). Modelled to return the same flat £500/week
   // RTB as a barber: at the 50% house split that is £1,000/week gross =
-  // £52,000/year per stylist. Included in group revenue and the RTB goal.
-  Hairdressing: { name: "Hairdressing", basePerBarberRevenue: 52_000, growth: 0.1, launchYear: 2019 },
+  // £52,000/year per stylist. Counts toward the £5m total group revenue goal.
+  Hairdressing: { name: "Hairdressing", basePerBarberRevenue: 52_000, growth: 0.1, launchYear: 2025 },
 }
 
 /** Per-barber gross revenue per YEAR for a tier in a given year (+10%/yr). */
@@ -188,21 +198,41 @@ export const PLAN_RTB_GOAL = Math.round(PLAN_SALES_GOAL * PLAN_ASSUMPTIONS.reven
  */
 export const RTB_PER_BARBER_WEEKLY = 500
 
-/** Linear-interpolated barbering turnover target for any month in range. */
-export function barberingTargetForMonth(year: number, month1to12: number): number {
+/** Linear-interpolated target for any milestone field across the year. */
+function targetForMonth(
+  pick: (m: PlanMilestone) => number,
+  year: number,
+  month1to12: number,
+): number {
   const first = PLAN_MILESTONES[0]
   const last = PLAN_MILESTONES[PLAN_MILESTONES.length - 1]
-  if (year <= first.year) return first.barberingTurnover
-  if (year >= last.year) return last.barberingTurnover
+  if (year <= first.year) return pick(first)
+  if (year >= last.year) return pick(last)
 
   const prev = PLAN_MILESTONES.find((m) => m.year === year - 1) ?? first
   const curr = PLAN_MILESTONES.find((m) => m.year === year) ?? last
   // Distribute the year-on-year step across 12 months.
   const frac = (month1to12 - 1) / 12
-  return Math.round(
-    prev.barberingTurnover +
-      (curr.barberingTurnover - prev.barberingTurnover) * frac,
-  )
+  return Math.round(pick(prev) + (pick(curr) - pick(prev)) * frac)
+}
+
+/** Linear-interpolated barbering turnover target for any month in range. */
+export function barberingTargetForMonth(year: number, month1to12: number): number {
+  return targetForMonth((m) => m.barberingTurnover, year, month1to12)
+}
+
+/** Linear-interpolated TOTAL group revenue target (barbering + hairdressing +
+ * academy) for any month in range — the basis for the £5m headline goal. */
+export function totalTargetForMonth(year: number, month1to12: number): number {
+  return targetForMonth((m) => m.totalTurnover, year, month1to12)
+}
+
+/** Linear-interpolated CHAIR revenue target (barbering + hairdressing) for any
+ * month. This is what weekly takings actually capture (Velvet Ash is a chair
+ * site); Academy income is tracked separately, so the monthly takings RAG uses
+ * this rather than the full total. */
+export function chairTargetForMonth(year: number, month1to12: number): number {
+  return targetForMonth((m) => m.barberingTurnover + m.hairdressingTurnover, year, month1to12)
 }
 
 export function milestoneFor(year: number): PlanMilestone {

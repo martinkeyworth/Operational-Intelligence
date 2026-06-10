@@ -687,22 +687,22 @@ export function GroupDashboard({
                   Tracking vs the LTZ 2025–2030 plan milestones
                 </p>
               </div>
-              <RagBadge rag={planProgress.barberingRag} />
+              <RagBadge rag={planProgress.chairRag} />
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="rounded-lg border border-border bg-background p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Barbering turnover
+                    Chair turnover
                   </p>
-                  <RagDot rag={planProgress.barberingRag} />
+                  <RagDot rag={planProgress.chairRag} />
                 </div>
                 <p className="mt-1 text-base font-semibold text-foreground">
-                  {fmtGBP(planProgress.barberingAnnualised)}
+                  {fmtGBP(planProgress.chairAnnualised)}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {planProgress.barberingAttainmentPct}% of{" "}
-                  {fmtGBP(planProgress.barberingMilestone)} {planProgress.year}{" "}
+                  {planProgress.chairAttainmentPct}% of{" "}
+                  {fmtGBP(planProgress.chairMilestone)} {planProgress.year}{" "}
                   milestone
                 </p>
               </div>
@@ -741,7 +741,10 @@ export function GroupDashboard({
                 <span className="font-medium text-foreground">
                   {fmtGBP(planProgress.academyMilestone)}
                 </span>{" "}
-                (on top of barbering)
+                · Group revenue target{" "}
+                <span className="font-medium text-foreground">
+                  {fmtGBP(planProgress.totalMilestone)}
+                </span>
               </span>
               {planProgress.nextOpeningLabel && (
                 <span>

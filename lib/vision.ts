@@ -8,7 +8,7 @@ import {
   PLAN_TARGET_YEAR,
   PLAN_SALES_GOAL,
   PLAN_ASSUMPTIONS,
-  barberingTargetForMonth,
+  chairTargetForMonth,
   cumulativeShopsByMonth,
   nextPlannedOpening,
   milestoneFor,
@@ -39,10 +39,12 @@ export const VISION = {
 export type VisionYear = {
   year: number
   headcountTarget: number
-  salesTarget: number
+  salesTarget: number // TOTAL group revenue (barbering + hairdressing + academy)
+  barberingTarget: number
+  hairdressingTarget: number // Velvet Ash (unisex hairdressers)
   rtbTarget: number
-  academyTarget: number // Training Academy income (on top of barbering)
-  shops: number // shops open per the plan that year
+  academyTarget: number // Training Academy income
+  shops: number // barbering shops open per the plan that year
   isGoal: boolean
 }
 
@@ -228,7 +230,11 @@ async function currentAnnualisedSales(): Promise<number> {
 export async function getVisionGlidePath(): Promise<VisionGlidePath> {
   const salesGoal = VISION.salesGoal
   const finalMilestone = PLAN_MILESTONES[PLAN_MILESTONES.length - 1]
-  const rtbGoal = Math.round(salesGoal * VISION.rtbRatio)
+  // RTB goal is the house share of CHAIR revenue only (barbering + hairdressing);
+  // Academy income has no chair split, so it's excluded from the RTB figure.
+  const finalChairRevenue =
+    finalMilestone.barberingTurnover + finalMilestone.hairdressingTurnover
+  const rtbGoal = Math.round(finalChairRevenue * VISION.rtbRatio)
 
   // Plan roll-out: 4 barbers per shop. Barbers needed by the target year.
   const barbersNeeded = finalMilestone.shops * PLAN_ASSUMPTIONS.barbersPerShop
@@ -272,15 +278,19 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
   const totalChairs = barbershops.reduce((s, b) => s + (b.chairs ?? 0), 0)
   const baseSales = await currentAnnualisedSales()
 
-  // Build one row per plan milestone year. Sales/RTB/Academy come straight from
-  // the plan; headcount = shops × 4 barbers.
+  // Build one row per plan milestone year. The headline sales target is TOTAL
+  // group revenue (barbering + hairdressing + academy); each stream is also
+  // carried for the breakdown. RTB is the 50% house share of CHAIR revenue
+  // (barbering + hairdressing); headcount = barbering shops × 4 barbers.
   const years: VisionYear[] = PLAN_MILESTONES.map((m) => {
-    const salesTarget = m.barberingTurnover
-    const rtbTarget = Math.round(salesTarget * VISION.rtbRatio)
+    const chairRevenue = m.barberingTurnover + m.hairdressingTurnover
+    const rtbTarget = Math.round(chairRevenue * VISION.rtbRatio)
     return {
       year: m.year,
       headcountTarget: m.shops * PLAN_ASSUMPTIONS.barbersPerShop,
-      salesTarget,
+      salesTarget: m.totalTurnover,
+      barberingTarget: m.barberingTurnover,
+      hairdressingTarget: m.hairdressingTurnover,
       rtbTarget,
       academyTarget: m.academyTurnover,
       shops: m.shops,
@@ -407,10 +417,11 @@ export async function getVisionMonthlyPlan(
 
   for (let i = 0; i < 12; i++) {
     const monthNo = i + 1
-    // Required monthly takings = plan's interpolated annual barbering turnover
-    // at this month, divided into 12 months.
+    // Required monthly takings = plan's interpolated CHAIR revenue (barbering +
+    // hairdressing) at this month, divided into 12. Velvet Ash takings flow into
+    // weeklyTakings, so the target must include hairdressing to match actuals.
     const requiredTakings = Math.round(
-      barberingTargetForMonth(year, monthNo) / 12,
+      chairTargetForMonth(year, monthNo) / 12,
     )
     // Barbers expected on the floor = plan shops open that month × 4 barbers.
     const barbersNeeded =
@@ -465,11 +476,14 @@ export type PlanBoardSummary = {
   shopsOpen: number
   shopsPlanned: number // cumulative shops the plan expects open by now
   shopsRag: Rag
-  // Barbering turnover (annual milestone vs annualised actual run-rate)
-  barberingMilestone: number
-  barberingAnnualised: number
-  barberingAttainmentPct: number
-  barberingRag: Rag
+  // Chair turnover (barbering + hairdressing) — annual milestone vs annualised
+  // actual run-rate. This is what weekly takings capture (Velvet Ash included).
+  chairMilestone: number
+  chairAnnualised: number
+  chairAttainmentPct: number
+  chairRag: Rag
+  // Total group revenue milestone (chair + academy) — the £5m goal basis.
+  totalMilestone: number
   // Headcount
   headcountActual: number
   headcountPlanned: number // shops planned by now × 4 barbers
@@ -498,11 +512,12 @@ export async function getPlanProgress(
   const headcountActual = path.currentHeadcount
   const headcountPlanned = shopsPlanned * PLAN_ASSUMPTIONS.barbersPerShop
 
-  const barberingAnnualised = path.currentAnnualisedSales
-  const barberingAttainmentPct =
-    m.barberingTurnover > 0
-      ? (barberingAnnualised / m.barberingTurnover) * 100
-      : 0
+  // Chair revenue (barbering + hairdressing) is what weekly takings capture, so
+  // the annualised run-rate is compared against the chair milestone.
+  const chairMilestone = m.barberingTurnover + m.hairdressingTurnover
+  const chairAnnualised = path.currentAnnualisedSales
+  const chairAttainmentPct =
+    chairMilestone > 0 ? (chairAnnualised / chairMilestone) * 100 : 0
 
   const ratioRag = (actual: number, planned: number): Rag =>
     planned <= 0
@@ -518,10 +533,11 @@ export async function getPlanProgress(
     shopsOpen,
     shopsPlanned,
     shopsRag: ratioRag(shopsOpen, shopsPlanned),
-    barberingMilestone: m.barberingTurnover,
-    barberingAnnualised,
-    barberingAttainmentPct: Math.round(barberingAttainmentPct * 10) / 10,
-    barberingRag: ragFromAttainment(barberingAttainmentPct),
+    chairMilestone,
+    chairAnnualised,
+    chairAttainmentPct: Math.round(chairAttainmentPct * 10) / 10,
+    chairRag: ragFromAttainment(chairAttainmentPct),
+    totalMilestone: m.totalTurnover,
     headcountActual,
     headcountPlanned,
     headcountRag: ratioRag(headcountActual, headcountPlanned),
