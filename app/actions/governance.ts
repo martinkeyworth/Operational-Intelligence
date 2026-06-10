@@ -16,6 +16,24 @@ import { revalidatePath } from "next/cache"
 import { requireDashboard, requireDataEntry } from "@/lib/access"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
+import { defaultOwnerEmailForArea } from "@/lib/area-owners"
+
+/**
+ * Resolve the default owner for a function area into a { id, name } record,
+ * using the leadership ownership matrix (HR→Luke, Training→Ravi,
+ * Marketing/Capacity/RTB/Subletting→Mario, Strategy→Cosmin). Returns null if
+ * the mapped user can't be found, so callers can fall back gracefully.
+ */
+async function resolveDefaultOwner(
+  functionArea: string,
+): Promise<{ id: string; name: string } | null> {
+  const email = defaultOwnerEmailForArea(functionArea)
+  const [owner] = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(eq(user.email, email))
+  return owner ?? null
+}
 
 /**
  * Ensure a single open action exists for a given title/function area, or
@@ -39,13 +57,17 @@ async function syncKpiAction(opts: {
     )
 
   if (opts.open) {
+    // Auto-raised KPI reds are owned by the area's default lead so they land
+    // with the accountable person (and match reliably in the daily red email).
+    const defaultOwner = await resolveDefaultOwner(opts.functionArea)
     if (existing.length === 0) {
       await db.insert(actions).values({
         title: opts.title,
         description: opts.description,
         functionArea: opts.functionArea,
         siteId: opts.siteId,
-        owner: opts.owner,
+        owner: defaultOwner?.name ?? opts.owner,
+        ownerUserId: defaultOwner?.id ?? null,
         priority: opts.priority ?? "High",
         status: "Open",
         rag: "red",
@@ -161,7 +183,7 @@ export async function createAction(formData: FormData) {
 
   const description = String(formData.get("description") ?? "").trim() || null
   const siteId = Number(formData.get("siteId")) || null
-  const ownerUserId = String(formData.get("ownerUserId") ?? "").trim() || null
+  let ownerUserId = String(formData.get("ownerUserId") ?? "").trim() || null
 
   const priorityRaw = String(formData.get("priority") ?? "Medium").trim()
   const priority = ["High", "Medium", "Low"].includes(priorityRaw)
@@ -185,8 +207,16 @@ export async function createAction(formData: FormData) {
     entryType === "Risk" || String(formData.get("isRisk")) === "true"
 
   // Resolve the owner's display name so the free-text owner stays in sync.
+  // When no owner is chosen, fall back to the area's default lead (HR→Luke,
+  // Training→Ravi, Marketing/Capacity/RTB/Subletting→Mario, Strategy→Cosmin).
   let ownerName = "Unassigned"
-  if (ownerUserId) {
+  if (!ownerUserId) {
+    const fallback = await resolveDefaultOwner(functionArea)
+    if (fallback) {
+      ownerUserId = fallback.id
+      ownerName = fallback.name
+    }
+  } else {
     const [owner] = await db
       .select({ name: user.name })
       .from(user)
