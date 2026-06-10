@@ -536,3 +536,42 @@ export const roadmapMilestones = pgTable("roadmap_milestones", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+// Jobs board: vacancies advertised to staff and (optionally) externally.
+// Postings can be created manually by dashboard users or auto-suggested from
+// the HR & growth requirements (role gaps + opening pipeline) then confirmed.
+export const jobPostings = pgTable("job_postings", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  siteId: integer("site_id"), // optional link to an existing site
+  location: text("location"),
+  brand: text("brand"), // Mid | Youth | Elite
+  role: text("role"), // Manager | Barber | Apprentice | etc.
+  description: text("description"),
+  employmentType: text("employment_type").notNull().default("Full-time"),
+  status: text("status").notNull().default("open"), // open | closed | filled
+  finderBonus: numeric("finder_bonus").notNull().default("0"),
+  source: text("source").notNull().default("manual"), // manual | gap | pipeline
+  sourceKey: text("source_key"), // dedupe key for auto-suggested postings
+  createdByUserId: text("created_by_user_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  closedAt: timestamp("closed_at"),
+})
+
+// Referrals against a posting, with finder bonus tracking.
+export const jobReferrals = pgTable("job_referrals", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").notNull(),
+  candidateName: text("candidate_name").notNull(),
+  candidateContact: text("candidate_contact"),
+  note: text("note"),
+  finderUserId: text("finder_user_id"),
+  finderName: text("finder_name"),
+  status: text("status").notNull().default("submitted"), // submitted | interviewing | hired | rejected
+  bonusStatus: text("bonus_status").notNull().default("pending"), // pending | approved | paid | void
+  bonusAmount: numeric("bonus_amount"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})

@@ -20,6 +20,7 @@ import {
   UserPlus,
   UserSearch,
   GraduationCap,
+  Megaphone,
   Inbox,
   Settings,
   LogOut,
@@ -64,6 +65,7 @@ export function AppShell({
       icon: Inbox,
       items: [
         { href: "/my-work", label: "My Work", icon: Inbox },
+        { href: "/openings", label: "Open Roles", icon: Megaphone },
         ...(user.isBarber
           ? [{ href: "/team", label: "Team Area", icon: UserRound }]
           : []),
@@ -100,6 +102,7 @@ export function AppShell({
               { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
               { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
               { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
+              { href: "/jobs", label: "Jobs Board", icon: Megaphone },
               { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
             ],
           },
