@@ -92,5 +92,7 @@ export async function updateUserCapabilities(formData: FormData) {
     })
     .where(eq(userTable.id, userId))
 
-  revalidatePath("/admin/people")
+  // Capability flags drive the nav, route access and which areas a user sees,
+  // so revalidate the whole tree to keep every surface consistent.
+  revalidatePath("/", "layout")
 }

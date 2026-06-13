@@ -81,22 +81,19 @@ export async function getLatestWeek(): Promise<string | null> {
 
 /**
  * THE single source of truth for "which week is the business currently working
- * on". This is the most recent OPERATING week: the newest week that actually
- * has takings data, or the calendar reporting week if that is later (so a fresh
- * week still reads as in-progress before anyone submits).
+ * on". This is the real calendar reporting week — the week ending on the
+ * upcoming/most-recent Saturday relative to today (London time) — via
+ * `currentWeekEnding()`. Figures are recorded by week-ending date, so "this
+ * week" is always driven by the actual date, NOT by whichever week happens to
+ * hold the newest row (seeded/future weeks must never hijack the current week).
  *
  * Every surface that asks "what is this week?" — the dashboard, site views, the
- * data-entry page, a barber's Team Area, submission tracking — must resolve the
- * week through this helper (or `getDefaultWeek`, which delegates here). Mixing
- * in the raw calendar `currentWeekEnding()` is what made the app feel
- * inconsistent: data landed on one week while a page looked at another.
+ * data-entry page, a barber's Team Area, submission tracking, the weekly cron
+ * emails — resolves the week through this helper (or `getDefaultWeek`, which
+ * delegates here) so the whole app stays on one definition.
  */
 export async function getCurrentOperatingWeek(): Promise<string> {
-  const weeks = await getWeeks() // newest first
-  const current = currentWeekEnding()
-  const latestWithData = weeks[0]
-  if (latestWithData && latestWithData > current) return latestWithData
-  return current
+  return currentWeekEnding()
 }
 
 /**
@@ -110,14 +107,17 @@ export async function getDefaultWeek(): Promise<string> {
 /**
  * All weeks to offer in the week selector: every week that has data, plus the
  * current reporting week (so you can always open the in-progress week even
- * before anyone has submitted), newest first.
+ * before anyone has submitted), newest first. Future weeks are never offered —
+ * "this week" is the latest selectable week.
  */
 export async function getSelectableWeeks(): Promise<string[]> {
   const weeks = await getWeeks()
   const current = currentWeekEnding()
   const set = new Set<string>(weeks)
   set.add(current)
-  return Array.from(set).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+  return Array.from(set)
+    .filter((w) => w <= current)
+    .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
 }
 
 function prevWeekOf(weeks: string[], week: string): string | null {
@@ -1488,28 +1488,25 @@ export async function getSiteOptions(): Promise<SiteOption[]> {
   return rows
 }
 
-/** Recent week-ending Saturdays for the picker (existing weeks + next upcoming Saturday). */
+/**
+ * Weeks offered in the data-entry picker. Barbers record figures for the week
+ * that has just ended, so we only ever offer the current reporting week and
+ * recent PAST weeks — never future Saturdays. Offering future weeks is what
+ * previously let this-week figures leak onto w/e 20 Jun / 27 Jun.
+ */
 export async function getEntryWeeks(): Promise<string[]> {
   const existing = await getWeeks()
+  const current = currentWeekEnding()
   const set = new Set(existing)
 
-  // Always include the current reporting week (London-based, matches the rest
-  // of the app) so the picker and the page default line up with the dashboard.
-  set.add(currentWeekEnding())
+  // Always include the current reporting week so it can be submitted even
+  // before any takings exist for it.
+  set.add(current)
 
-  // Compute the most recent Saturday (week ending) and the next one.
-  const today = new Date()
-  const day = today.getUTCDay() // 0 = Sun ... 6 = Sat
-  const daysSinceSat = (day + 1) % 7
-  const lastSat = new Date(today)
-  lastSat.setUTCDate(today.getUTCDate() - daysSinceSat)
-  for (let i = 0; i < 3; i++) {
-    const d = new Date(lastSat)
-    d.setUTCDate(lastSat.getUTCDate() + 7 * i)
-    set.add(d.toISOString().slice(0, 10))
-  }
+  // Never offer a week later than the current reporting week.
+  const weeks = Array.from(set).filter((w) => w <= current)
 
-  return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
+  return weeks.sort((a, b) => (a < b ? 1 : -1))
 }
 
 // ---------------------------------------------------------------------------

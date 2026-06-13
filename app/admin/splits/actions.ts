@@ -28,7 +28,9 @@ export async function setBarberSplit(formData: FormData) {
     })
     .where(eq(barbers.id, id))
 
-  revalidatePath("/admin/splits")
+  // Splits drive payout figures on the dashboard, every site detail page and
+  // the splits review, so revalidate the whole tree to keep them in sync.
+  revalidatePath("/", "layout")
 }
 
 /**
@@ -45,8 +47,8 @@ export async function deactivateBarber(formData: FormData) {
 
   await db.update(barbers).set({ active: false }).where(eq(barbers.id, id))
 
-  revalidatePath("/admin/splits")
-  revalidatePath("/data-entry")
-  revalidatePath("/")
-  revalidatePath("/sites")
+  // Deactivating removes the barber from data-entry, headcount, splits and the
+  // site rosters, so revalidate the whole tree rather than a partial list that
+  // misses /sites/[id], My Work and reports.
+  revalidatePath("/", "layout")
 }

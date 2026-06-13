@@ -20,9 +20,7 @@ export async function deactivateBarberAdmin(formData: FormData) {
 
   await db.update(barbers).set({ active: false }).where(eq(barbers.id, id))
 
-  revalidatePath("/admin/barbers")
-  revalidatePath("/admin/splits")
-  revalidatePath("/data-entry")
-  revalidatePath("/")
-  revalidatePath("/sites")
+  // Deactivating cascades to data entry, headcount, splits, site rosters and
+  // reports, so revalidate the whole tree rather than a partial route list.
+  revalidatePath("/", "layout")
 }
