@@ -29,6 +29,8 @@ import {
   UserRound,
   ChevronDown,
   Map,
+  Users,
+  FileText,
 } from "lucide-react"
 
 type ShellUser = {
@@ -82,6 +84,12 @@ export function AppShell({
             items: [
               { href: "/", label: "Group Overview", icon: LayoutDashboard },
               { href: "/roadmap", label: "Growth Roadmap", icon: Map },
+            ],
+          },
+          {
+            title: "Reports",
+            icon: FileText,
+            items: [
               { href: "/continuity", label: "Continuity Briefing", icon: LifeBuoy },
               { href: "/reports/submissions", label: "Submissions", icon: ClipboardCheck },
               { href: "/reports/monthly", label: "Monthly Roll-Up", icon: CalendarRange },
@@ -96,13 +104,19 @@ export function AppShell({
             ],
           },
           {
+            title: "People & Hiring",
+            icon: Users,
+            items: [
+              { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
+              { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
+              { href: "/jobs", label: "Jobs Board", icon: Megaphone },
+            ],
+          },
+          {
             title: "Functions",
             icon: LayoutGrid,
             items: [
               { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
-              { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
-              { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
-              { href: "/jobs", label: "Jobs Board", icon: Megaphone },
               { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
             ],
           },

@@ -248,8 +248,6 @@ export async function createAction(formData: FormData) {
   })
 
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -260,7 +258,6 @@ export async function setActionStatus(formData: FormData) {
   if (!id || !status) return
   await db.update(actions).set({ status }).where(eq(actions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/actions")
   revalidatePath("/")
 }
 
@@ -292,8 +289,6 @@ export async function assignActionOwner(formData: FormData) {
     })
     .where(eq(actions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -305,8 +300,6 @@ export async function setActionRisk(formData: FormData) {
   const isRisk = String(formData.get("isRisk")) === "true"
   await db.update(actions).set({ isRisk }).where(eq(actions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -333,8 +326,6 @@ export async function setActionRag(formData: FormData) {
     return
   }
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -360,8 +351,6 @@ export async function editActionDetails(formData: FormData) {
     .set({ title, description, priority, updatedAt: new Date() })
     .where(eq(actions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -378,8 +367,6 @@ export async function setActionDueDate(formData: FormData) {
   const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null
   await db.update(actions).set({ dueDate }).where(eq(actions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/")
 }
 
@@ -448,7 +435,6 @@ export async function confirmSiteWeek(formData: FormData) {
 
   revalidatePath("/sites")
   revalidatePath(`/sites/${siteId}`)
-  revalidatePath("/actions")
   revalidatePath("/")
 }
 
@@ -571,7 +557,6 @@ export async function saveSubletting(formData: FormData) {
 
   revalidatePath("/sites")
   revalidatePath(`/sites/${siteId}`)
-  revalidatePath("/actions")
   revalidatePath("/")
 }
 
@@ -631,6 +616,5 @@ export async function saveTrainingWeek(formData: FormData) {
 
   revalidatePath("/sites")
   revalidatePath(`/sites/${siteId}`)
-  revalidatePath("/actions")
   revalidatePath("/")
 }

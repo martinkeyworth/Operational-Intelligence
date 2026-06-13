@@ -52,6 +52,5 @@ export async function addRecommendedAction(formData: FormData) {
     dueDate: due.toISOString().slice(0, 10),
   })
 
-  revalidatePath("/actions")
   revalidatePath("/")
 }

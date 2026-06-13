@@ -57,7 +57,6 @@ export async function createDecision(formData: FormData) {
     status: "Active",
   })
   revalidatePath("/governance")
-  revalidatePath("/decisions")
 }
 
 export async function setDecisionStatus(formData: FormData) {
@@ -70,7 +69,6 @@ export async function setDecisionStatus(formData: FormData) {
     .set({ status, updatedAt: new Date() })
     .where(eq(decisions.id, id))
   revalidatePath("/governance")
-  revalidatePath("/decisions")
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +245,6 @@ export async function logActivity(formData: FormData) {
     notes,
   })
   revalidatePath("/governance")
-  revalidatePath("/activity")
   revalidatePath("/data-entry")
 }
 
@@ -267,8 +264,6 @@ export async function runAutoEscalation() {
   await requireUser()
   const escalated = await sweepAutoEscalations()
   if (escalated > 0) {
-    revalidatePath("/actions")
-    revalidatePath("/operations")
     revalidatePath("/")
   }
   return escalated
@@ -288,5 +283,4 @@ export async function clearEscalation(formData: FormData) {
       escalationReason: null,
     })
     .where(eq(actions.id, id))
-  revalidatePath("/actions")
 }

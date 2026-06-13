@@ -17,8 +17,6 @@ import { findFunctionArea } from "@/lib/function-areas"
 function revalidateLog(areaKey: string) {
   revalidatePath(`/functions/${encodeURIComponent(areaKey)}`)
   revalidatePath("/functions")
-  revalidatePath("/actions")
-  revalidatePath("/operations")
   revalidatePath("/continuity")
   revalidatePath("/")
 }
