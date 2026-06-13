@@ -1,5 +1,5 @@
 import { requireDataEntry, canInputArea } from "@/lib/access"
-import { getBarberForUser } from "@/lib/team"
+import { ensureBarberForUser } from "@/lib/team"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
@@ -28,7 +28,9 @@ export default async function DataEntryPage({
   // card — they must never see colleagues' takings. Managers/dashboard users
   // keep the full multi-barber, multi-site view.
   const isManager = user.canViewDashboard
-  const linkedBarber = isManager ? null : await getBarberForUser(user.id)
+  // Non-manager barbers are auto-linked (or self-provisioned) to a barber
+  // record on first visit so they can submit straight away — no admin step.
+  const linkedBarber = isManager ? null : await ensureBarberForUser(user)
   const ownScope = !isManager
 
   const { week: weekParam } = await searchParams

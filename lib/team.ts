@@ -10,7 +10,7 @@ import {
   threeSixtyNominees,
   user as userTable,
 } from "@/lib/db/schema"
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, isNull } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { currentWeekEnding } from "@/lib/reporting"
@@ -62,6 +62,57 @@ export async function getBarberForUser(userId: string) {
 /** Link / unlink a barber record to a login account (admin action). */
 export async function linkBarberToUser(barberId: number, userId: string | null) {
   await db.update(barbers).set({ userId }).where(eq(barbers.id, barberId))
+}
+
+/**
+ * Resolve — and if necessary create — the barber record for a logged-in user.
+ *
+ * Any non-company login defaults to a barber. Rather than forcing an admin to
+ * manually link every new starter before they can submit takings, this:
+ *   1. returns the already-linked record if there is one;
+ *   2. otherwise claims an existing unlinked roster record whose name matches
+ *      the login's name (so pre-loaded roster entries like "Logan"/"Rossco"
+ *      attach automatically);
+ *   3. otherwise self-provisions a fresh barber record for them.
+ * The result is that a barber can sign up and immediately enter their own week.
+ */
+export async function ensureBarberForUser(u: {
+  id: string
+  name?: string | null
+  email?: string | null
+}) {
+  // 1. Already linked.
+  const existing = await getBarberForUser(u.id)
+  if (existing) return existing
+
+  const displayName = (u.name?.trim() || u.email?.split("@")[0] || "New Barber").trim()
+  const firstName = displayName.split(/\s+/)[0]?.toLowerCase()
+
+  // 2. Try to claim an unlinked roster record by (case-insensitive) name —
+  //    full name first, then first-name match.
+  const unlinked = await db
+    .select()
+    .from(barbers)
+    .where(and(eq(barbers.active, true), isNull(barbers.userId)))
+  const match =
+    unlinked.find((b) => b.name.trim().toLowerCase() === displayName.toLowerCase()) ??
+    unlinked.find((b) => b.name.trim().toLowerCase().split(/\s+/)[0] === firstName)
+  if (match) {
+    await db.update(barbers).set({ userId: u.id }).where(eq(barbers.id, match.id))
+    return { ...match, userId: u.id }
+  }
+
+  // 3. Self-provision a new barber record on the first available site.
+  const [firstSite] = await db.select().from(sites).orderBy(asc(sites.id)).limit(1)
+  const [created] = await db
+    .insert(barbers)
+    .values({
+      name: displayName,
+      siteId: firstSite?.id ?? 1,
+      userId: u.id,
+    })
+    .returning()
+  return created
 }
 
 /** Set a barber's assigned manager (runs their monthly 1-2-1). */
