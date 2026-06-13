@@ -8,6 +8,7 @@ import { BarberEntryCard } from "@/components/barber-entry-card"
 import { TrainingCard } from "@/components/training-card"
 import {
   getEntryWeeks,
+  getDefaultWeek,
   getDataEntrySites,
   getSiteOptions,
   getTrainingSitesForWeek,
@@ -35,7 +36,16 @@ export default async function DataEntryPage({
 
   const { week: weekParam } = await searchParams
   const weeks = await getEntryWeeks()
-  const week = weekParam && weeks.includes(weekParam) ? weekParam : weeks[0]
+  // Default to the CURRENT reporting week — the same week the dashboard and
+  // site views open on — so a barber's submission lands on the week managers
+  // are actually looking at, not the newest (possibly future) seeded week.
+  const defaultWeek = await getDefaultWeek()
+  const week =
+    weekParam && weeks.includes(weekParam)
+      ? weekParam
+      : weeks.includes(defaultWeek)
+        ? defaultWeek
+        : weeks[0]
 
   const sites =
     week && (!ownScope || linkedBarber)

@@ -1476,6 +1476,10 @@ export async function getEntryWeeks(): Promise<string[]> {
   const existing = await getWeeks()
   const set = new Set(existing)
 
+  // Always include the current reporting week (London-based, matches the rest
+  // of the app) so the picker and the page default line up with the dashboard.
+  set.add(currentWeekEnding())
+
   // Compute the most recent Saturday (week ending) and the next one.
   const today = new Date()
   const day = today.getUTCDay() // 0 = Sun ... 6 = Sat
