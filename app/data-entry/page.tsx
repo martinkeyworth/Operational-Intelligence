@@ -36,9 +36,8 @@ export default async function DataEntryPage({
 
   const { week: weekParam } = await searchParams
   const weeks = await getEntryWeeks()
-  // Default to the CURRENT reporting week — the same week the dashboard and
-  // site views open on — so a barber's submission lands on the week managers
-  // are actually looking at, not the newest (possibly future) seeded week.
+  // Default to the same latest operating week the dashboard and site views
+  // open on, so a barber's submission lands on the week managers are looking at.
   const defaultWeek = await getDefaultWeek()
   const week =
     weekParam && weeks.includes(weekParam)

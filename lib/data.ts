@@ -80,14 +80,24 @@ export async function getLatestWeek(): Promise<string | null> {
 }
 
 /**
- * The week pages should open on by default. This is the CURRENT reporting week
- * (the upcoming Saturday, e.g. Sat 13 Jun when today is Wed 10 Jun) — NOT the
- * latest week that happens to have data, which can be a future seeded week.
- * The current week is always included even before any takings are entered, so
- * the dashboard correctly shows it as in-progress / awaiting submissions.
+ * The week pages should open on by default: the most recent OPERATING week.
+ * That is the newest week that has data, or the current reporting week if it is
+ * later (so a brand-new week still opens as in-progress before any submissions).
+ * Keeping the dashboard, site views and data-entry page on the same latest week
+ * means barber submissions show up immediately instead of being hidden behind an
+ * older calendar week.
  */
 export async function getDefaultWeek(): Promise<string> {
-  return currentWeekEnding()
+  // Open on the most recent operating week: the newest week that actually has
+  // data, or the current reporting week if it's later (e.g. a fresh week before
+  // anyone has submitted). This keeps the dashboard, site views and the data
+  // entry page all pointed at the same latest week, so submissions show up
+  // straight away instead of being hidden behind an older calendar week.
+  const weeks = await getWeeks() // newest first
+  const current = currentWeekEnding()
+  const latestWithData = weeks[0]
+  if (latestWithData && latestWithData > current) return latestWithData
+  return current
 }
 
 /**
