@@ -80,24 +80,31 @@ export async function getLatestWeek(): Promise<string | null> {
 }
 
 /**
- * The week pages should open on by default: the most recent OPERATING week.
- * That is the newest week that has data, or the current reporting week if it is
- * later (so a brand-new week still opens as in-progress before any submissions).
- * Keeping the dashboard, site views and data-entry page on the same latest week
- * means barber submissions show up immediately instead of being hidden behind an
- * older calendar week.
+ * THE single source of truth for "which week is the business currently working
+ * on". This is the most recent OPERATING week: the newest week that actually
+ * has takings data, or the calendar reporting week if that is later (so a fresh
+ * week still reads as in-progress before anyone submits).
+ *
+ * Every surface that asks "what is this week?" — the dashboard, site views, the
+ * data-entry page, a barber's Team Area, submission tracking — must resolve the
+ * week through this helper (or `getDefaultWeek`, which delegates here). Mixing
+ * in the raw calendar `currentWeekEnding()` is what made the app feel
+ * inconsistent: data landed on one week while a page looked at another.
  */
-export async function getDefaultWeek(): Promise<string> {
-  // Open on the most recent operating week: the newest week that actually has
-  // data, or the current reporting week if it's later (e.g. a fresh week before
-  // anyone has submitted). This keeps the dashboard, site views and the data
-  // entry page all pointed at the same latest week, so submissions show up
-  // straight away instead of being hidden behind an older calendar week.
+export async function getCurrentOperatingWeek(): Promise<string> {
   const weeks = await getWeeks() // newest first
   const current = currentWeekEnding()
   const latestWithData = weeks[0]
   if (latestWithData && latestWithData > current) return latestWithData
   return current
+}
+
+/**
+ * The week pages should open on by default. Alias of the canonical operating
+ * week so existing callers keep working.
+ */
+export async function getDefaultWeek(): Promise<string> {
+  return getCurrentOperatingWeek()
 }
 
 /**

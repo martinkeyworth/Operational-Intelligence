@@ -3,9 +3,9 @@ import { AppShell } from "@/components/app-shell"
 import Link from "next/link"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagBadge, RagDot } from "@/components/rag"
-import { getWeeks } from "@/lib/data"
+import { getWeeks, getCurrentOperatingWeek } from "@/lib/data"
 import { getSubmissionStatus } from "@/lib/submissions"
-import { currentWeekEnding, previousWeekEnding } from "@/lib/reporting"
+import { previousWeekEnding } from "@/lib/reporting"
 import type { Rag } from "@/lib/format"
 import { CheckCircle2, Clock } from "lucide-react"
 import { WeekPicker } from "@/components/week-picker"
@@ -32,9 +32,10 @@ export default async function SubmissionsPage({
   const user = await requireDashboard()
   const { week: weekParam } = await searchParams
 
-  // Anchor the board to the live reporting week, not whatever week happens to
-  // have data. Always offer this week + last week so the two are comparable.
-  const thisWeek = currentWeekEnding()
+  // Anchor the board to the live operating week (the same week the rest of the
+  // app treats as "this week"), not the raw calendar week. Always offer this
+  // week + last week so the two are comparable.
+  const thisWeek = await getCurrentOperatingWeek()
   const lastWeek = previousWeekEnding(thisWeek)
   const dataWeeks = await getWeeks()
   const weeks = Array.from(new Set([thisWeek, lastWeek, ...dataWeeks])).sort(

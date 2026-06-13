@@ -74,8 +74,7 @@ export async function saveKpiValue(formData: FormData) {
       .values({ kpiId: kpi.id, period: week, brand, ...row })
   }
 
-  revalidatePath("/data-entry")
-  revalidatePath("/functions")
-  revalidatePath(`/functions/${def.functionArea}`)
-  revalidatePath("/")
+  // KPI values surface on the dashboard, the function areas and reports.
+  // Revalidate the whole tree so every dependent view updates consistently.
+  revalidatePath("/", "layout")
 }

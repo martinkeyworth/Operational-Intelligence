@@ -83,8 +83,10 @@ export async function saveWeeklyTakings(formData: FormData) {
     await db.insert(weeklyTakings).values({ barberId, weekEnding, ...values })
   }
 
-  revalidatePath("/data-entry")
-  revalidatePath("/")
-  revalidatePath("/sites")
-  revalidatePath("/admin/splits")
+  // Takings feed almost every surface — the dashboard, each site detail page
+  // (/sites/[id]), splits, a barber's My Work + Team Area, and the submission
+  // reports. revalidatePath("/sites") does NOT cascade to /sites/[id], and the
+  // list above kept drifting out of date, so revalidate the whole tree from the
+  // root layout to guarantee every view reflects the new figures.
+  revalidatePath("/", "layout")
 }

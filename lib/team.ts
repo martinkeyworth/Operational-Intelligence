@@ -13,7 +13,7 @@ import {
 import { and, asc, desc, eq, isNull } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
-import { currentWeekEnding } from "@/lib/reporting"
+import { getCurrentOperatingWeek } from "@/lib/data"
 
 // ---------------------------------------------------------------------------
 // TEAM AREA  —  self-service HR + performance hub for barbers & apprentices.
@@ -196,7 +196,10 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
   if (!barber) return null
 
   const [site] = await db.select().from(sites).where(eq(sites.id, barber.siteId))
-  const week = currentWeekEnding()
+  // Use the same canonical "current operating week" the dashboard and site
+  // views use, so a barber who has just submitted sees their week as done here
+  // too — not a calendar week that's drifted ahead of the live data.
+  const week = await getCurrentOperatingWeek()
   const leaveYear = currentLeaveYear()
 
   // Last ~12 weeks of this barber's takings, oldest -> newest.
