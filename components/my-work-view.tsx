@@ -57,7 +57,7 @@ const ragBar: Record<string, string> = {
 function WorkRow({ item }: { item: MyWorkItem }) {
   return (
     <Link
-      href={`/actions?focus=${item.id}`}
+      href={`/governance?tab=actions&focus=${item.id}`}
       className="group flex items-stretch gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-accent/40 min-h-11"
     >
       <span className={cn("w-1 shrink-0 rounded-full", ragBar[item.rag] ?? "bg-muted")} aria-hidden />
