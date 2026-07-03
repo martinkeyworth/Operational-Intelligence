@@ -20,9 +20,13 @@ import {
   upsertPbcRating,
   getBarberBasics,
   getCurrentOneToOne,
+  saveAiPbc,
+  readSelfPrep,
 } from "@/lib/learning"
 import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanItemStatus } from "@/lib/learning-types"
 import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
+import { analysePbc } from "@/lib/pbc-ai"
+import { threeSixtyReadiness } from "@/lib/three-sixty"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -173,6 +177,44 @@ export async function openOneToOneAction(barberId: number): Promise<{ ok: boolea
   const row = await openOneToOne(barberId, basics.managerUserId ?? user.id)
   revalidatePath(`/learning/plans/${barberId}`)
   return { ok: true, id: row.id }
+}
+
+/**
+ * Run the AI PBC analysis for a barber's current 1-2-1 and store the suggestion.
+ * Pulls the 360 reviewer feedback (the vital input), the barber's self-prep and
+ * any KPI notes, then writes the proposed scores to the 1-2-1 for the manager to
+ * review and override. Returns the suggestion for immediate display.
+ */
+export async function generateAiPbcAction(
+  barberId: number,
+): Promise<{ ok: boolean; ai?: Record<string, unknown>; error?: string }> {
+  const user = await getAccessUser()
+  if (!user) return { ok: false, error: "Not signed in." }
+  const basics = await getBarberBasics(barberId)
+  if (!basics || !canRatePbc(user, basics.managerUserId)) return { ok: false, error: "Not authorised." }
+
+  const oto = await getCurrentOneToOne(barberId)
+  if (!oto) return { ok: false, error: "Open the 1-2-1 first." }
+
+  const period = oto.period ?? currentPeriod()
+  const readiness = await threeSixtyReadiness(barberId, period)
+
+  try {
+    const ai = await analysePbc({
+      cycleId: readiness.cycleId,
+      barberName: basics.name,
+      role: basics.role,
+      selfPrep: readSelfPrep(oto),
+      kpiNotes: null,
+      lowConfidence: readiness.lowConfidence || readiness.cycleId === null,
+    })
+    await saveAiPbc(oto.id, { ...ai, responded: readiness.responded, threshold: readiness.threshold })
+    revalidatePath(`/learning/plans/${barberId}`)
+    return { ok: true, ai: { ...ai, responded: readiness.responded, threshold: readiness.threshold } }
+  } catch (e) {
+    console.log("[v0] analysePbc failed:", (e as Error).message)
+    return { ok: false, error: "The AI analysis could not be generated. Please score manually." }
+  }
 }
 
 export async function saveManagerAnswersAction(

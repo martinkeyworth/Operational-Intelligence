@@ -450,6 +450,21 @@ export async function openOneToOne(barberId: number, managerUserId: string | nul
   return row
 }
 
+/** Store the AI's suggested PBC analysis on a 1-2-1 (manager can override). */
+export async function saveAiPbc(oneToOneId: number, ai: Record<string, unknown>) {
+  await db
+    .update(oneToOnes)
+    .set({ aiPbc: { ...ai, generatedAt: new Date().toISOString() } })
+    .where(eq(oneToOnes.id, oneToOneId))
+}
+
+/** Read the stored AI PBC suggestion for a 1-2-1, if any. */
+export function readAiPbc(
+  row: OneToOneRow | null,
+): (Record<string, unknown> & { generatedAt?: string }) | null {
+  return (row?.aiPbc as Record<string, unknown>) ?? null
+}
+
 /**
  * Complete a 1-2-1. Derives/accepts the final PBC scores, writes pbc_ratings
  * for the period linked to this 1-2-1, marks the plan reviewed, and stamps the

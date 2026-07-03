@@ -453,6 +453,10 @@ export const oneToOnes = pgTable("one_to_ones", {
   pbcPerformance: integer("pbc_performance"),
   pbcBehaviours: integer("pbc_behaviours"),
   pbcContribution: integer("pbc_contribution"),
+  // AI-generated PBC analysis (from the 360 + self-prep + KPIs) that pre-fills
+  // the manager's scores. Shape: { performance, behaviours, contribution,
+  // overall, rationale, lowConfidence, model, generatedAt }. Manager can override.
+  aiPbc: jsonb("ai_pbc"),
   // When it must be completed by; drives reminder + overdue escalation (once).
   dueOn: date("due_on"),
   reminderSentAt: timestamp("reminder_sent_at"),
