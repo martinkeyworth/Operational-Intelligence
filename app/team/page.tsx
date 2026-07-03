@@ -9,6 +9,8 @@ import { RagDot } from "@/components/rag"
 import { BarberRtbChart } from "@/components/barber-rtb-chart"
 import { TeamSelfService } from "@/components/team-self-service"
 import { MyLearning } from "@/components/learning/my-learning"
+import { RoleGuidePanel } from "@/components/team/role-guide-panel"
+import { buildPersonGuide } from "@/lib/role-guide"
 import { getMyLearningData } from "@/lib/learning"
 import { getBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
@@ -44,6 +46,24 @@ export default async function TeamHomePage({
   const submitted = self.submission.submitted
   // The barber's own development area (1-2-1 self-prep, plan, PBC history).
   const myLearning = await getMyLearningData(self.barber.id)
+
+  // Personalised "how to use the dashboard" guide, combining every role this
+  // person holds. Only shown for the real signed-in barber (in leadership
+  // preview the viewer's capability flags wouldn't match the previewed barber).
+  const guide = isPreview
+    ? null
+    : buildPersonGuide({
+        name: self.barber.name,
+        email: user.email,
+        baseRole: self.barber.role,
+        isApprentice: self.barber.isApprentice,
+        canViewDashboard: user.canViewDashboard,
+        isBarber: user.isBarber,
+        isTrainingLead: user.isTrainingLead,
+        isHrLead: user.isHrLead,
+        isSocialMedia: user.isSocialMedia,
+        leadAreas: user.leadAreas,
+      })
 
   return (
     <AppShell user={user}>
@@ -108,6 +128,9 @@ export default async function TeamHomePage({
             {submitted ? "Edit takings" : "Submit takings"}
           </Link>
         </Card>
+
+        {/* Your personalised guide to the dashboard (combines all your roles). */}
+        {guide && <RoleGuidePanel guide={guide} />}
 
         {/* Apprentice gate banner */}
         {self.apprentice && (

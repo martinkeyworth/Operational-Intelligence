@@ -1,6 +1,7 @@
 import { requireOwner } from "@/lib/access"
 import { PageHeader } from "@/components/ui-bits"
 import { TestEmailButton } from "./test-email-button"
+import { RoleGuideSender } from "./role-guide-button"
 import { resolvedFrom } from "@/lib/email"
 
 export const dynamic = "force-dynamic"
@@ -44,6 +45,19 @@ export default async function EmailDiagnosticsPage() {
             notifications will send correctly too.
           </p>
           <TestEmailButton />
+        </section>
+
+        <section className="space-y-3 border-t pt-6">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Role guides</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Send each team member instructions for how to use the dashboard,
+              tailored to their role. People with more than one role get a single
+              combined guide. The same guide also appears at the top of everyone&apos;s
+              Team Area.
+            </p>
+          </div>
+          <RoleGuideSender />
         </section>
       </div>
     </>

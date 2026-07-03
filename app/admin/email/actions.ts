@@ -2,6 +2,11 @@
 
 import { requireOwner } from "@/lib/access"
 import { sendEmail, resolvedFrom } from "@/lib/email"
+import {
+  sendRoleGuidesToAll,
+  sendRoleGuidePreviewTo,
+  type GuideSendResult,
+} from "@/lib/role-guide-email"
 
 export type TestEmailResult = { ok: boolean; to?: string; error?: string; from?: string }
 
@@ -60,4 +65,30 @@ export async function sendTestEmailTo(
   })
 
   return { ok: res.ok, to: recipient, error: res.error, from: resolvedFrom() }
+}
+
+/**
+ * Owner-only: email every active team member their personalised role guide —
+ * one combined message covering all of their roles.
+ */
+export async function sendRoleGuidesAction(): Promise<GuideSendResult> {
+  await requireOwner()
+  return sendRoleGuidesToAll()
+}
+
+/**
+ * Owner-only: send a single guide to a chosen address for preview. If the
+ * address belongs to a known team member, they get their own real guide.
+ */
+export async function sendRoleGuidePreviewAction(
+  to: string,
+): Promise<{ ok: boolean; error?: string; to?: string }> {
+  await requireOwner()
+  const recipient = (to || "").trim()
+  const looksValid = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(recipient)
+  if (!looksValid) {
+    return { ok: false, error: "Enter a valid email address (e.g. name@example.com)." }
+  }
+  const res = await sendRoleGuidePreviewTo(recipient)
+  return { ok: res.ok, error: res.error, to: recipient }
 }
