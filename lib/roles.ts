@@ -221,20 +221,37 @@ export const ROLES: RoleDef[] = [
   },
   {
     key: "assistant-manager",
-    title: "Assistant Manager / Senior Barber",
+    title: "Assistant Manager",
     tier: "Management",
     status: "active",
     reportsTo: "shop-manager",
     purpose:
-      "Deputises for the shop manager, leads the floor in their absence and mentors junior barbers while maintaining personal column performance.",
+      "Deputises for the shop manager, leads the floor in their absence and takes on management responsibilities while maintaining personal column performance.",
     ownsAreas: ["Capacity"],
     responsibilities: [
       "Deputise for the manager and lead the floor when needed.",
-      "Mentor junior barbers and uphold service standards.",
       "Support rota, stock and daily operational tasks.",
+      "Step up into people and standards management for the site.",
     ],
     kpis: ["Personal column revenue", "Floor standards"],
-    routingKeywords: ["assistant manager", "senior barber", "deputy"],
+    routingKeywords: ["assistant manager", "deputy"],
+  },
+  {
+    key: "senior-barber",
+    title: "Senior Barber",
+    tier: "Frontline",
+    status: "active",
+    reportsTo: "shop-manager",
+    purpose:
+      "An experienced barber who leads by example on the floor, mentors junior barbers and upholds craft and service standards while maintaining strong personal column performance.",
+    ownsAreas: ["Capacity"],
+    responsibilities: [
+      "Deliver high-quality cuts and set the standard on the floor.",
+      "Mentor junior barbers and apprentices and uphold service standards.",
+      "Maximise personal column utilisation, retail and rebooking.",
+    ],
+    kpis: ["Personal column revenue", "Rebooking rate", "Mentoring impact"],
+    routingKeywords: ["senior barber", "lead barber"],
   },
   {
     key: "barber",

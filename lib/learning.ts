@@ -84,7 +84,11 @@ export async function coursesByCategory(): Promise<
 export async function getCoursesForRole(
   role: string,
 ): Promise<{ required: CourseRow[]; recommended: CourseRow[] }> {
-  const reqs = await db.select().from(courseRoleReqs).where(eq(courseRoleReqs.role, role))
+  // Plans store the role KEY (e.g. "senior-barber") but course_role_reqs.role
+  // holds the TITLE (e.g. "Senior Barber"). Match on either so both the current
+  // key-based plans and any legacy title-valued plans resolve correctly.
+  const candidates = Array.from(new Set([role, roleTitle(role)]))
+  const reqs = await db.select().from(courseRoleReqs).where(inArray(courseRoleReqs.role, candidates))
   if (reqs.length === 0) return { required: [], recommended: [] }
   const courseRows = await db
     .select()
@@ -160,7 +164,9 @@ export async function listRoleGates(): Promise<RoleGateRow[]> {
 }
 
 export async function gatesForRole(role: string): Promise<RoleGateRow[]> {
-  return db.select().from(roleGates).where(eq(roleGates.role, role)).orderBy(asc(roleGates.sort))
+  // Match on role key or title (see getCoursesForRole for why).
+  const candidates = Array.from(new Set([role, roleTitle(role)]))
+  return db.select().from(roleGates).where(inArray(roleGates.role, candidates)).orderBy(asc(roleGates.sort))
 }
 
 export async function addRoleGate(role: string, requirement: string) {
