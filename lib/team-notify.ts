@@ -3,8 +3,8 @@ import { sendEmail } from "@/lib/email"
 import { buildIcs } from "@/lib/ics"
 import { resolvedFrom } from "@/lib/email"
 import { db } from "@/lib/db"
-import { barbers, oneToOnes, user as userTable } from "@/lib/db/schema"
-import { and, desc, eq } from "drizzle-orm"
+import { barbers, oneToOnes, user as userTable, threeSixtyCycles, threeSixtyNominees } from "@/lib/db/schema"
+import { and, desc, eq, isNull, isNotNull } from "drizzle-orm"
 import { PBC_BANDS, formatPeriod } from "@/lib/learning-types"
 
 const APP_NAME = "Less Than Zero"
@@ -176,6 +176,66 @@ export async function sendThreeSixtyInvites(args: {
       kind: "team-360-admin",
     })
   }
+}
+
+/**
+ * Chase 360 reviewers who haven't responded on Open cycles. Idempotent per
+ * nominee via reminded_at (only reminds those invited but not yet reminded and
+ * not yet responded). Returns how many reminder emails were sent. Because the
+ * 360 gates the 1-2-1, keeping responses flowing keeps reviews on schedule.
+ */
+export async function remindPendingReviewers(): Promise<number> {
+  const rows = await db
+    .select({
+      nomineeId: threeSixtyNominees.id,
+      name: threeSixtyNominees.name,
+      email: threeSixtyNominees.email,
+      token: threeSixtyNominees.token,
+      period: threeSixtyCycles.period,
+      dueOn: threeSixtyCycles.dueOn,
+      barberId: threeSixtyCycles.barberId,
+    })
+    .from(threeSixtyNominees)
+    .innerJoin(threeSixtyCycles, eq(threeSixtyNominees.cycleId, threeSixtyCycles.id))
+    .where(
+      and(
+        eq(threeSixtyCycles.status, "Open"),
+        isNull(threeSixtyNominees.respondedAt),
+        isNull(threeSixtyNominees.remindedAt),
+        isNotNull(threeSixtyNominees.invitedAt),
+      ),
+    )
+
+  // Resolve barber names in one pass for nicer copy.
+  const barberIds = Array.from(new Set(rows.map((r) => r.barberId)))
+  const nameById = new Map<number, string>()
+  for (const id of barberIds) {
+    const [b] = await db.select({ name: barbers.name }).from(barbers).where(eq(barbers.id, id)).limit(1)
+    if (b) nameById.set(id, b.name)
+  }
+
+  let sent = 0
+  for (const r of rows) {
+    if (!r.token) continue
+    const barberName = nameById.get(r.barberId) ?? "your colleague"
+    const subject = `Reminder: 360 feedback for ${barberName} (${r.period})`
+    const html = wrap(
+      subject,
+      `<p style="font-size:14px;line-height:1.6">Hi ${r.name},</p>
+       <p style="font-size:14px;line-height:1.6">
+         Just a nudge to share your 360 feedback for <strong>${barberName}</strong>
+         (${r.period})${r.dueOn ? `, due <strong>${r.dueOn}</strong>` : ""}. It only takes
+         a couple of minutes and feeds directly into their development review.</p>
+       <p>${emailButton(`/360/${r.token}`, "Give your feedback")}</p>`,
+    )
+    await sendEmail({ to: r.email, subject, html, kind: "team-360-reminder" })
+    await db
+      .update(threeSixtyNominees)
+      .set({ remindedAt: new Date() })
+      .where(eq(threeSixtyNominees.id, r.nomineeId))
+    sent++
+  }
+  return sent
 }
 
 /** Email a 1-2-1 calendar invite (.ics) to the barber + their manager. */
