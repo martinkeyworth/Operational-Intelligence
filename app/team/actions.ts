@@ -132,13 +132,17 @@ export async function submitThreeSixtyNominees(formData: FormData) {
     return { ok: false, error: "Please nominate exactly 5 people" }
   }
 
+  // Each nominee gets a unique tokenised link to submit feedback at /360/[token].
+  const withTokens = nominees.map((n) => ({ ...n, token: crypto.randomUUID() }))
+
   // Replace any existing nominees for this cycle.
   await db.delete(threeSixtyNominees).where(eq(threeSixtyNominees.cycleId, cycleId))
   await db.insert(threeSixtyNominees).values(
-    nominees.map((n) => ({
+    withTokens.map((n) => ({
       cycleId,
       name: n.name,
       email: n.email,
+      token: n.token,
       status: "Invited" as const,
       invitedAt: new Date(),
     })),
@@ -152,7 +156,7 @@ export async function submitThreeSixtyNominees(formData: FormData) {
     barberName: barber.name,
     period: cycle.period,
     dueOn: cycle.dueOn,
-    nominees,
+    nominees: withTokens,
   })
 
   revalidatePath("/team")

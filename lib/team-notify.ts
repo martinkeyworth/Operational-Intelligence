@@ -145,17 +145,20 @@ export async function sendThreeSixtyInvites(args: {
   barberName: string
   period: string
   dueOn: string
-  nominees: { name: string; email: string }[]
+  nominees: { name: string; email: string; token?: string | null }[]
 }): Promise<void> {
   const subject = `360 review request for ${args.barberName} (${args.period})`
   for (const n of args.nominees) {
+    const link = n.token ? emailButton(`/360/${n.token}`, "Give your feedback") : ""
     const html = wrap(
       subject,
       `<p style="font-size:14px;line-height:1.6">Hi ${n.name},</p>
        <p style="font-size:14px;line-height:1.6">
          <strong>${args.barberName}</strong> has nominated you to provide 360 feedback
-         for the ${args.period} review cycle. Please complete your feedback by
-         <strong>${args.dueOn}</strong>.</p>`,
+         for the ${args.period} review cycle. It only takes a couple of minutes and helps
+         shape their development review. Please complete it by
+         <strong>${args.dueOn}</strong>.</p>
+       <p>${link}</p>`,
     )
     await sendEmail({ to: n.email, subject, html, kind: "team-360-invite" })
   }

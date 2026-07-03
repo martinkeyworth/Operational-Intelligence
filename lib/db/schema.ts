@@ -460,8 +460,11 @@ export const oneToOnes = pgTable("one_to_ones", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-// 360 review cycle (every 6 months). The barber nominates 5 reviewers; each
-// nominee is tracked to completion in three_sixty_nominees.
+// 360 review cycle — one per monthly 1-2-1 period (join cycle <-> 1-2-1 on
+// barberId + period, e.g. "2026-07"). The barber nominates 5 reviewers; each
+// nominee is tracked to completion in three_sixty_nominees, and their scored
+// feedback lands in three_sixty_responses. The 360 gates the 1-2-1: once enough
+// responses are in, the 1-2-1 becomes ready and the AI PBC analysis runs.
 export const threeSixtyCycles = pgTable("three_sixty_cycles", {
   id: serial("id").primaryKey(),
   barberId: integer("barber_id").notNull(),
@@ -485,9 +488,27 @@ export const threeSixtyNominees = pgTable("three_sixty_nominees", {
   name: text("name").notNull(),
   email: text("email").notNull(),
   status: text("status").notNull().default("Invited"), // Invited | Completed
+  // Tokenised link the reviewer uses to submit feedback at /360/[token].
+  token: text("token"),
   invitedAt: timestamp("invited_at"),
+  remindedAt: timestamp("reminded_at"),
+  respondedAt: timestamp("responded_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Scored 360 feedback from a single reviewer. Feeds the AI PBC analysis.
+export const threeSixtyResponses = pgTable("three_sixty_responses", {
+  id: serial("id").primaryKey(),
+  cycleId: integer("cycle_id").notNull(),
+  templateVersion: integer("template_version"),
+  performance: integer("performance"), // 1-5
+  behaviours: integer("behaviours"), // 1-5
+  contribution: integer("contribution"), // 1-5
+  relationship: text("relationship"), // how the reviewer works with the barber
+  strengths: text("strengths"),
+  improvements: text("improvements"),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
 })
 
 // --- Strategic roadmap -----------------------------------------------------
