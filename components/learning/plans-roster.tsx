@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { formatPeriod, pbcScoreLabel } from "@/lib/learning-types"
 import { cn } from "@/lib/utils"
+import { ResendInviteButton } from "@/components/learning/resend-invite-button"
 
 export type RosterRow = {
   barberId: number
@@ -56,7 +57,10 @@ export function PlansRoster({ rows }: { rows: RosterRow[] }) {
                 </div>
               </td>
               <td className="px-3 py-2">
-                <StatusBadge status={r.oneToOneStatus} reviewDue={r.reviewDue} />
+                <div className="flex flex-col items-start gap-1">
+                  <StatusBadge status={r.oneToOneStatus} reviewDue={r.reviewDue} />
+                  {r.oneToOneStatus === "Scheduled" ? <ResendInviteButton barberId={r.barberId} /> : null}
+                </div>
               </td>
               <td className="px-3 py-2 text-center">
                 <span className="text-sm font-semibold tabular-nums text-foreground">

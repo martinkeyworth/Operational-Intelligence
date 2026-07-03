@@ -19,9 +19,10 @@ import {
   completeOneToOne,
   upsertPbcRating,
   getBarberBasics,
+  getCurrentOneToOne,
 } from "@/lib/learning"
 import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanItemStatus } from "@/lib/learning-types"
-import { sendOneToOneComplete } from "@/lib/team-notify"
+import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -268,4 +269,35 @@ export async function savePbcAction(input: {
   })
   revalidatePath(`/learning/plans/${input.barberId}`)
   return { ok: true }
+}
+
+/**
+ * Resend the 1-2-1 invite/links for a barber whose 1-2-1 is Scheduled.
+ * Emails the manager (their review link) and the barber (their self-prep link),
+ * deduped. Only the barber's manager or an L&D manager may trigger it.
+ */
+export async function resendOneToOneInviteAction(
+  barberId: number,
+): Promise<{ ok: boolean; sent?: number; error?: string }> {
+  const user = await getAccessUser()
+  if (!user) return { ok: false, error: "Not signed in" }
+  const basics = await getBarberBasics(barberId)
+  if (!basics) return { ok: false, error: "Team member not found" }
+  if (!canRatePbc(user, basics.managerUserId)) return { ok: false, error: "Not authorised" }
+
+  const current = await getCurrentOneToOne(barberId)
+  if (!current || current.status !== "Scheduled") {
+    return { ok: false, error: "No scheduled 1-2-1 to resend" }
+  }
+
+  const period = current.period ?? currentPeriod()
+  const dueOn = current.dueOn ? new Date(current.dueOn).toISOString().slice(0, 10) : null
+
+  try {
+    const sent = await sendOneToOneReminder({ barberId, period, dueOn })
+    return { ok: true, sent }
+  } catch (e) {
+    console.log("[v0] resendOneToOneInviteAction failed:", (e as Error).message)
+    return { ok: false, error: "Could not send the invite email" }
+  }
 }
