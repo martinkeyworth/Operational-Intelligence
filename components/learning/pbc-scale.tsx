@@ -1,7 +1,10 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { PBC_BANDS, PBC_SCORES, PBC_DIMENSIONS, type PbcDimension } from "@/lib/learning-types"
+import { PBC_BANDS, PBC_SCORES, PBC_DIMENSIONS, pbcScoreLabel, type PbcDimension } from "@/lib/learning-types"
+
+// Re-export so existing client-component imports (`@/components/learning/pbc-scale`) keep working.
+export { pbcScoreLabel }
 
 /** A 1-5 score picker (1 best, 5 lowest). */
 export function ScorePicker({
@@ -41,11 +44,6 @@ export function ScorePicker({
       })}
     </div>
   )
-}
-
-export function pbcScoreLabel(score: number | null | undefined) {
-  if (!score) return "—"
-  return PBC_BANDS.find((b) => b.score === score)?.label ?? String(score)
 }
 
 /** The static 1-5 band criteria guide. */

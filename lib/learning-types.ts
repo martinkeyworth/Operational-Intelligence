@@ -68,6 +68,12 @@ export function pbcBand(score: number | null | undefined) {
 
 export const PBC_SCORES = [1, 2, 3, 4, 5] as const
 
+/** Human label for a PBC score. Client-safe so both server and client can call it. */
+export function pbcScoreLabel(score: number | null | undefined) {
+  if (!score) return "—"
+  return PBC_BANDS.find((b) => b.score === score)?.label ?? String(score)
+}
+
 // --- Monthly 1-2-1 question set (versioned) --------------------------------
 // Bump the version whenever wording changes; historical 1-2-1s keep the
 // version they were completed under so their answers stay meaningful.

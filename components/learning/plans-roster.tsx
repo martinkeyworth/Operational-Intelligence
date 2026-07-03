@@ -1,6 +1,5 @@
 import Link from "next/link"
-import { formatPeriod } from "@/lib/learning-types"
-import { pbcScoreLabel } from "@/components/learning/pbc-scale"
+import { formatPeriod, pbcScoreLabel } from "@/lib/learning-types"
 import { cn } from "@/lib/utils"
 
 export type RosterRow = {
