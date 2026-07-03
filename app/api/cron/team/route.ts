@@ -4,6 +4,7 @@ import {
   autoOpenThreeSixtyCycles,
   syncOneToOneRsvps,
 } from "@/lib/team-schedule"
+import { remindDueOneToOnes, escalateOverdueOneToOnes } from "@/lib/team-notify"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -34,7 +35,10 @@ export async function GET(req: Request) {
     // Pull accept/decline responses back from Google Calendar so leadership
     // sees RSVP status in the app.
     const rsvpUpdates = await syncOneToOneRsvps()
-    return NextResponse.json({ ok: true, oneToOnes, threeSixties, rsvpUpdates })
+    // 1-2-1 reminders (due soon) + overdue escalation. Both idempotent.
+    const reminders = await remindDueOneToOnes(2)
+    const overdue = await escalateOverdueOneToOnes()
+    return NextResponse.json({ ok: true, oneToOnes, threeSixties, rsvpUpdates, reminders, overdue })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error"
     return NextResponse.json({ ok: false, error: message }, { status: 500 })

@@ -10,7 +10,11 @@ import {
 } from "@/lib/db/schema"
 import { requireUser } from "@/lib/access"
 import { getBarberForUser, currentLeaveYear } from "@/lib/team"
-import { sendLeaveNotification, sendThreeSixtyInvites } from "@/lib/team-notify"
+import {
+  sendLeaveNotification,
+  sendThreeSixtyInvites,
+  sendSicknessAckToIndividual,
+} from "@/lib/team-notify"
 
 /** Count inclusive days between two ISO dates (min 1). */
 function daysBetween(start: string, end: string): number {
@@ -88,6 +92,18 @@ export async function logSickness(formData: FormData) {
     end,
     days,
     reason,
+  })
+
+  // "Get well" acknowledgement to the barber themselves. If they run their own
+  // column (active, non-apprentice) it also nudges them to arrange cover. Email
+  // comes from their linked Better Auth user.
+  await sendSicknessAckToIndividual({
+    toEmail: user.email,
+    firstName: barber.name.split(" ")[0],
+    hasColumn: barber.active && !barber.isApprentice,
+    start,
+    end,
+    days,
   })
 
   revalidatePath("/team")

@@ -105,6 +105,23 @@ export async function getDefaultWeek(): Promise<string> {
 }
 
 /**
+ * The week the LEADERSHIP Group Overview should open on by default: the most
+ * recent COMPLETED week (newest week with data that is strictly before the
+ * current in-progress operating week), so leadership don't land on an empty,
+ * still-being-collected week. Falls back to getDefaultWeek() if none.
+ *
+ * IMPORTANT: this only affects the leadership landing default. Data-entry, the
+ * Team Area, submission tracking etc. must stay on getCurrentOperatingWeek()/
+ * getDefaultWeek() — do NOT reroute those through here.
+ */
+export async function getLeadershipDefaultWeek(): Promise<string> {
+  const current = await getCurrentOperatingWeek()
+  const weeks = await getWeeks() // newest first, only weeks with data
+  const previous = weeks.find((w) => w < current)
+  return previous ?? (await getDefaultWeek())
+}
+
+/**
  * All weeks to offer in the week selector: every week that has data, plus the
  * current reporting week (so you can always open the in-progress week even
  * before anyone has submitted), newest first. Future weeks are never offered —

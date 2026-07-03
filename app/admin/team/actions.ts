@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db"
 import { barbers, leaveRequests, oneToOnes, threeSixtyCycles } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
 import { getBarberForUser } from "@/lib/team"
@@ -95,10 +95,23 @@ export async function completeOneToOne(formData: FormData) {
   return { ok: true }
 }
 
-/** Open a new 360 cycle for a barber (they then nominate 5 reviewers). */
+/** Open a new 360 cycle for a barber (they then nominate 5 reviewers).
+ *  Idempotent: if an Open cycle already exists for this barber we return it
+ *  rather than inserting a duplicate (the old bug created a new Open cycle on
+ *  every click). */
 export async function openThreeSixtyCycle(formData: FormData) {
   await requireTeamAdmin()
   const barberId = Number(formData.get("barberId"))
+
+  const [existing] = await db
+    .select()
+    .from(threeSixtyCycles)
+    .where(and(eq(threeSixtyCycles.barberId, barberId), eq(threeSixtyCycles.status, "Open")))
+  if (existing) {
+    revalidateTeam(barberId)
+    return { ok: true, alreadyOpen: true, period: existing.period }
+  }
+
   const now = new Date()
   const half = now.getMonth() < 6 ? "H1" : "H2"
   const period = `${now.getFullYear()}-${half}`
@@ -111,7 +124,7 @@ export async function openThreeSixtyCycle(formData: FormData) {
     status: "Open",
   })
   revalidateTeam(barberId)
-  return { ok: true }
+  return { ok: true, alreadyOpen: false, period }
 }
 
 /**

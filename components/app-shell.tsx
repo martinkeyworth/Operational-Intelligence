@@ -84,6 +84,7 @@ export function AppShell({
             items: [
               { href: "/", label: "Group Overview", icon: LayoutDashboard },
               { href: "/roadmap", label: "Growth Roadmap", icon: Map },
+              { href: "/functions/Strategy", label: "Expansion Strategy", icon: LayoutGrid },
             ],
           },
           {
@@ -96,29 +97,40 @@ export function AppShell({
             ],
           },
           {
-            title: "Operational",
-            icon: Wrench,
+            title: "L&D – Training",
+            icon: GraduationCap,
             items: [
-              { href: "/sites", label: "Sites", icon: Store },
-              { href: "/governance", label: "Governance", icon: ShieldAlert },
+              { href: "/functions/Training", label: "Training & Academy", icon: GraduationCap },
+              { href: "/learning/plans", label: "Learning Plans", icon: ClipboardCheck },
+              { href: "/learning/courses", label: "Course Catalogue", icon: FileText },
+              { href: "/training-funnel", label: "Training Funnel", icon: CalendarRange },
             ],
           },
           {
-            title: "People & Hiring",
+            title: "HR",
             icon: Users,
             items: [
+              { href: "/functions/HR", label: "People & HR", icon: Users },
               { href: "/reports/workforce", label: "Workforce Plan", icon: UserPlus },
               { href: "/recruitment", label: "Recruitment Funnel", icon: UserSearch },
               { href: "/jobs", label: "Jobs Board", icon: Megaphone },
             ],
           },
           {
-            title: "Functions",
-            icon: LayoutGrid,
+            title: "Operations",
+            icon: Wrench,
             items: [
-              { href: "/functions", label: "Functional Areas", icon: LayoutGrid },
-              { href: "/training-funnel", label: "Training Funnel", icon: GraduationCap },
+              { href: "/sites", label: "Sites", icon: Store },
+              { href: "/functions/Capacity", label: "Capacity", icon: LayoutGrid },
+              { href: "/functions/RTB", label: "RTB", icon: LayoutGrid },
+              { href: "/functions/Subletting", label: "Subletting", icon: LayoutGrid },
+              { href: "/functions/Marketing", label: "Marketing", icon: Megaphone },
             ],
+          },
+          {
+            title: "Governance",
+            icon: ShieldAlert,
+            items: [{ href: "/governance", label: "Governance", icon: ShieldAlert }],
           },
         ]
       : []),

@@ -8,6 +8,7 @@ import {
   numeric,
   date,
   unique,
+  jsonb,
 } from "drizzle-orm/pg-core"
 
 // --- Better Auth required tables -------------------------------------------
@@ -435,6 +436,27 @@ export const oneToOnes = pgTable("one_to_ones", {
   barberResponse: text("barber_response").notNull().default("needsAction"), // needsAction | accepted | declined | tentative
   managerResponse: text("manager_response").notNull().default("needsAction"),
   rsvpSyncedAt: timestamp("rsvp_synced_at"),
+  // --- Structured monthly 1-2-1 (drives PBC + L&D review) ------------------
+  // YYYY-MM derived from scheduledFor; links this 1-2-1 to a PBC period.
+  period: text("period"),
+  templateVersion: integer("template_version"),
+  // The barber's pre-1-2-1 answers. Also holds their self-scored PBC
+  // (selfPerformance/selfBehaviours/selfContribution + reasons) for the
+  // two-stage self-then-manager scoring flow.
+  selfPrep: jsonb("self_prep"),
+  // The manager's answers, incl. their reason where their score differs from
+  // the barber's self-score.
+  managerAnswers: jsonb("manager_answers"),
+  summary: text("summary"),
+  actions: text("actions"),
+  // Manager's provisional PBC scores captured on this 1-2-1 (1 best - 5 lowest).
+  pbcPerformance: integer("pbc_performance"),
+  pbcBehaviours: integer("pbc_behaviours"),
+  pbcContribution: integer("pbc_contribution"),
+  // When it must be completed by; drives reminder + overdue escalation (once).
+  dueOn: date("due_on"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  overdueEscalatedAt: timestamp("overdue_escalated_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -578,3 +600,91 @@ export const jobReferrals = pgTable("job_referrals", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 })
+
+// --- L&D: catalogue, plans, PBC --------------------------------------------
+
+// Manually-populated course/qualification catalogue.
+export const courses = pgTable("courses", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  provider: text("provider"),
+  category: text("category"),
+  delivery: text("delivery"),
+  durationNote: text("duration_note"),
+  active: boolean("active").notNull().default(true),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Which courses are required/recommended for a canonical ladder role
+// (the "prerequisites for a job").
+export const courseRoleReqs = pgTable(
+  "course_role_reqs",
+  {
+    id: serial("id").primaryKey(),
+    courseId: integer("course_id").notNull(),
+    role: text("role").notNull(),
+    requirement: text("requirement").notNull().default("required"), // required | recommended
+  },
+  (t) => ({
+    key: unique("course_role_reqs_key").on(t.courseId, t.role),
+  }),
+)
+
+// Free-text gates required to be considered for a role.
+export const roleGates = pgTable("role_gates", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull(),
+  requirement: text("requirement").notNull(),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// One development plan per barber.
+export const learningPlans = pgTable("learning_plans", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull().unique(),
+  targetRole: text("target_role"),
+  aspiration: text("aspiration"),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+export const learningPlanItems = pgTable("learning_plan_items", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  courseId: integer("course_id"),
+  title: text("title"),
+  status: text("status").notNull().default("planned"), // planned | in_progress | complete
+  targetDate: date("target_date"),
+  completedOn: date("completed_on"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Monthly PBC rating (Performance / Behaviours / Contribution), 1 best - 5 lowest.
+// One row per barber per period. Manager scores; barber self-scores live on the
+// linked one_to_ones.self_prep for the two-stage flow.
+export const pbcRatings = pgTable(
+  "pbc_ratings",
+  {
+    id: serial("id").primaryKey(),
+    barberId: integer("barber_id").notNull(),
+    period: text("period").notNull(), // YYYY-MM
+    performance: integer("performance"),
+    behaviours: integer("behaviours"),
+    contribution: integer("contribution"),
+    overall: integer("overall"),
+    ratedBy: text("rated_by"),
+    ratedByName: text("rated_by_name"),
+    comment: text("comment"),
+    oneToOneId: integer("one_to_one_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique("pbc_ratings_barber_period").on(t.barberId, t.period),
+  }),
+)

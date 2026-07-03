@@ -145,6 +145,35 @@ export async function requireAreaLead(areaKey: string): Promise<AccessUser> {
   return user
 }
 
+// --- L&D access ------------------------------------------------------------
+
+/** Who can manage the course catalogue, role gates/prereqs and edit ANY plan.
+ *  Owners, dashboard admins, and the Training area lead. */
+export function canManageLearning(user: AccessUser): boolean {
+  if (user.isOwner) return true
+  if (user.isTrainingLead) return true
+  if (user.leadAreas.includes("Training")) return true
+  // Company dashboard users administer L&D alongside the training lead.
+  return user.isCompany && user.canViewDashboard
+}
+
+/** Require L&D-management rights. Redirects otherwise. */
+export async function requireLearningManager(): Promise<AccessUser> {
+  const user = await requireUser()
+  if (!canManageLearning(user)) redirect("/no-access")
+  return user
+}
+
+/** Can this user rate PBC / hold the monthly 1-2-1 for a given barber?
+ *  L&D managers can rate anyone; a barber's assigned manager can rate them. */
+export function canRatePbc(user: AccessUser, barberManagerUserId: string | null | undefined): boolean {
+  if (canManageLearning(user)) return true
+  return Boolean(barberManagerUserId && barberManagerUserId === user.id)
+}
+
+/** Alias — the same rule gates running a 1-2-1 as rating PBC. */
+export const canHoldOneToOne = canRatePbc
+
 /** List every user with capability flags, for the admin People page. */
 export async function getAllUsers(): Promise<AccessUser[]> {
   const rows = await db.select().from(userTable).orderBy(userTable.email)

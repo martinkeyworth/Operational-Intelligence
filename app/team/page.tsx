@@ -8,6 +8,8 @@ import { buttonVariants } from "@/components/ui/button"
 import { RagDot } from "@/components/rag"
 import { BarberRtbChart } from "@/components/barber-rtb-chart"
 import { TeamSelfService } from "@/components/team-self-service"
+import { MyLearning } from "@/components/learning/my-learning"
+import { getMyLearningData } from "@/lib/learning"
 import { getBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 import { CheckCircle2, AlertCircle, GraduationCap } from "lucide-react"
@@ -40,6 +42,8 @@ export default async function TeamHomePage({
   if (!self) redirect(user.canViewDashboard ? "/admin/team" : "/no-access")
 
   const submitted = self.submission.submitted
+  // The barber's own development area (1-2-1 self-prep, plan, PBC history).
+  const myLearning = await getMyLearningData(self.barber.id)
 
   return (
     <AppShell user={user}>
@@ -186,6 +190,9 @@ export default async function TeamHomePage({
 
         {/* 4. HR self-service: holiday, sickness, 1-2-1, 360. */}
         <TeamSelfService self={self} readOnly={isPreview} />
+
+        {/* 5. My development: 1-2-1 self-prep + self-scoring, plan, PBC history. */}
+        <MyLearning data={myLearning} />
       </div>
     </AppShell>
   )

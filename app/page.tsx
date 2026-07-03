@@ -4,7 +4,7 @@ import { GroupDashboard } from "@/components/group-dashboard"
 import { RoadmapSummaryCard } from "@/components/roadmap-summary-card"
 import {
   getSelectableWeeks,
-  getDefaultWeek,
+  getLeadershipDefaultWeek,
   getGroupSummary,
   getSiteWeek,
   getGroupTrend,
@@ -31,7 +31,9 @@ export default async function Page({
   const { week: weekParam } = await searchParams
   const weeks = await getSelectableWeeks()
   const week =
-    weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
+    weekParam && weeks.includes(weekParam)
+      ? weekParam
+      : await getLeadershipDefaultWeek()
 
   if (!week) {
     return (
