@@ -3,20 +3,28 @@ import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { PlansRoster } from "@/components/learning/plans-roster"
-import { getLearningRoster } from "@/lib/learning"
+import { getLearningRoster, hasDirectReports } from "@/lib/learning"
 
 export const dynamic = "force-dynamic"
 
 export default async function LearningPlansPage() {
   const user = await requireUser()
-  // L&D managers see everyone; a manager with reports sees their own team.
-  const isManager = canManageLearning(user)
-  if (!isManager && !user.canViewDashboard) {
-    // A plain barber's plan lives in their Team Area.
-    redirect("/team")
+
+  // Who sees what:
+  //  - L&D managers (owners, training lead, company dashboard users) see EVERYONE.
+  //  - Any other manager who has direct reports sees just their own team.
+  //  - A plain barber has no roster; their plan lives in their Team Area.
+  const isLdManager = canManageLearning(user)
+  let scopeToUserId: string | null = null
+  if (!isLdManager) {
+    const managesTeam = await hasDirectReports(user.id)
+    if (!managesTeam && !user.canViewDashboard) {
+      redirect("/team")
+    }
+    scopeToUserId = user.id
   }
 
-  const rows = await getLearningRoster(isManager ? null : user.id)
+  const rows = await getLearningRoster(scopeToUserId)
 
   return (
     <AppShell user={user}>

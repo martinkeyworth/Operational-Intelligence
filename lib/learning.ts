@@ -523,6 +523,17 @@ export type LearningRosterRow = {
   pbcOverall: number | null
 }
 
+/** Does this user manage at least one active barber? Used to let a non-exec
+ *  branch manager into the learning roster (scoped to their own team). */
+export async function hasDirectReports(userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: barbers.id })
+    .from(barbers)
+    .where(and(eq(barbers.active, true), eq(barbers.managerUserId, userId)))
+    .limit(1)
+  return rows.length > 0
+}
+
 /** Roster for /learning/plans. If managerUserId is given, only that manager's
  *  direct reports; otherwise everyone (admin/training lead). */
 export async function getLearningRoster(managerUserId?: string | null): Promise<LearningRosterRow[]> {
