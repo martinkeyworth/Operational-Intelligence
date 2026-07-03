@@ -15,7 +15,9 @@ import {
   listCourses,
   readSelfPrep,
   readManagerAnswers,
+  readAiPbc,
 } from "@/lib/learning"
+import { threeSixtyReadiness } from "@/lib/three-sixty"
 import { currentPeriod } from "@/lib/learning-types"
 
 export const dynamic = "force-dynamic"
@@ -45,6 +47,8 @@ export default async function PlanDetailPage({
   ])
 
   const otoForPeriod = oto && oto.period === currentPeriod() ? oto : null
+  const readiness = await threeSixtyReadiness(barberId, currentPeriod())
+  const aiPbc = readAiPbc(otoForPeriod)
 
   const planData: PlanEditorData = {
     barberId,
@@ -94,6 +98,26 @@ export default async function PlanDetailPage({
               managerAnswersInit={readManagerAnswers(otoForPeriod).answers ?? {}}
               summaryInit={otoForPeriod?.summary ?? null}
               actionsInit={otoForPeriod?.actions ?? null}
+              threeSixty={{
+                nominated: readiness.nominated,
+                responded: readiness.responded,
+                threshold: readiness.threshold,
+                ready: readiness.ready,
+                lowConfidence: readiness.lowConfidence,
+                hasCycle: readiness.cycleId != null,
+              }}
+              aiPbc={
+                aiPbc
+                  ? {
+                      performance: Number(aiPbc.performance),
+                      behaviours: Number(aiPbc.behaviours),
+                      contribution: Number(aiPbc.contribution),
+                      overall: Number(aiPbc.overall),
+                      rationale: String(aiPbc.rationale ?? ""),
+                      lowConfidence: Boolean(aiPbc.lowConfidence),
+                    }
+                  : null
+              }
             />
           </TabsContent>
           <TabsContent value="plan" className="pt-4">

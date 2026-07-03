@@ -219,8 +219,8 @@ function ThreeSixtyCard({ self, readOnly }: { self: SelfView; readOnly: boolean 
       </div>
       {!cycle ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No 360 cycle is open right now. A new cycle opens every 6 months — you&apos;ll nominate 5
-          reviewers here.
+          No 360 cycle is open right now. A new cycle opens each month ahead of your 1-2-1 — you&apos;ll
+          nominate 5 reviewers here, and their feedback shapes your PBC review.
         </p>
       ) : allSubmitted && !done ? (
         <div className="mt-3">
@@ -251,7 +251,8 @@ function ThreeSixtyCard({ self, readOnly }: { self: SelfView; readOnly: boolean 
         <>
           <p className="mt-3 text-sm text-muted-foreground">
             Nominate 5 people to give you 360 feedback for <strong>{cycle.period}</strong> (due{" "}
-            {fmtDate(cycle.dueOn)}). They&apos;ll be emailed automatically.
+            {fmtDate(cycle.dueOn)}). They&apos;ll be emailed a link automatically, and their feedback
+            feeds into your 1-2-1 and PBC review for the month.
           </p>
           <form
             action={(fd) =>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -44,6 +44,8 @@ export function TeamMemberManager({
   const { self } = detail
   const router = useRouter()
   const [pending, start] = useTransition()
+  const [cycleMsg, setCycleMsg] = useState<string | null>(null)
+  const openCycle = self.openCycle
   const run = (fn: () => Promise<unknown>) => start(async () => {
     await fn()
     router.refresh()
@@ -236,12 +238,42 @@ export function TeamMemberManager({
           <Button type="submit" size="sm" disabled={pending}>Schedule</Button>
         </form>
 
-        <form action={(fd) => run(() => openThreeSixtyCycle(fd))}>
-          <input type="hidden" name="barberId" value={self.barber.id} />
-          <Button type="submit" size="sm" variant="outline" disabled={pending}>
-            Open new 360 cycle
-          </Button>
-        </form>
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">360 feedback cycle</p>
+          {openCycle ? (
+            <p className="mt-1 text-sm text-foreground">
+              Open for <strong>{openCycle.period}</strong> · {openCycle.nominees.length}/5 nominees ·{" "}
+              {openCycle.nominees.filter((n) => n.status === "Completed").length} responded
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              No open cycle. One opens automatically each month ahead of the 1-2-1; use this only to open
+              one early.
+            </p>
+          )}
+          <form
+            className="mt-2"
+            action={(fd) =>
+              start(async () => {
+                const res = await openThreeSixtyCycle(fd)
+                setCycleMsg(
+                  res?.alreadyOpen
+                    ? `A 360 cycle for ${res.period} is already open.`
+                    : res?.ok
+                      ? `360 cycle opened for ${res.period}. The barber can nominate 5 reviewers in their Team Area.`
+                      : "Could not open a 360 cycle.",
+                )
+                router.refresh()
+              })
+            }
+          >
+            <input type="hidden" name="barberId" value={self.barber.id} />
+            <Button type="submit" size="sm" variant="outline" disabled={pending || Boolean(openCycle)}>
+              {openCycle ? "360 cycle already open" : "Open 360 cycle now"}
+            </Button>
+          </form>
+          {cycleMsg ? <p className="mt-2 text-xs text-muted-foreground">{cycleMsg}</p> : null}
+        </div>
 
         {detail.oneToOneHistory.length > 0 && (
           <div className="space-y-2">

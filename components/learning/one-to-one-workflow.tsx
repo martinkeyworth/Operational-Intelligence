@@ -12,9 +12,27 @@ import {
   type PbcDimension,
   type SelfPrep,
 } from "@/lib/learning-types"
-import { openOneToOneAction, completeOneToOneAction } from "@/app/learning/actions"
+import { openOneToOneAction, completeOneToOneAction, generateAiPbcAction } from "@/app/learning/actions"
 import { cn } from "@/lib/utils"
-import { AlertTriangle, CheckCircle2 } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Sparkles, Users } from "lucide-react"
+
+export type ThreeSixtyStatus = {
+  nominated: number
+  responded: number
+  threshold: number
+  ready: boolean
+  lowConfidence: boolean
+  hasCycle: boolean
+}
+
+export type AiPbcSuggestion = {
+  performance: number
+  behaviours: number
+  contribution: number
+  overall: number
+  rationale: string
+  lowConfidence: boolean
+}
 
 type Props = {
   barberId: number
@@ -26,6 +44,8 @@ type Props = {
   managerAnswersInit: OneToOneAnswers
   summaryInit: string | null
   actionsInit: string | null
+  threeSixty: ThreeSixtyStatus
+  aiPbc: AiPbcSuggestion | null
 }
 
 /**
@@ -41,24 +61,28 @@ export function OneToOneWorkflow(props: Props) {
 
   if (props.status === "None" || props.oneToOneId == null) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          No 1-2-1 open for this period. Open one so {props.barberName.split(" ")[0]} can complete their
-          self-prep first.
-        </p>
-        <Button
-          className="mt-3"
-          disabled={isPending}
-          onClick={() =>
-            startTransition(async () => {
-              const res = await openOneToOneAction(props.barberId)
-              setMsg(res.ok ? "1-2-1 opened — the barber can now self-prep." : "Could not open 1-2-1.")
-            })
-          }
-        >
-          {isPending ? "Opening…" : "Open 1-2-1 for this period"}
-        </Button>
-        {msg ? <p className="mt-2 text-sm text-muted-foreground">{msg}</p> : null}
+      <div className="space-y-4">
+        <ThreeSixtyPanel status={props.threeSixty} barberName={props.barberName} />
+        <div className="rounded-lg border border-dashed border-border p-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            {props.threeSixty.ready
+              ? `The 360 is ready. Open the 1-2-1 so ${props.barberName.split(" ")[0]} can complete their self-prep and the AI can draft the PBC.`
+              : `No 1-2-1 open for this period. You can open it now, but the 360 feedback that drives the PBC isn't in yet.`}
+          </p>
+          <Button
+            className="mt-3"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await openOneToOneAction(props.barberId)
+                setMsg(res.ok ? "1-2-1 opened — the barber can now self-prep." : "Could not open 1-2-1.")
+              })
+            }
+          >
+            {isPending ? "Opening…" : "Open 1-2-1 for this period"}
+          </Button>
+          {msg ? <p className="mt-2 text-sm text-muted-foreground">{msg}</p> : null}
+        </div>
       </div>
     )
   }
@@ -85,18 +109,51 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
   const [answers, setAnswers] = useState<OneToOneAnswers>(props.managerAnswersInit ?? {})
   const suggested = useMemo(() => suggestPbcFromAnswers(answers), [answers])
 
-  // Manager PBC scores (default to suggestion from their own answers).
+  // The AI's PBC suggestion (from the 360 + self-prep + KPIs) is the starting
+  // point. The manager can override any dimension before completing.
+  const [ai, setAi] = useState<AiPbcSuggestion | null>(props.aiPbc)
+  const [aiPending, startAiTransition] = useTransition()
+  const [aiMsg, setAiMsg] = useState<string | null>(null)
+
+  // Manager PBC scores default to the AI suggestion (auto-set), else null.
   const [scores, setScores] = useState<Record<PbcDimension, number | null>>({
-    performance: null,
-    behaviours: null,
-    contribution: null,
+    performance: props.aiPbc?.performance ?? null,
+    behaviours: props.aiPbc?.behaviours ?? null,
+    contribution: props.aiPbc?.contribution ?? null,
   })
   const [reason, setReason] = useState("")
   const [summary, setSummary] = useState(props.summaryInit ?? "")
   const [actions, setActions] = useState(props.actionsInit ?? "")
 
+  // Effective score: manager override, else AI suggestion, else answer-derived.
   function effScore(dim: PbcDimension) {
-    return scores[dim] ?? suggested[dim]
+    return scores[dim] ?? ai?.[dim] ?? suggested[dim]
+  }
+
+  function runAiAnalysis() {
+    startAiTransition(async () => {
+      const res = await generateAiPbcAction(props.barberId)
+      if (res.ok && res.ai) {
+        const next: AiPbcSuggestion = {
+          performance: Number(res.ai.performance),
+          behaviours: Number(res.ai.behaviours),
+          contribution: Number(res.ai.contribution),
+          overall: Number(res.ai.overall),
+          rationale: String(res.ai.rationale ?? ""),
+          lowConfidence: Boolean(res.ai.lowConfidence),
+        }
+        setAi(next)
+        // Auto-fill manager scores with the fresh AI suggestion.
+        setScores({
+          performance: next.performance,
+          behaviours: next.behaviours,
+          contribution: next.contribution,
+        })
+        setAiMsg("AI PBC generated from the 360 feedback. Review and adjust if needed.")
+      } else {
+        setAiMsg(res.error ?? "Could not generate the AI analysis.")
+      }
+    })
   }
 
   // Which dimensions differ from the barber's self-score?
@@ -131,6 +188,55 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
 
   return (
     <div className="space-y-6">
+      <ThreeSixtyPanel status={props.threeSixty} barberName={props.barberName} />
+
+      {/* AI PBC analysis — auto-set from the 360, editable by the manager. */}
+      <section className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">AI PBC analysis</h3>
+          </div>
+          <Button size="sm" variant="outline" disabled={aiPending} onClick={runAiAnalysis}>
+            {aiPending ? "Analysing…" : ai ? "Regenerate" : "Generate from 360"}
+          </Button>
+        </div>
+        {ai ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {PBC_DIMENSIONS.map((d) => (
+                <span
+                  key={d.key}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium tabular-nums"
+                >
+                  {d.label}: {ai[d.key]} ({pbcScoreLabel(ai[d.key])})
+                </span>
+              ))}
+              <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-semibold tabular-nums">
+                Overall: {ai.overall} ({pbcScoreLabel(ai.overall)})
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">{ai.rationale}</p>
+            {ai.lowConfidence ? (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                <AlertTriangle className="size-3.5" />
+                Low confidence — fewer than {props.threeSixty.threshold} reviewers responded. Treat as
+                indicative and rely on your judgement.
+              </p>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              These scores pre-fill your PBC below. Adjust any that you disagree with.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Generate an AI-drafted PBC from the 360 feedback, the self-prep and KPI signals. You&apos;ll be
+            able to override it before completing.
+          </p>
+        )}
+        {aiMsg ? <p className="mt-2 text-sm text-muted-foreground">{aiMsg}</p> : null}
+      </section>
+
       {!selfSubmitted ? (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -317,4 +423,63 @@ function renderAnswer(v: number | boolean | string | null | undefined) {
   if (typeof v === "boolean") return v ? "Yes" : "No"
   if (typeof v === "number") return `${v} (${pbcScoreLabel(v)})`
   return v
+}
+
+/** Shows 360 feedback progress and whether it's unlocked this month's review. */
+function ThreeSixtyPanel({ status, barberName }: { status: ThreeSixtyStatus; barberName: string }) {
+  if (!status.hasCycle) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+        <p>
+          No 360 cycle is open for {barberName.split(" ")[0]} this period yet. It normally opens
+          automatically — the 360 feedback is a key input to the PBC.
+        </p>
+      </div>
+    )
+  }
+  const pct = status.nominated > 0 ? Math.round((status.responded / status.nominated) * 100) : 0
+  return (
+    <section
+      className={cn(
+        "rounded-lg border p-4",
+        status.ready ? "border-emerald-500/30 bg-emerald-500/5" : "border-border bg-card",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Users className="size-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">360 feedback</h3>
+        </div>
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-xs font-medium",
+            status.ready ? "bg-emerald-500/15 text-emerald-700" : "bg-muted text-muted-foreground",
+          )}
+        >
+          {status.ready ? "Ready for review" : "Collecting"}
+        </span>
+      </div>
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {status.responded} of {status.nominated || 5} responded
+          </span>
+          <span>Need {status.threshold} to unlock</span>
+        </div>
+        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", status.ready ? "bg-emerald-500" : "bg-primary")}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      {status.lowConfidence ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-700">
+          <AlertTriangle className="size-3.5" />
+          Window closed with fewer than {status.threshold} responses — the AI will flag low confidence.
+        </p>
+      ) : null}
+    </section>
+  )
 }

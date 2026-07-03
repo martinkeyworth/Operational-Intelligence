@@ -442,7 +442,7 @@ export async function getTeamKpis(): Promise<TeamKpi[]> {
       label: "360s in progress",
       value: `${threeSixtyEngaged}/${roster.length}`,
       rag: "green",
-      help: "Team members with an open 360 review cycle (auto-opened every 6 months; 5 nominees each).",
+      help: "Team members with an open 360 review cycle (auto-opened monthly ahead of the 1-2-1; 5 nominees each).",
     },
     {
       code: "team_apprentice",

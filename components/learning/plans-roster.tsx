@@ -14,6 +14,9 @@ export type RosterRow = {
   period: string
   oneToOneStatus: string
   pbcOverall: number | null
+  threeSixtyResponded: number
+  threeSixtyNominated: number
+  threeSixtyReady: boolean
 }
 
 /** Leadership / manager roster of development plans + 1-2-1 status. */
@@ -34,6 +37,7 @@ export function PlansRoster({ rows }: { rows: RosterRow[] }) {
             <th className="px-3 py-2 font-medium">Site</th>
             <th className="px-3 py-2 font-medium">Target role</th>
             <th className="px-3 py-2 font-medium">Plan</th>
+            <th className="px-3 py-2 font-medium">360</th>
             <th className="px-3 py-2 font-medium">This month&apos;s 1-2-1</th>
             <th className="px-3 py-2 text-center font-medium">PBC</th>
             <th className="px-3 py-2 font-medium sr-only">Open</th>
@@ -55,6 +59,13 @@ export function PlansRoster({ rows }: { rows: RosterRow[] }) {
                   </div>
                   <span className="text-xs tabular-nums text-muted-foreground">{r.planProgressPct}%</span>
                 </div>
+              </td>
+              <td className="px-3 py-2">
+                <ThreeSixtyCell
+                  responded={r.threeSixtyResponded}
+                  nominated={r.threeSixtyNominated}
+                  ready={r.threeSixtyReady}
+                />
               </td>
               <td className="px-3 py-2">
                 <div className="flex flex-col items-start gap-1">
@@ -82,6 +93,37 @@ export function PlansRoster({ rows }: { rows: RosterRow[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function ThreeSixtyCell({
+  responded,
+  nominated,
+  ready,
+}: {
+  responded: number
+  nominated: number
+  ready: boolean
+}) {
+  if (nominated === 0) {
+    return <span className="text-xs text-muted-foreground">Not set up</span>
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs tabular-nums text-muted-foreground">
+        {responded}/{nominated}
+      </span>
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
+          ready
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+            : "border-border bg-muted text-muted-foreground",
+        )}
+      >
+        {ready ? "Ready" : "Collecting"}
+      </span>
     </div>
   )
 }

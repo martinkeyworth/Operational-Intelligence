@@ -24,6 +24,7 @@ import {
   type PlanItemStatus,
   type CourseRequirement,
 } from "@/lib/learning-types"
+import { threeSixtyReadiness } from "@/lib/three-sixty"
 
 // ---------------------------------------------------------------------------
 // L&D SERVER DATA LAYER — catalogue, role gates, plans, PBC, monthly 1-2-1.
@@ -546,6 +547,9 @@ export type LearningRosterRow = {
   oneToOneStatus: string
   oneToOneId: number | null
   pbcOverall: number | null
+  threeSixtyResponded: number
+  threeSixtyNominated: number
+  threeSixtyReady: boolean
 }
 
 /** Does this user manage at least one active barber? Used to let a non-exec
@@ -579,6 +583,7 @@ export async function getLearningRoster(managerUserId?: string | null): Promise<
       .where(and(eq(oneToOnes.barberId, b.id), eq(oneToOnes.period, period)))
       .limit(1)
     const pbc = await getPbcForPeriod(b.id, period)
+    const readiness = await threeSixtyReadiness(b.id, period)
     out.push({
       barberId: b.id,
       name: b.name,
@@ -591,6 +596,9 @@ export async function getLearningRoster(managerUserId?: string | null): Promise<
       oneToOneStatus: oto?.status ?? "None",
       oneToOneId: oto?.id ?? null,
       pbcOverall: pbc?.overall ?? null,
+      threeSixtyResponded: readiness.responded,
+      threeSixtyNominated: readiness.nominated,
+      threeSixtyReady: readiness.ready,
     })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
