@@ -122,3 +122,66 @@ export async function getCycleProgress(cycleId: number): Promise<{ nominated: nu
     .where(and(eq(threeSixtyNominees.cycleId, cycleId), isNotNull(threeSixtyNominees.respondedAt)))
   return { nominated: noms.length, responded: responded.length }
 }
+
+export type ThreeSixtyReadiness = {
+  cycleId: number | null
+  nominated: number
+  responded: number
+  threshold: number
+  windowClosed: boolean
+  ready: boolean
+  /** True when we should proceed but flag the AI as low-confidence (window
+   *  closed with fewer than the threshold number of responses). */
+  lowConfidence: boolean
+}
+
+/**
+ * Whether the 360 for this barber+period is ready to unlock the 1-2-1.
+ * Ready = at least THREE_SIXTY_MIN_RESPONSES responses in, OR the cycle window
+ * has closed (past due / status Closed). When the window closes with too few
+ * responses we still proceed, but flag low confidence for the AI PBC analysis.
+ */
+export async function threeSixtyReadiness(barberId: number, period: string, now = new Date()): Promise<ThreeSixtyReadiness> {
+  const cycle = await getCycleForPeriod(barberId, period)
+  if (!cycle) {
+    return { cycleId: null, nominated: 0, responded: 0, threshold: THREE_SIXTY_MIN_RESPONSES, windowClosed: false, ready: false, lowConfidence: false }
+  }
+  const { nominated, responded } = await getCycleProgress(cycle.id)
+  const duePassed = cycle.dueOn ? new Date(cycle.dueOn) < now : false
+  const windowClosed = cycle.status === "Closed" || duePassed
+  const enough = responded >= THREE_SIXTY_MIN_RESPONSES
+  const ready = enough || windowClosed
+  return {
+    cycleId: cycle.id,
+    nominated,
+    responded,
+    threshold: THREE_SIXTY_MIN_RESPONSES,
+    windowClosed,
+    ready,
+    lowConfidence: ready && !enough,
+  }
+}
+
+/**
+ * Ensure an Open 360 cycle exists for this barber+period (monthly). Idempotent:
+ * returns the existing cycle id if one is already there, otherwise creates one
+ * due at the end of the period's month. Nominees/invites are added when the
+ * barber nominates from their Team Area.
+ */
+export async function ensureCycleForPeriod(barberId: number, period: string): Promise<number> {
+  const existing = await getCycleForPeriod(barberId, period)
+  if (existing) return existing.id
+  // Due at the last day of the period month.
+  const [y, m] = period.split("-").map(Number)
+  const due = new Date(y, m, 0) // day 0 of next month = last day of this month
+  const [cycle] = await db
+    .insert(threeSixtyCycles)
+    .values({
+      barberId,
+      period,
+      dueOn: due.toISOString().slice(0, 10),
+      status: "Open",
+    })
+    .returning({ id: threeSixtyCycles.id })
+  return cycle.id
+}

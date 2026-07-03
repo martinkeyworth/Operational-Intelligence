@@ -10,6 +10,7 @@ import {
   type RsvpStatus,
 } from "@/lib/google-calendar"
 import { isNotNull } from "drizzle-orm"
+import { ensureCycleForPeriod } from "@/lib/three-sixty"
 
 /** Create a 1-2-1 for a barber at the given time. When Google Calendar is
  *  configured it creates an event on the shared LTZ calendar (which emails the
@@ -23,6 +24,14 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
   // keeps scheduled rows visible on the current-period learning roster and the
   // barber's Team Area (they all key off period).
   const period = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, "0")}`
+
+  // The 360 is an integral input to this 1-2-1 — make sure a cycle exists for
+  // the same period so reviewer feedback can be gathered and gate the review.
+  try {
+    await ensureCycleForPeriod(barberId, period)
+  } catch (err) {
+    console.error(`[v0] ensureCycleForPeriod failed for barber ${barberId} (${period}):`, err instanceof Error ? err.message : err)
+  }
 
   const [row] = await db
     .insert(oneToOnes)
@@ -140,11 +149,11 @@ export async function autoScheduleOneToOnes(now = new Date()): Promise<number> {
   return created
 }
 
-/** Auto-open 360 cycles every 6 months. Opens a cycle for any active barber
- *  who has no cycle opened in the current half-year. Returns how many opened. */
+/** Auto-open monthly 360 cycles. Opens a cycle for any active barber who has no
+ *  cycle for the current period (YYYY-MM). The 360 gates that month's 1-2-1.
+ *  Idempotent (safe to run daily). Returns how many opened. */
 export async function autoOpenThreeSixtyCycles(now = new Date()): Promise<number> {
-  const half = now.getMonth() < 6 ? "H1" : "H2"
-  const period = `${now.getFullYear()}-${half}`
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   const rows = await db.select().from(barbers).where(eq(barbers.active, true))
   let opened = 0
   for (const b of rows) {
@@ -154,8 +163,8 @@ export async function autoOpenThreeSixtyCycles(now = new Date()): Promise<number
       .where(and(eq(threeSixtyCycles.barberId, b.id), eq(threeSixtyCycles.period, period)))
       .limit(1)
     if (existing) continue
-    const due = new Date(now)
-    due.setDate(due.getDate() + 21)
+    // Due at the end of the period month.
+    const due = new Date(now.getFullYear(), now.getMonth() + 1, 0)
     const [cycle] = await db
       .insert(threeSixtyCycles)
       .values({
