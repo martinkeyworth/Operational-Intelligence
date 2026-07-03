@@ -19,6 +19,11 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
   const [barber] = await db.select().from(barbers).where(eq(barbers.id, barberId))
   if (!barber) throw new Error("Barber not found")
 
+  // Period is the calendar month the 1-2-1 falls in (YYYY-MM). Setting it here
+  // keeps scheduled rows visible on the current-period learning roster and the
+  // barber's Team Area (they all key off period).
+  const period = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, "0")}`
+
   const [row] = await db
     .insert(oneToOnes)
     .values({
@@ -28,6 +33,7 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
       status: "Scheduled",
       autoScheduled: false,
       inviteSentAt: new Date(),
+      period,
     })
     .returning({ id: oneToOnes.id })
 

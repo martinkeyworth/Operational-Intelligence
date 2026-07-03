@@ -14,6 +14,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { getCurrentOperatingWeek } from "@/lib/data"
+import { currentPeriod } from "@/lib/learning-types"
 
 // ---------------------------------------------------------------------------
 // TEAM AREA  —  self-service HR + performance hub for barbers & apprentices.
@@ -238,11 +239,12 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
     .reduce((s, r) => s + r.days, 0)
   const remaining = barber.holidayAllowance - holidayTaken
 
-  // Next 1-2-1 (upcoming or most recent scheduled).
+  // Current-period 1-2-1 — matches the learning roster so the barber sees the
+  // same status here as leadership sees in Learning Plans.
   const [next] = await db
     .select()
     .from(oneToOnes)
-    .where(eq(oneToOnes.barberId, barberId))
+    .where(and(eq(oneToOnes.barberId, barberId), eq(oneToOnes.period, currentPeriod())))
     .orderBy(desc(oneToOnes.scheduledFor))
     .limit(1)
 
@@ -354,7 +356,7 @@ export async function getTeamRoster(): Promise<TeamRosterMember[]> {
     const [next] = await db
       .select()
       .from(oneToOnes)
-      .where(eq(oneToOnes.barberId, b.id))
+      .where(and(eq(oneToOnes.barberId, b.id), eq(oneToOnes.period, currentPeriod())))
       .orderBy(desc(oneToOnes.scheduledFor))
       .limit(1)
     const [openCyc] = await db

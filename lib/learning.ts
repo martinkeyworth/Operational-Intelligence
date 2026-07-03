@@ -380,10 +380,14 @@ export type OneToOneRow = typeof oneToOnes.$inferSelect
 /** The most recent / open monthly 1-2-1 for a barber, with its self-prep and
  *  manager answers typed. */
 export async function getCurrentOneToOne(barberId: number): Promise<OneToOneRow | null> {
+  // The "current" 1-2-1 is the one for the CURRENT period — this is what the
+  // learning roster shows, so every surface stays consistent. A leftover row
+  // from a previous month must never masquerade as the current status.
+  const period = currentPeriod()
   const [row] = await db
     .select()
     .from(oneToOnes)
-    .where(eq(oneToOnes.barberId, barberId))
+    .where(and(eq(oneToOnes.barberId, barberId), eq(oneToOnes.period, period)))
     .orderBy(desc(oneToOnes.scheduledFor))
     .limit(1)
   return row ?? null
