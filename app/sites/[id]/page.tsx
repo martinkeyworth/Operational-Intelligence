@@ -28,6 +28,7 @@ import {
   getSubletForSiteWeek,
   getSubletHistory,
   getCapacityKpis,
+  getTrainingConfirmation,
   fmtGBP,
   fmtWeekLong,
 } from "@/lib/data"
@@ -66,6 +67,10 @@ export default async function SiteDetailPage({
   // Capacity / RTB / training KPIs.
   const capacity = week ? await getCapacityKpis(siteId, week) : null
   const isTraining = site.siteType === "training"
+  const trainingConfirm =
+    isTraining && week
+      ? await getTrainingConfirmation(siteId, week)
+      : { entered: false, confirmed: false, confirmedBy: null }
 
   return (
     <AppShell user={user}>
@@ -196,7 +201,13 @@ export default async function SiteDetailPage({
             )}
 
             {capacity && isTraining && (
-              <TrainingCard week={week} kpis={capacity} />
+              <TrainingCard
+                week={week}
+                kpis={capacity}
+                entered={trainingConfirm.entered}
+                confirmed={trainingConfirm.confirmed}
+                confirmedBy={trainingConfirm.confirmedBy}
+              />
             )}
 
             {capacity && !isTraining && (

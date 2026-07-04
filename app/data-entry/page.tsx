@@ -168,7 +168,13 @@ export default async function DataEntryPage({
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {t.name}
                 </h3>
-                <TrainingCard week={week} kpis={t.kpis} />
+                <TrainingCard
+                  week={week}
+                  kpis={t.kpis}
+                  entered={t.entered}
+                  confirmed={t.confirmed}
+                  confirmedBy={t.confirmedBy}
+                />
               </section>
             ))}
           </div>

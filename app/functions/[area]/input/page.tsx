@@ -89,7 +89,13 @@ export default async function FunctionAreaInputPage({
                   <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {t.name}
                   </h2>
-                  <TrainingCard week={week} kpis={t.kpis} />
+                  <TrainingCard
+                    week={week}
+                    kpis={t.kpis}
+                    entered={t.entered}
+                    confirmed={t.confirmed}
+                    confirmedBy={t.confirmedBy}
+                  />
                 </section>
               ))}
             </div>

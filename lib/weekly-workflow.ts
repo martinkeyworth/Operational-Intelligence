@@ -394,6 +394,46 @@ export async function dryRunConfirmationPlan(weekEnding = currentWeekEnding()) {
   }
 }
 
+// Send the urgent "confirm now" prompt to ONE specific person for just their
+// outstanding items. Used to chase an individual (e.g. a late confirmation)
+// without re-emailing everyone or touching the idempotency timestamp.
+export async function sendConfirmPromptTo(
+  email: string,
+  weekEnding = currentWeekEnding(),
+) {
+  const target = email.trim().toLowerCase()
+  const status = await getSubmissionStatus(weekEnding)
+  const contacts = await getSiteManagerContacts()
+
+  const items = status.outstanding.filter((item) =>
+    responsibleEmailsFor(item, contacts).some(
+      (e) => e.toLowerCase() === target,
+    ),
+  )
+  if (items.length === 0)
+    return { sent: 0, email: target, reason: "nothing outstanding for this person" }
+
+  const html = emailShell(
+    `Action needed tonight · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before tonight's 20:00 board report.</p>
+     <p style="margin:0 0 12px;">These items for week ending <strong>${fmtWeekLong(
+       weekEnding,
+     )}</strong> are still outstanding. <strong>Tap each item below</strong> to go straight to the exact page you need to update (enter the figures, then tick the weekly confirmation):</p>
+     ${outstandingTable(items, weekEnding)}
+     <p style="margin:0;color:#6b7280;">If this isn't resolved within the hour it will be escalated to Martin and Cosmin.</p>`,
+  )
+  const res = await sendEmail({
+    to: target,
+    subject: `Urgent: confirm ${items.length} item${
+      items.length === 1 ? "" : "s"
+    } tonight (w/e ${fmtWeekLong(weekEnding)})`,
+    html,
+    kind: "confirm_prompt",
+    weekEnding,
+  })
+  return { sent: res.ok ? 1 : 0, email: target, items: items.map((i) => i.label) }
+}
+
 // 18:00 — urgent prompt to each responsible manager/lead to confirm & submit
 // their outstanding items before tonight's board report.
 export async function confirmationPrompt(weekEnding = currentWeekEnding()) {

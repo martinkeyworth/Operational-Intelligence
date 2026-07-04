@@ -173,6 +173,44 @@ export async function editSite(formData: FormData) {
   revalidatePath("/")
 }
 
+// Explicitly confirm a training site's weekly throughput. Entering the figures
+// (saveTrainingWeek) is separate from confirming them — a site only counts as
+// "done" for the weekly submission/escalation flow once confirmed here.
+export async function confirmTrainingWeek(formData: FormData) {
+  const user = await requireDataEntry()
+  const siteId = Number(formData.get("siteId"))
+  const weekEnding = String(formData.get("weekEnding"))
+  if (!siteId || !weekEnding) throw new Error("Missing site or week")
+
+  const existing = await db
+    .select({ id: trainingWeeks.id })
+    .from(trainingWeeks)
+    .where(
+      and(
+        eq(trainingWeeks.siteId, siteId),
+        eq(trainingWeeks.weekEnding, weekEnding),
+      ),
+    )
+  // Must enter the figures before confirming them.
+  if (existing.length === 0)
+    throw new Error("Enter this week's training figures before confirming")
+
+  await db
+    .update(trainingWeeks)
+    .set({
+      confirmed: true,
+      confirmedBy: user.name || user.email,
+      confirmedAt: new Date(),
+    })
+    .where(eq(trainingWeeks.id, existing[0].id))
+
+  revalidatePath("/functions/Training/input")
+  revalidatePath("/sites")
+  revalidatePath(`/sites/${siteId}`)
+  revalidatePath("/")
+}
+
+
 /**
  * Manually raise a new action/risk on the register. This is the human entry
  * point that complements the KPI-driven auto-raised actions. Captures title,

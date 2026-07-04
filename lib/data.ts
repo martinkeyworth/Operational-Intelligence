@@ -1739,19 +1739,73 @@ export async function getCapacityKpis(
  *  Input page so training can be entered alongside takings). */
 export async function getTrainingSitesForWeek(
   week: string,
-): Promise<{ id: number; name: string; kpis: CapacityKpis }[]> {
+): Promise<
+  {
+    id: number
+    name: string
+    kpis: CapacityKpis
+    entered: boolean
+    confirmed: boolean
+    confirmedBy: string | null
+  }[]
+> {
   const rows = await db
     .select({ id: sites.id, name: sites.name })
     .from(sites)
     .where(eq(sites.siteType, "training"))
     .orderBy(sites.name)
 
-  const out: { id: number; name: string; kpis: CapacityKpis }[] = []
+  const out: {
+    id: number
+    name: string
+    kpis: CapacityKpis
+    entered: boolean
+    confirmed: boolean
+    confirmedBy: string | null
+  }[] = []
   for (const r of rows) {
     const kpis = await getCapacityKpis(r.id, week)
-    if (kpis) out.push({ id: r.id, name: r.name, kpis })
+    if (!kpis) continue
+    const [tw] = await db
+      .select({
+        confirmed: trainingWeeks.confirmed,
+        confirmedBy: trainingWeeks.confirmedBy,
+      })
+      .from(trainingWeeks)
+      .where(
+        and(eq(trainingWeeks.siteId, r.id), eq(trainingWeeks.weekEnding, week)),
+      )
+    out.push({
+      id: r.id,
+      name: r.name,
+      kpis,
+      entered: Boolean(tw),
+      confirmed: Boolean(tw?.confirmed),
+      confirmedBy: tw?.confirmedBy ?? null,
+    })
   }
   return out
+}
+
+// Whether a single training site has entered + confirmed the given week.
+export async function getTrainingConfirmation(
+  siteId: number,
+  week: string,
+): Promise<{ entered: boolean; confirmed: boolean; confirmedBy: string | null }> {
+  const [tw] = await db
+    .select({
+      confirmed: trainingWeeks.confirmed,
+      confirmedBy: trainingWeeks.confirmedBy,
+    })
+    .from(trainingWeeks)
+    .where(
+      and(eq(trainingWeeks.siteId, siteId), eq(trainingWeeks.weekEnding, week)),
+    )
+  return {
+    entered: Boolean(tw),
+    confirmed: Boolean(tw?.confirmed),
+    confirmedBy: tw?.confirmedBy ?? null,
+  }
 }
 
 // ---------------------------------------------------------------------------

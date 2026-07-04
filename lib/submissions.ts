@@ -108,7 +108,7 @@ export async function getSubmissionStatus(
       .from(sublettingTakings)
       .where(eq(sublettingTakings.weekEnding, week)),
     db
-      .select({ siteId: trainingWeeks.siteId })
+      .select({ siteId: trainingWeeks.siteId, confirmed: trainingWeeks.confirmed })
       .from(trainingWeeks)
       .where(eq(trainingWeeks.weekEnding, week)),
   ])
@@ -122,6 +122,9 @@ export async function getSubmissionStatus(
   const subletExpected = new Set(subletSiteIds.map((r) => r.siteId))
   const subletSubmitted = new Set(subletWeekRows.map((r) => r.siteId))
   const trainingSubmitted = new Set(trainingWeekRows.map((r) => r.siteId))
+  const trainingConfirmed = new Set(
+    trainingWeekRows.filter((r) => r.confirmed).map((r) => r.siteId),
+  )
 
   const items: SubmissionItem[] = []
 
@@ -129,17 +132,22 @@ export async function getSubmissionStatus(
     const isTraining = s.siteType === "training"
 
     if (isTraining) {
-      // Training site -> expect a training_weeks entry.
+      // Training site -> expect a training_weeks entry AND an explicit
+      // confirmation. Entering the figures alone no longer counts as done.
+      const entered = trainingSubmitted.has(s.id)
+      const confirmed = trainingConfirmed.has(s.id)
       items.push({
         key: `training-${s.id}`,
         category: "Training",
         label: `${s.name} — training throughput`,
         ownerRole: "Training Lead",
         siteId: s.id,
-        submitted: trainingSubmitted.has(s.id),
-        detail: trainingSubmitted.has(s.id)
-          ? "Entered"
-          : "No learners/apprentices entered",
+        submitted: confirmed,
+        detail: confirmed
+          ? "Confirmed"
+          : entered
+            ? "Entered, not confirmed"
+            : "No learners/apprentices entered",
       })
     } else {
       // Barbershop -> the manager's DECLARED headcount (sites.headcount) is the

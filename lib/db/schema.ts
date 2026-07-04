@@ -273,8 +273,13 @@ export const trainingWeeks = pgTable("training_weeks", {
   apprentices: integer("apprentices").notNull().default(0),
   recordedBy: text("recorded_by"),
   notes: text("notes"),
+  // Explicit weekly confirmation for the training site (entering figures is
+  // separate from confirming them). Drives the outstanding/escalation flow.
+  confirmed: boolean("confirmed").notNull().default(false),
+  confirmedBy: text("confirmed_by"),
+  confirmedAt: timestamp("confirmed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-})
+  })
 
 // Weekly board pack: AI analysis + leadership narratives + send status. One
 // row per week-ending. Drives the Saturday reporting workflow.

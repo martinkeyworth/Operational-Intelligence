@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { GraduationCap, PlusCircle } from "lucide-react"
+import { GraduationCap, PlusCircle, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,7 +19,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { RagBadge } from "@/components/rag"
-import { saveTrainingWeek } from "@/app/actions/governance"
+import { saveTrainingWeek, confirmTrainingWeek } from "@/app/actions/governance"
 import { fmtWeekLong, type Rag } from "@/lib/format"
 
 type TrainingKpis = {
@@ -68,13 +68,33 @@ function Metric({
 export function TrainingCard({
   week,
   kpis,
+  entered,
+  confirmed,
+  confirmedBy,
 }: {
   week: string
   kpis: TrainingKpis
+  entered: boolean
+  confirmed: boolean
+  confirmedBy: string | null
 }) {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const router = useRouter()
+
+  async function confirmAction() {
+    setConfirming(true)
+    try {
+      const fd = new FormData()
+      fd.set("siteId", String(kpis.siteId))
+      fd.set("weekEnding", week)
+      await confirmTrainingWeek(fd)
+      router.refresh()
+    } finally {
+      setConfirming(false)
+    }
+  }
 
   const learnersOk =
     kpis.learnerCapacity <= 0 || kpis.privateLearners >= kpis.learnerCapacity
@@ -136,7 +156,20 @@ export function TrainingCard({
         </p>
       )}
 
-      <div className="mt-4">
+      {confirmed ? (
+        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-rag-green/30 bg-rag-green/5 px-3 py-2 text-xs text-rag-green">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          Confirmed for W/E {fmtWeekLong(week)}
+          {confirmedBy ? ` by ${confirmedBy}` : ""}.
+        </p>
+      ) : entered ? (
+        <p className="mt-3 rounded-md border border-rag-amber/40 bg-rag-amber/10 px-3 py-2 text-xs text-rag-amber-foreground">
+          Figures entered but <strong>not yet confirmed</strong>. Confirm to
+          close out this week.
+        </p>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger
             render={<Button size="sm" variant="outline" className="h-8 gap-1.5" />}
@@ -207,6 +240,22 @@ export function TrainingCard({
             </form>
           </DialogContent>
         </Dialog>
+        {!confirmed && (
+          <Button
+            size="sm"
+            className="h-8 gap-1.5"
+            disabled={!entered || confirming}
+            onClick={confirmAction}
+            title={
+              entered
+                ? "Confirm this week's training throughput"
+                : "Enter this week's figures first"
+            }
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {confirming ? "Confirming…" : "Confirm this week"}
+          </Button>
+        )}
       </div>
     </Card>
   )
