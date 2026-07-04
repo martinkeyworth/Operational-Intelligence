@@ -1829,7 +1829,10 @@ export type AdminBarber = {
   name: string
   role: string
   hasData: boolean
+  siteId: number
 }
+
+export type AdminSiteOption = { id: number; name: string }
 
 export type BarberSiteGroup = {
   siteId: number
@@ -1867,6 +1870,7 @@ export async function getActiveBarbersBySite(): Promise<BarberSiteGroup[]> {
         name: b.name,
         role: b.role,
         hasData: reportedSet.has(b.id),
+        siteId: b.siteId,
       })),
   }))
 }
