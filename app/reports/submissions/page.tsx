@@ -147,7 +147,13 @@ export default async function SubmissionsPage({
           <StatCard
             label={status.pastDeadline ? "Outstanding" : "Awaited"}
             value={status.outstandingCount}
-            sub={status.pastDeadline ? "Past deadline" : "Before 18:00 Sat"}
+            sub={
+              status.awaitingConfirmationCount > 0
+                ? `${status.awaitingConfirmationCount} awaiting sign-off`
+                : status.pastDeadline
+                  ? "Past deadline"
+                  : "Before 18:00 Sat"
+            }
           />
           <StatCard
             label="Status"
@@ -215,9 +221,16 @@ export default async function SubmissionsPage({
                       {item.ownerRole} · {item.detail}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                    {item.category}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {item.awaitingConfirmation && (
+                      <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[11px] font-medium text-rag-amber">
+                        Awaiting sign-off
+                      </span>
+                    )}
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                      {item.category}
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>

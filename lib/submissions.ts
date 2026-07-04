@@ -42,6 +42,11 @@ export type SubmissionItem = {
    *  Null for group-level items such as HR/Marketing KPIs. Used to route the
    *  urgent confirmation prompt to the responsible site manager. */
   siteId: number | null
+  /** True when the underlying figures are in but the explicit weekly sign-off
+   *  is still pending — i.e. the item just needs a manager to click "Confirm",
+   *  not fresh data entry. Lets leadership tell "awaiting sign-off" apart from
+   *  "nothing entered" on the submissions board. */
+  awaitingConfirmation: boolean
 }
 
 export type SubmissionCategorySummary = {
@@ -58,6 +63,9 @@ export type SubmissionSummary = {
   total: number
   submittedCount: number
   outstandingCount: number
+  /** How many outstanding items are merely awaiting a confirmation click
+   *  (figures already in) rather than missing data entirely. */
+  awaitingConfirmationCount: number
   pct: number
   complete: boolean
   byCategory: SubmissionCategorySummary[]
@@ -143,6 +151,7 @@ export async function getSubmissionStatus(
         ownerRole: "Training Lead",
         siteId: s.id,
         submitted: confirmed,
+        awaitingConfirmation: entered && !confirmed,
         detail: confirmed
           ? "Confirmed"
           : entered
@@ -166,6 +175,7 @@ export async function getSubmissionStatus(
         ownerRole: s.managerName ? `${s.managerName} (Manager)` : "Site Manager",
         siteId: s.id,
         submitted: takingsSubmitted,
+        awaitingConfirmation: false,
         detail:
           declared === 0
             ? "Headcount not declared by manager"
@@ -183,6 +193,7 @@ export async function getSubmissionStatus(
         ownerRole: "Functional Leader",
         siteId: s.id,
         submitted: confirmationValid,
+        awaitingConfirmation: takingsSubmitted && !confirmed,
         detail: confirmationValid
           ? "Confirmed"
           : confirmed
@@ -200,6 +211,7 @@ export async function getSubmissionStatus(
         ownerRole: "Operations",
         siteId: s.id,
         submitted: subletSubmitted.has(s.id),
+        awaitingConfirmation: false,
         detail: subletSubmitted.has(s.id) ? "Entered" : "Not entered",
       })
     }
@@ -217,6 +229,7 @@ export async function getSubmissionStatus(
       ownerRole: area === "HR" ? "HR Lead" : "Social Media",
       siteId: null,
       submitted: enteredCount === results.length,
+      awaitingConfirmation: false,
       detail: `${enteredCount}/${results.length} KPIs entered`,
     })
   }
@@ -257,6 +270,8 @@ export async function getSubmissionStatus(
     total,
     submittedCount,
     outstandingCount: outstanding.length,
+    awaitingConfirmationCount: outstanding.filter((i) => i.awaitingConfirmation)
+      .length,
     pct,
     complete: outstanding.length === 0,
     byCategory,
