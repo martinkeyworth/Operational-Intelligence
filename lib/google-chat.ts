@@ -4,10 +4,24 @@ import { google, type chat_v1 } from "googleapis"
 /**
  * Google Chat integration for the weekly submission chase.
  *
- * Sends a PRIVATE 1:1 Chat DM to each responsible person ALONGSIDE the existing
- * chase emails (18:00 prompt, 19:00 escalation, all-clear). Reuses the same
- * Workspace service account (with domain-wide delegation) that powers the
- * calendar integration — no new service account.
+ * TWO delivery modes — the caller doesn't care which is active:
+ *
+ *  A) WEBHOOK (easy, preferred, zero admin setup). If GOOGLE_CHAT_WEBHOOK_URL
+ *     is set, every message is POSTed as a card to that one Chat space's
+ *     incoming webhook. Setup = create a webhook in a Google Chat space
+ *     (Apps & integrations → Webhooks) and paste the URL — no Google Cloud
+ *     project, no service account, no delegation scopes, no domain limit. Each
+ *     card names who it's for, so a shared "Weekly Submissions" space works for
+ *     the whole team (including gmail/hotmail managers).
+ *
+ *  B) PER-PERSON DM (advanced). If no webhook is set but the service account +
+ *     GOOGLE_CHAT_ENABLED are, it privately DMs each in-domain person (see auth
+ *     model below). Requires the Workspace admin setup.
+ *
+ * Both run ALONGSIDE the chase emails and NEVER block or throw into the email
+ * path — any missing config / error returns { ok:false, reason }.
+ *
+ * ---- Per-person DM auth model (mode B only) ----
  *
  * Auth model:
  *  - APP auth (service account, scope chat.bot, NO subject) is used to read the
@@ -43,7 +57,14 @@ const DIRECTORY_SCOPES = [
   "https://www.googleapis.com/auth/admin.directory.user.readonly",
 ]
 
+/** The easy path: an incoming-webhook URL for a single Chat space. */
+function chatWebhookUrl(): string {
+  return (process.env.GOOGLE_CHAT_WEBHOOK_URL || "").trim()
+}
+
+/** True when EITHER delivery mode is usable. */
 export function isChatConfigured(): boolean {
+  if (chatWebhookUrl()) return true
   return Boolean(
     process.env.GOOGLE_CHAT_ENABLED &&
       process.env.GOOGLE_CHAT_ENABLED.toLowerCase() === "true" &&
@@ -164,9 +185,84 @@ export type ChatDmArgs = {
 }
 
 /**
- * Send a Chat DM card to one person. Best-effort: returns { ok:false, reason }
- * (never throws) when Chat is off, the address is out of domain, no DM can be
- * opened, or the API errors — so the caller's email path is unaffected.
+ * Build the cardsV2 payload shared by both delivery modes. When `forLabel` is
+ * given (webhook mode → shared space), it's shown under the header so everyone
+ * can see who the message is for.
+ */
+function buildCardMessage(
+  args: ChatDmArgs,
+  forLabel?: string,
+): chat_v1.Schema$Message {
+  const accent = args.tone === "positive" ? "#16a34a" : "#b91c1c"
+  const widgets: chat_v1.Schema$GoogleAppsCardV1Widget[] = [
+    {
+      decoratedText: {
+        text: `<font color="${accent}"><b>${
+          args.tone === "positive" ? "All clear" : "Action needed"
+        }</b></font>`,
+      },
+    },
+    ...(forLabel
+      ? [{ decoratedText: { topLabel: "For", text: forLabel } }]
+      : []),
+    { textParagraph: { text: args.intro } },
+    ...args.lines.map((t) => ({ textParagraph: { text: `• ${t}` } })),
+  ]
+  if (args.button) {
+    widgets.push({
+      buttonList: {
+        buttons: [
+          {
+            text: args.button.text,
+            onClick: { openLink: { url: args.button.url } },
+          },
+        ],
+      },
+    })
+  }
+  return {
+    cardsV2: [
+      {
+        cardId: "ltz-weekly-chase",
+        card: {
+          header: { title: args.title, imageType: "CIRCLE" },
+          sections: [{ widgets }],
+        },
+      },
+    ],
+  }
+}
+
+/** POST a card to the single-space incoming webhook (easy mode). */
+async function sendViaWebhook(
+  args: ChatDmArgs,
+  forLabel?: string,
+): Promise<ChatDmResult> {
+  try {
+    const res = await fetch(chatWebhookUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify(buildCardMessage(args, forLabel)),
+    })
+    if (!res.ok) {
+      console.log("[v0] chat webhook non-2xx:", res.status)
+      return { ok: false, reason: "webhook-error" }
+    }
+    return { ok: true }
+  } catch (err) {
+    console.log(
+      "[v0] chat webhook failed:",
+      err instanceof Error ? err.message : String(err),
+    )
+    return { ok: false, reason: "error" }
+  }
+}
+
+/**
+ * Send a Chat card for one person. Prefers the easy webhook mode (posts to a
+ * shared space, labelled with the person's name); otherwise falls back to a
+ * private per-person DM. Best-effort: returns { ok:false, reason } (never
+ * throws) so the caller's email path is unaffected.
  */
 export async function sendChatDm(
   email: string,
@@ -174,62 +270,18 @@ export async function sendChatDm(
 ): Promise<ChatDmResult> {
   try {
     if (!isChatConfigured()) return { ok: false, reason: "not-configured" }
-    if (!isChatEligible(email)) return { ok: false, reason: "out-of-domain" }
 
+    // Easy mode: one shared-space webhook, no domain limit.
+    if (chatWebhookUrl()) return sendViaWebhook(args, email)
+
+    // Advanced mode: private DM, in-domain only.
+    if (!isChatEligible(email)) return { ok: false, reason: "out-of-domain" }
     const space = await resolveDmSpace(email)
     if (!space) return { ok: false, reason: "no-dm" }
 
-    const accent = args.tone === "positive" ? "#16a34a" : "#b91c1c"
-    const widgets: chat_v1.Schema$GoogleAppsCardV1Widget[] = [
-      { textParagraph: { text: args.intro } },
-      ...args.lines.map((t) => ({ textParagraph: { text: `• ${t}` } })),
-    ]
-    if (args.button) {
-      widgets.push({
-        buttonList: {
-          buttons: [
-            {
-              text: args.button.text,
-              onClick: { openLink: { url: args.button.url } },
-            },
-          ],
-        },
-      })
-    }
-
     await appChatClient().spaces.messages.create({
       parent: space,
-      requestBody: {
-        cardsV2: [
-          {
-            cardId: "ltz-weekly-chase",
-            card: {
-              header: {
-                title: args.title,
-                imageType: "CIRCLE",
-              },
-              sections: [
-                {
-                  widgets: [
-                    {
-                      // Coloured accent strip via a decorated text so the tone
-                      // reads at a glance in the DM.
-                      decoratedText: {
-                        text: `<font color="${accent}"><b>${
-                          args.tone === "positive"
-                            ? "All clear"
-                            : "Action needed"
-                        }</b></font>`,
-                      },
-                    },
-                    ...widgets,
-                  ],
-                },
-              ],
-            },
-          },
-        ],
-      },
+      requestBody: buildCardMessage(args),
     })
     return { ok: true }
   } catch (err) {
