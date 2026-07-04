@@ -121,7 +121,7 @@ export default async function DataEntryPage({
           </Card>
         ) : (
           barberSites.map((site) => (
-            <section key={site.id} className="space-y-3">
+            <section key={site.id} id={`site-${site.id}`} className="space-y-3 scroll-mt-24">
               <div className="flex items-baseline justify-between">
                 <h2 className="text-sm font-semibold text-foreground">
                   {site.name}

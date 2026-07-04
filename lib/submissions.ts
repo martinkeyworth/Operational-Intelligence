@@ -2,6 +2,8 @@ import "server-only"
 import { db } from "@/lib/db"
 import {
   sites,
+  barbers,
+  user as userTable,
   weeklyTakings,
   siteConfirmations,
   sublettingTakings,
@@ -36,6 +38,10 @@ export type SubmissionItem = {
   ownerRole: string
   submitted: boolean
   detail: string
+  /** Site this item belongs to (Takings/Confirmation/Subletting/Training).
+   *  Null for group-level items such as HR/Marketing KPIs. Used to route the
+   *  urgent confirmation prompt to the responsible site manager. */
+  siteId: number | null
 }
 
 export type SubmissionCategorySummary = {
@@ -129,6 +135,7 @@ export async function getSubmissionStatus(
         category: "Training",
         label: `${s.name} — training throughput`,
         ownerRole: "Training Lead",
+        siteId: s.id,
         submitted: trainingSubmitted.has(s.id),
         detail: trainingSubmitted.has(s.id)
           ? "Entered"
@@ -149,6 +156,7 @@ export async function getSubmissionStatus(
         category: "Takings",
         label: `${s.name} — barber takings`,
         ownerRole: s.managerName ? `${s.managerName} (Manager)` : "Site Manager",
+        siteId: s.id,
         submitted: takingsSubmitted,
         detail:
           declared === 0
@@ -165,6 +173,7 @@ export async function getSubmissionStatus(
         category: "Confirmation",
         label: `${s.name} — weekly confirmation`,
         ownerRole: "Functional Leader",
+        siteId: s.id,
         submitted: confirmationValid,
         detail: confirmationValid
           ? "Confirmed"
@@ -181,6 +190,7 @@ export async function getSubmissionStatus(
         category: "Subletting",
         label: `${s.name} — subletting income`,
         ownerRole: "Operations",
+        siteId: s.id,
         submitted: subletSubmitted.has(s.id),
         detail: subletSubmitted.has(s.id) ? "Entered" : "Not entered",
       })
@@ -197,6 +207,7 @@ export async function getSubmissionStatus(
       category: "KPI",
       label: `${area} — weekly KPIs`,
       ownerRole: area === "HR" ? "HR Lead" : "Social Media",
+      siteId: null,
       submitted: enteredCount === results.length,
       detail: `${enteredCount}/${results.length} KPIs entered`,
     })
@@ -245,4 +256,65 @@ export async function getSubmissionStatus(
     overdue,
     overdueCount: overdue.length,
   }
+}
+
+export type SiteManagerContact = {
+  siteId: number
+  siteName: string
+  managerName: string | null
+  /** Resolved login emails for whoever runs this site (may be more than one,
+   *  e.g. a co-managed site). Empty when no manager account can be resolved. */
+  emails: string[]
+}
+
+/**
+ * Resolve the responsible manager email(s) for each site, used to route the
+ * urgent confirmation prompt. A site's manager is any active barber whose role
+ * contains "manager" OR whose name appears in sites.manager_name (which can be
+ * a "Cosmin / Mario" style pairing), linked to a Better Auth login for the
+ * email. Sites with no resolvable manager return an empty email list so the
+ * caller can fall back to the owners.
+ */
+export async function getSiteManagerContacts(): Promise<
+  Map<number, SiteManagerContact>
+> {
+  const [siteRows, managerRows] = await Promise.all([
+    db.select({ id: sites.id, name: sites.name, managerName: sites.managerName }).from(sites),
+    db
+      .select({
+        siteId: barbers.siteId,
+        barberName: barbers.name,
+        role: barbers.role,
+        email: userTable.email,
+      })
+      .from(barbers)
+      .innerJoin(userTable, eq(userTable.id, barbers.userId))
+      .where(eq(barbers.active, true)),
+  ])
+
+  const result = new Map<number, SiteManagerContact>()
+  for (const s of siteRows) {
+    const declaredNames = (s.managerName ?? "")
+      .split(/[\/,&]|\band\b/i)
+      .map((n) => n.trim().toLowerCase())
+      .filter(Boolean)
+
+    const emails = new Set<string>()
+    for (const m of managerRows) {
+      if (m.siteId !== s.id) continue
+      const isManagerRole = (m.role ?? "").toLowerCase().includes("manager")
+      const isNamedManager = declaredNames.some((n) =>
+        m.barberName.toLowerCase().includes(n),
+      )
+      if (isManagerRole || isNamedManager) emails.add(m.email.toLowerCase())
+    }
+
+    result.set(s.id, {
+      siteId: s.id,
+      siteName: s.name,
+      managerName: s.managerName,
+      emails: [...emails],
+    })
+  }
+  return result
 }

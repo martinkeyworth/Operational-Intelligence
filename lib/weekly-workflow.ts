@@ -12,9 +12,14 @@ import { fmtWeekLong, getActions } from "@/lib/data"
 import { canonicalAreaKey } from "@/lib/function-areas"
 import { fmtGBP } from "@/lib/format"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
-import { getSubmissionStatus } from "@/lib/submissions"
+import {
+  getSubmissionStatus,
+  getSiteManagerContacts,
+  type SubmissionItem,
+} from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
 import { OWNER_EMAILS } from "@/lib/access-types"
+import { defaultOwnerEmailForArea } from "@/lib/area-owners"
 import {
   currentWeekEnding,
   getOrCreateReport,
@@ -31,6 +36,8 @@ import {
  * the cron can call them at the right times (UK):
  *  - 17:00 remindUsers          → nudge everyone to update their section
  *  - 18:00 submissionAlert       → email leadership who is still outstanding
+ *  - 18:00 confirmationPrompt    → urgent "confirm & submit" to each manager/lead
+ *  - 19:00 escalateUnconfirmed   → escalate anything still outstanding to owners
  *  - 18:50 runAnalysis          → AI week-on-week KPI analysis
  *  - 19:00 requestCosminNarrative → email COO for a narrative
  *  - 20:00 sendBoardReport      → RAG + AI review to all @company users
@@ -243,6 +250,257 @@ export async function submissionAlert(weekEnding = currentWeekEnding()) {
     .set({ submissionAlertSentAt: new Date() })
     .where(eq(weeklyReports.weekEnding, weekEnding))
   return { sent, outstanding: status.outstandingCount }
+}
+
+// ---------------------------------------------------------------------------
+// Urgent confirmation prompt (18:00) + owner escalation (19:00).
+//
+// The 18:00 submissionAlert tells leadership WHO is outstanding. These two
+// steps chase the person who actually has to act:
+//   1) confirmationPrompt  (18:00) — email the responsible SITE MANAGER (or
+//      area lead) an urgent "you must confirm/submit these items tonight".
+//   2) escalateUnconfirmed (19:00) — an hour later, anything STILL outstanding
+//      is escalated to the OWNERS (Martin + Cosmin) with instructions to
+//      resolve, plus a copy to the manager so they know it went up.
+// Both are idempotent (guarded by weekly_reports.confirm* timestamps).
+// ---------------------------------------------------------------------------
+
+// Resolve the email(s) responsible for actioning a single outstanding item.
+function responsibleEmailsFor(
+  item: SubmissionItem,
+  contacts: Map<number, { emails: string[] }>,
+): string[] {
+  // Site-scoped work (takings, confirmation, subletting, training) → the site
+  // manager who owns that site.
+  if (item.siteId != null) {
+    const emails = contacts.get(item.siteId)?.emails ?? []
+    if (emails.length > 0) return emails
+    // No resolvable site manager → fall back to the accountable area lead.
+    if (item.category === "Training")
+      return [defaultOwnerEmailForArea("Training")]
+    if (item.category === "Subletting")
+      return [defaultOwnerEmailForArea("Subletting")]
+    return [defaultOwnerEmailForArea("Marketing")] // Takings/Confirmation → Head of Brands
+  }
+  // Group-level KPI areas.
+  if (item.category === "KPI") {
+    return item.label.toLowerCase().startsWith("hr")
+      ? [defaultOwnerEmailForArea("HR")]
+      : [defaultOwnerEmailForArea("Marketing")]
+  }
+  return []
+}
+
+// Build the exact in-app URL that resolves a single outstanding item, so the
+// recipient lands directly on the page (and week) they need to action rather
+// than a generic entry screen.
+function deepLinkFor(item: SubmissionItem, weekEnding: string): string {
+  const base = appBaseUrl()
+  const w = `week=${encodeURIComponent(weekEnding)}`
+  switch (item.category) {
+    case "Takings":
+      // Per-barber takings entry, jumped to this site's section.
+      return `${base}/data-entry?${w}${item.siteId != null ? `#site-${item.siteId}` : ""}`
+    case "Confirmation":
+    case "Subletting":
+      // Weekly confirmation dialog + subletting card both live on the site page.
+      return item.siteId != null
+        ? `${base}/sites/${item.siteId}?${w}`
+        : `${base}/data-entry?${w}`
+    case "Training":
+      return `${base}/functions/Training/input?${w}`
+    case "KPI":
+      return item.label.toLowerCase().startsWith("hr")
+        ? `${base}/functions/HR/input?${w}`
+        : `${base}/functions/Marketing/input?${w}`
+    default:
+      return `${base}/data-entry?${w}`
+  }
+}
+
+// Render an outstanding-items table for a chase/escalation email. Every row's
+// label is a direct link to the exact page/week that resolves that item.
+function outstandingTable(items: SubmissionItem[], weekEnding: string): string {
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
+     <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
+       <th style="padding:0 0 6px;">Outstanding — tap to open</th>
+       <th style="padding:0 0 6px;text-align:right;">Status</th>
+     </tr></thead>
+     <tbody>${items
+       .map(
+         (i) =>
+           `<tr>
+             <td style="padding:7px 8px 7px 0;border-bottom:1px solid #f0f0f0;">
+               <a href="${deepLinkFor(i, weekEnding)}" style="color:#b91c1c;text-decoration:underline;font-weight:600;">${esc(
+                 i.label,
+               )}</a>
+               <span style="color:#9ca3af;"> &rarr;</span>
+             </td>
+             <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:#b91c1c;">${esc(
+               i.detail,
+             )}</td>
+           </tr>`,
+       )
+       .join("")}</tbody>
+   </table>`
+}
+
+// 18:00 — urgent prompt to each responsible manager/lead to confirm & submit
+// their outstanding items before tonight's board report.
+export async function confirmationPrompt(weekEnding = currentWeekEnding()) {
+  const report = await getOrCreateReport(weekEnding)
+  if (report.confirmPromptSentAt) return { skipped: true, reason: "already sent" }
+
+  const status = await getSubmissionStatus(weekEnding)
+  if (status.complete) {
+    await db
+      .update(weeklyReports)
+      .set({ confirmPromptSentAt: new Date() })
+      .where(eq(weeklyReports.weekEnding, weekEnding))
+    return { sent: 0, reason: "nothing outstanding" }
+  }
+
+  const contacts = await getSiteManagerContacts()
+
+  // Group outstanding items by the person who must action them.
+  const byPerson = new Map<string, SubmissionItem[]>()
+  for (const item of status.outstanding) {
+    for (const email of responsibleEmailsFor(item, contacts)) {
+      const list = byPerson.get(email) ?? []
+      list.push(item)
+      byPerson.set(email, list)
+    }
+  }
+
+  let sent = 0
+  for (const [email, items] of byPerson) {
+    const html = emailShell(
+      `Action needed tonight · w/e ${fmtWeekLong(weekEnding)}`,
+      `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before tonight's 20:00 board report.</p>
+       <p style="margin:0 0 12px;">These items for week ending <strong>${fmtWeekLong(
+         weekEnding,
+       )}</strong> are still outstanding. <strong>Tap each item below</strong> to go straight to the exact page you need to update (enter the figures, and tick the weekly confirmation once your barbers' takings are in):</p>
+       ${outstandingTable(items, weekEnding)}
+       <p style="margin:0;color:#6b7280;">If this isn't resolved within the hour it will be escalated to Martin and Cosmin at 19:00.</p>`,
+    )
+    const res = await sendEmail({
+      to: email,
+      subject: `Urgent: confirm ${items.length} item${
+        items.length === 1 ? "" : "s"
+      } tonight (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "confirm_prompt",
+      weekEnding,
+    })
+    if (res.ok) sent++
+  }
+
+  await db
+    .update(weeklyReports)
+    .set({ confirmPromptSentAt: new Date() })
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  return { sent, people: byPerson.size, outstanding: status.outstandingCount }
+}
+
+// 19:00 — one hour after the urgent prompt, escalate anything STILL outstanding
+// to the owners with instructions to resolve, cc'ing the responsible manager.
+export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
+  const report = await getOrCreateReport(weekEnding)
+  if (report.confirmEscalatedAt) return { skipped: true, reason: "already sent" }
+
+  const status = await getSubmissionStatus(weekEnding)
+  if (status.complete) {
+    await db
+      .update(weeklyReports)
+      .set({ confirmEscalatedAt: new Date() })
+      .where(eq(weeklyReports.weekEnding, weekEnding))
+    return { escalated: 0, reason: "all resolved" }
+  }
+
+  const contacts = await getSiteManagerContacts()
+  const companyUsers = await getCompanyRecipients()
+  const owners = companyUsers.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+  const url = appBaseUrl()
+
+  // Which managers are responsible for the still-outstanding items (for cc +
+  // the "chase these people" instruction in the owner email).
+  const responsible = new Set<string>()
+  for (const item of status.outstanding) {
+    for (const email of responsibleEmailsFor(item, contacts)) {
+      responsible.add(email)
+    }
+  }
+
+  const html = emailShell(
+    `Escalation: unconfirmed submissions · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${
+      status.outstandingCount
+    } item${
+      status.outstandingCount === 1 ? " is" : "s are"
+    } still outstanding an hour after the 18:00 urgent prompt.</p>
+     <p style="margin:0 0 12px;">The responsible managers were asked to confirm at 18:00 and have not done so. Please chase them directly to resolve before the board report. Each item links to the exact page that resolves it:</p>
+     ${outstandingTable(status.outstanding, weekEnding)}
+     <p style="margin:0 0 12px;color:#6b7280;">Responsible to chase: ${
+       [...responsible].map((e) => esc(e)).join(", ") || "n/a"
+     }.</p>
+     <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Open submission board</a></p>`,
+  )
+
+  let notified = 0
+  for (const owner of owners) {
+    const res = await sendEmail({
+      to: owner.email,
+      subject: `Escalation: ${status.outstandingCount} unconfirmed (w/e ${fmtWeekLong(
+        weekEnding,
+      )})`,
+      html,
+      kind: "confirm_escalation",
+      weekEnding,
+    })
+    if (res.ok) notified++
+  }
+
+  // Also nudge each responsible manager that it has now gone up to the owners.
+  let managersNudged = 0
+  for (const email of responsible) {
+    if (OWNER_EMAILS.includes(email.toLowerCase())) continue // owner already emailed
+    const theirItems = status.outstanding.filter((i) =>
+      responsibleEmailsFor(i, contacts).includes(email),
+    )
+    if (theirItems.length === 0) continue
+    const mgrHtml = emailShell(
+      `Escalated to leadership · w/e ${fmtWeekLong(weekEnding)}`,
+      `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Your outstanding item${
+        theirItems.length === 1 ? "" : "s"
+      } for w/e ${fmtWeekLong(weekEnding)} ${
+        theirItems.length === 1 ? "has" : "have"
+      } been escalated to Martin and Cosmin.</p>
+       <p style="margin:0 0 12px;"><strong>Tap each item below</strong> to open the exact page and resolve it immediately:</p>
+       ${outstandingTable(theirItems, weekEnding)}`,
+    )
+    const res = await sendEmail({
+      to: email,
+      subject: `Escalated: resolve ${theirItems.length} outstanding item${
+        theirItems.length === 1 ? "" : "s"
+      } now (w/e ${fmtWeekLong(weekEnding)})`,
+      html: mgrHtml,
+      kind: "confirm_escalation",
+      weekEnding,
+    })
+    if (res.ok) managersNudged++
+  }
+
+  await db
+    .update(weeklyReports)
+    .set({ confirmEscalatedAt: new Date() })
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  return {
+    escalated: status.outstandingCount,
+    ownersNotified: notified,
+    managersNudged,
+  }
 }
 
 // 18:50 — run the AI week-on-week analysis across all KPI areas.
@@ -665,6 +923,8 @@ export async function runDailyEscalation() {
 export const STEPS = {
   reminders: remindUsers,
   "submission-alert": submissionAlert,
+  "confirmation-prompt": confirmationPrompt,
+  "escalate-unconfirmed": escalateUnconfirmed,
   analysis: runAnalysis,
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,

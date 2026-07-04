@@ -297,6 +297,11 @@ export const weeklyReports = pgTable("weekly_reports", {
   remindersSentAt: timestamp("reminders_sent_at"),
   // 18:00 leadership "who hasn't submitted yet" alert.
   submissionAlertSentAt: timestamp("submission_alert_sent_at"),
+  // 18:00 urgent "confirm/submit your outstanding items" prompt to the
+  // responsible site manager / area lead.
+  confirmPromptSentAt: timestamp("confirm_prompt_sent_at"),
+  // 19:00 escalation to owners for anything still outstanding an hour later.
+  confirmEscalatedAt: timestamp("confirm_escalated_at"),
   analysisRunAt: timestamp("analysis_run_at"),
   reportSentAt: timestamp("report_sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
