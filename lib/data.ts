@@ -105,10 +105,18 @@ export async function getDefaultWeek(): Promise<string> {
 }
 
 /**
- * The week the LEADERSHIP Group Overview should open on by default: the most
- * recent COMPLETED week (newest week with data that is strictly before the
- * current in-progress operating week), so leadership don't land on an empty,
- * still-being-collected week. Falls back to getDefaultWeek() if none.
+ * The week the LEADERSHIP Group Overview should open on by default.
+ *
+ * During the week (before the Saturday 18:00 submission deadline) the current
+ * operating week is still being collected, so leadership land on the most
+ * recent COMPLETED week (newest week with data strictly before the current
+ * week) rather than an empty, in-progress one.
+ *
+ * ONCE the current week's Saturday 18:00 deadline has passed, this week's
+ * figures are in, so leadership should land on THIS week — e.g. at 8pm on a
+ * Saturday you see this week, not last week. We still fall back to the most
+ * recent completed week if, past the deadline, the current week somehow has no
+ * data at all.
  *
  * IMPORTANT: this only affects the leadership landing default. Data-entry, the
  * Team Area, submission tracking etc. must stay on getCurrentOperatingWeek()/
@@ -117,6 +125,13 @@ export async function getDefaultWeek(): Promise<string> {
 export async function getLeadershipDefaultWeek(): Promise<string> {
   const current = await getCurrentOperatingWeek()
   const weeks = await getWeeks() // newest first, only weeks with data
+  const currentHasData = weeks.includes(current)
+
+  // Past the Saturday 18:00 deadline the current week is complete — show it.
+  if (isPastSubmissionDeadline(current) && currentHasData) {
+    return current
+  }
+
   const previous = weeks.find((w) => w < current)
   return previous ?? (await getDefaultWeek())
 }
