@@ -18,6 +18,7 @@ import {
   type SubmissionItem,
 } from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
+import { sendChatDm } from "@/lib/google-chat"
 import { OWNER_EMAILS } from "@/lib/access-types"
 import { defaultOwnerEmailForArea } from "@/lib/area-owners"
 import {
@@ -347,6 +348,30 @@ function outstandingTable(items: SubmissionItem[], weekEnding: string): string {
    </table>`
 }
 
+// Best-effort Google Chat DM to one responsible person listing their
+// outstanding items. Mirrors the email but as a private in-domain Chat message;
+// no-ops for out-of-domain people (e.g. gmail/hotmail managers) who stay on
+// email. Never throws — Chat failures don't affect the email path.
+async function chatDmOutstanding(
+  email: string,
+  items: SubmissionItem[],
+  weekEnding: string,
+): Promise<boolean> {
+  if (items.length === 0) return false
+  const lines = items.map((i) => `${i.label} — ${i.detail}`)
+  // Land the button on the first item's exact page/week (site managers usually
+  // have a single site's items; leadership can open any item from there).
+  const button = { text: "Confirm now", url: deepLinkFor(items[0], weekEnding) }
+  const res = await sendChatDm(email, {
+    title: `Action needed · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `These items are still outstanding ahead of tonight's 20:00 board report. Tap to confirm:`,
+    lines,
+    button,
+    tone: "urgent",
+  })
+  return res.ok
+}
+
 // No-send preview: shows exactly who the 18:00 prompt would email, which items
 // each person is responsible for, and the precise deep-link per item — plus who
 // the 19:00 escalation would go to. Sends NO email and writes NO timestamps.
@@ -433,7 +458,14 @@ export async function sendConfirmPromptTo(
     kind: "confirm_prompt",
     weekEnding,
   })
-  return { sent: res.ok ? 1 : 0, email: target, items: items.map((i) => i.label) }
+  // Also DM them on Google Chat (best-effort, in-domain only).
+  const chat = await chatDmOutstanding(target, items, weekEnding)
+  return {
+    sent: res.ok ? 1 : 0,
+    chat,
+    email: target,
+    items: items.map((i) => i.label),
+  }
 }
 
 // 18:00 — urgent prompt to each responsible manager/lead to confirm & submit
@@ -464,6 +496,7 @@ export async function confirmationPrompt(weekEnding = currentWeekEnding()) {
   }
 
   let sent = 0
+  let chatSent = 0
   for (const [email, items] of byPerson) {
     const html = emailShell(
       `Action needed tonight · w/e ${fmtWeekLong(weekEnding)}`,
@@ -484,13 +517,20 @@ export async function confirmationPrompt(weekEnding = currentWeekEnding()) {
       weekEnding,
     })
     if (res.ok) sent++
+    // Also DM them on Google Chat (in-domain only; best-effort, non-blocking).
+    if (await chatDmOutstanding(email, items, weekEnding)) chatSent++
   }
 
   await db
     .update(weeklyReports)
     .set({ confirmPromptSentAt: new Date() })
     .where(eq(weeklyReports.weekEnding, weekEnding))
-  return { sent, people: byPerson.size, outstanding: status.outstandingCount }
+  return {
+    sent,
+    chatSent,
+    people: byPerson.size,
+    outstanding: status.outstandingCount,
+  }
 }
 
 // 19:00 — one hour after the urgent prompt, escalate anything STILL outstanding
@@ -500,7 +540,27 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
   if (report.confirmEscalatedAt) return { skipped: true, reason: "already sent" }
 
   const status = await getSubmissionStatus(weekEnding)
+
+  const companyUsers = await getCompanyRecipients()
+  const owners = companyUsers.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+
   if (status.complete) {
+    // All-clear: DM the owners a green confirmation that everything is in.
+    // (Best-effort Chat only — no all-clear email, matching prior behaviour.)
+    for (const owner of owners) {
+      await sendChatDm(owner.email, {
+        title: `All submissions in · w/e ${fmtWeekLong(weekEnding)}`,
+        intro: `Every weekly submission is confirmed and in ahead of tonight's board report. Nothing outstanding.`,
+        lines: [`${status.submittedCount}/${status.total} submitted (100%)`],
+        button: {
+          text: "Open submission board",
+          url: `${appBaseUrl().replace(/\/+$/, "")}/reports/submissions`,
+        },
+        tone: "positive",
+      })
+    }
     await db
       .update(weeklyReports)
       .set({ confirmEscalatedAt: new Date() })
@@ -509,10 +569,6 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
   }
 
   const contacts = await getSiteManagerContacts()
-  const companyUsers = await getCompanyRecipients()
-  const owners = companyUsers.filter((r) =>
-    OWNER_EMAILS.includes(r.email.toLowerCase()),
-  )
   const url = appBaseUrl()
 
   // Which managers are responsible for the still-outstanding items (for cc +
@@ -551,6 +607,21 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
       weekEnding,
     })
     if (res.ok) notified++
+    // Also DM owners on Google Chat (best-effort, in-domain only).
+    await sendChatDm(owner.email, {
+      title: `Escalation · w/e ${fmtWeekLong(weekEnding)}`,
+      intro: `${status.outstandingCount} item${
+        status.outstandingCount === 1 ? " is" : "s are"
+      } still outstanding an hour after the 18:00 prompt. Chase: ${
+        [...responsible].join(", ") || "n/a"
+      }.`,
+      lines: status.outstanding.map((i) => `${i.label} — ${i.detail}`),
+      button: {
+        text: "Open submission board",
+        url: `${url.replace(/\/+$/, "")}/reports/submissions`,
+      },
+      tone: "urgent",
+    })
   }
 
   // Also nudge each responsible manager that it has now gone up to the owners.
@@ -581,6 +652,8 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
       weekEnding,
     })
     if (res.ok) managersNudged++
+    // Also DM the manager on Google Chat (best-effort, in-domain only).
+    await chatDmOutstanding(email, theirItems, weekEnding)
   }
 
   await db
