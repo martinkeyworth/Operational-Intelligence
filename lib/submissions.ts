@@ -299,21 +299,41 @@ export async function getSiteManagerContacts(): Promise<
       .map((n) => n.trim().toLowerCase())
       .filter(Boolean)
 
-    const emails = new Set<string>()
-    for (const m of managerRows) {
-      if (m.siteId !== s.id) continue
-      const isManagerRole = (m.role ?? "").toLowerCase().includes("manager")
-      const isNamedManager = declaredNames.some((n) =>
-        m.barberName.toLowerCase().includes(n),
-      )
-      if (isManagerRole || isNamedManager) emails.add(m.email.toLowerCase())
-    }
+    const siteBarbers = managerRows.filter((m) => m.siteId === s.id)
+
+    // Prefer the people actually NAMED as this site's manager (handles
+    // "Cosmin / Mario" pairings). This avoids sweeping in area leads who merely
+    // carry a "manager" role while based at the same site (e.g. Training/HR
+    // leads sitting at LTZ Soresby).
+    const named = siteBarbers.filter((m) =>
+      declaredNames.some((n) => m.barberName.toLowerCase().includes(n)),
+    )
+    // If nobody on this site's roster matches the declared name, search ALL
+    // active barbers by name. This handles a manager who runs one site but is
+    // rostered at another (e.g. Ravi manages the Training Academy but is on the
+    // LTZ Soresby roster).
+    const namedAnywhere =
+      named.length > 0
+        ? named
+        : declaredNames.length > 0
+          ? managerRows.filter((m) =>
+              declaredNames.some((n) => m.barberName.toLowerCase().includes(n)),
+            )
+          : []
+    // Fall back to role-based matching only when nobody is named (e.g. a site
+    // whose manager_name isn't a person's name, so we use the "Manager" role).
+    const matched =
+      namedAnywhere.length > 0
+        ? namedAnywhere
+        : siteBarbers.filter((m) =>
+            (m.role ?? "").toLowerCase().includes("manager"),
+          )
 
     result.set(s.id, {
       siteId: s.id,
       siteName: s.name,
       managerName: s.managerName,
-      emails: [...emails],
+      emails: [...new Set(matched.map((m) => m.email.toLowerCase()))],
     })
   }
   return result

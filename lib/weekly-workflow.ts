@@ -295,7 +295,7 @@ function responsibleEmailsFor(
 // recipient lands directly on the page (and week) they need to action rather
 // than a generic entry screen.
 function deepLinkFor(item: SubmissionItem, weekEnding: string): string {
-  const base = appBaseUrl()
+  const base = appBaseUrl().replace(/\/+$/, "") // strip trailing slash
   const w = `week=${encodeURIComponent(weekEnding)}`
   switch (item.category) {
     case "Takings":
@@ -343,6 +343,55 @@ function outstandingTable(items: SubmissionItem[], weekEnding: string): string {
        )
        .join("")}</tbody>
    </table>`
+}
+
+// No-send preview: shows exactly who the 18:00 prompt would email, which items
+// each person is responsible for, and the precise deep-link per item — plus who
+// the 19:00 escalation would go to. Sends NO email and writes NO timestamps.
+export async function dryRunConfirmationPlan(weekEnding = currentWeekEnding()) {
+  const status = await getSubmissionStatus(weekEnding)
+  const contacts = await getSiteManagerContacts()
+
+  const byPerson = new Map<string, SubmissionItem[]>()
+  for (const item of status.outstanding) {
+    for (const email of responsibleEmailsFor(item, contacts)) {
+      const list = byPerson.get(email) ?? []
+      list.push(item)
+      byPerson.set(email, list)
+    }
+  }
+
+  const prompt1800 = [...byPerson.entries()].map(([email, items]) => ({
+    email,
+    items: items.map((i) => ({
+      label: i.label,
+      status: i.detail,
+      link: deepLinkFor(i, weekEnding),
+    })),
+  }))
+
+  const responsible = new Set<string>()
+  for (const item of status.outstanding)
+    for (const email of responsibleEmailsFor(item, contacts))
+      responsible.add(email)
+
+  return {
+    weekEnding,
+    complete: status.complete,
+    outstandingCount: status.outstandingCount,
+    prompt1800, // who gets the urgent "confirm now" email + their deep-links
+    escalation1900: {
+      owners: OWNER_EMAILS, // escalated to owners after 1hr if still outstanding
+      managersChased: [...responsible].filter(
+        (e) => !OWNER_EMAILS.includes(e.toLowerCase()),
+      ),
+    },
+    siteManagers: [...contacts.values()].map((c) => ({
+      site: c.siteName,
+      managerName: c.managerName,
+      emails: c.emails,
+    })),
+  }
 }
 
 // 18:00 — urgent prompt to each responsible manager/lead to confirm & submit
