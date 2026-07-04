@@ -709,7 +709,20 @@ export async function requestCosminNarrative(weekEnding = currentWeekEnding()) {
     kind: "narrative_request",
     weekEnding,
   })
-  return { sent: res.ok, to: cosmin.email }
+  // Also DM Cosmin on Google Chat (in-domain owner; best-effort, non-blocking).
+  const chat = await sendChatDm(cosmin.email, {
+    title: `Your COO narrative needed · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `The AI week-on-week analysis is ready (overall ${
+      report.overallRag ?? "amber"
+    }${report.overallPct != null ? ` ${report.overallPct}%` : ""}). Please add your COO narrative so it can be combined and sent to Martin ahead of the board report.`,
+    lines: [],
+    button: {
+      text: "Add my narrative",
+      url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+    },
+    tone: "urgent",
+  })
+  return { sent: res.ok, chat: chat.ok, to: cosmin.email }
 }
 
 // 20:00 — email the dashboard RAG + AI review to all @company users.
@@ -841,7 +854,20 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
     kind: "narrative_request",
     weekEnding,
   })
-  return { sent: res.ok, to: martin.email }
+  // Also DM Martin on Google Chat (in-domain owner; best-effort, non-blocking).
+  const chat = await sendChatDm(martin.email, {
+    title: `Your CEO response needed · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: report.cosminNarrative
+      ? `Cosmin's COO narrative and the AI analysis are ready. Please add your CEO response.`
+      : `The AI analysis is ready (Cosmin's narrative still pending). Please add your CEO response.`,
+    lines: [],
+    button: {
+      text: "Add my response",
+      url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+    },
+    tone: "urgent",
+  })
+  return { sent: res.ok, chat: chat.ok, to: martin.email }
 }
 
 // Weekly — email Martin & Cosmin the cash vs card Ready-To-Bank (RTB / house
