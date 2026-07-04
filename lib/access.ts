@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { user as userTable } from "@/lib/db/schema"
+import { user as userTable, barbers, sites } from "@/lib/db/schema"
 import {
   COMPANY_DOMAIN,
   isCompanyEmail,
@@ -72,6 +72,63 @@ export async function requireDashboard(): Promise<AccessUser> {
 export async function requireDataEntry(): Promise<AccessUser> {
   const user = await requireUser()
   if (!user.isBarber && !user.canViewDashboard) redirect("/no-access")
+  return user
+}
+
+// --- Site-scoped access (weekly confirmation / subletting for one site) -----
+//
+// A manager who does NOT have full dashboard access still needs to confirm
+// their own site each week and record its subletting. We grant them the
+// MINIMUM: access to the single site they run — never the group dashboard or
+// any other site's data.
+//
+// A user "manages" a site if they have dashboard access (all sites), OR they
+// are rostered as a barber at that site, OR they are NAMED as that site's
+// manager (sites.manager_name — handles "Cosmin / Mario" pairings).
+
+/** Site ids a non-dashboard user may manage (own workplace + named manager). */
+export async function getManagedSiteIds(user: AccessUser): Promise<number[]> {
+  const ids = new Set<number>()
+
+  const myBarbers = await db
+    .select({ siteId: barbers.siteId })
+    .from(barbers)
+    .where(eq(barbers.userId, user.id))
+  for (const b of myBarbers) ids.add(b.siteId)
+
+  const allSites = await db
+    .select({ id: sites.id, managerName: sites.managerName })
+    .from(sites)
+  const full = user.name.toLowerCase().trim()
+  const first = full.split(/\s+/)[0] ?? full
+  for (const s of allSites) {
+    const mn = (s.managerName ?? "").toLowerCase()
+    if (!mn) continue
+    const tokens = mn
+      .split(/[/,&]|\band\b/)
+      .map((t) => t.trim())
+      .filter(Boolean)
+    if (tokens.some((t) => full.includes(t) || (first && t.includes(first))))
+      ids.add(s.id)
+  }
+  return Array.from(ids)
+}
+
+/** Can this user view/act on a single site (without needing the dashboard)? */
+export async function canManageSite(
+  user: AccessUser,
+  siteId: number,
+): Promise<boolean> {
+  if (user.canViewDashboard) return true
+  if (!siteId) return false
+  const ids = await getManagedSiteIds(user)
+  return ids.includes(siteId)
+}
+
+/** Require access to a single site. Redirects unauthorised users to /no-access. */
+export async function requireSiteAccess(siteId: number): Promise<AccessUser> {
+  const user = await requireUser()
+  if (!(await canManageSite(user, siteId))) redirect("/no-access")
   return user
 }
 

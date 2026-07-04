@@ -13,7 +13,7 @@ import {
 } from "@/lib/db/schema"
 import { and, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { requireDashboard, requireDataEntry } from "@/lib/access"
+import { requireDashboard, requireDataEntry, requireSiteAccess } from "@/lib/access"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 import { defaultOwnerEmailForAction } from "@/lib/area-owners"
@@ -177,8 +177,9 @@ export async function editSite(formData: FormData) {
 // (saveTrainingWeek) is separate from confirming them — a site only counts as
 // "done" for the weekly submission/escalation flow once confirmed here.
 export async function confirmTrainingWeek(formData: FormData) {
-  const user = await requireDataEntry()
   const siteId = Number(formData.get("siteId"))
+  // Only the training site's manager (or a dashboard user) may confirm it.
+  const user = await requireSiteAccess(siteId)
   const weekEnding = String(formData.get("weekEnding"))
   if (!siteId || !weekEnding) throw new Error("Missing site or week")
 
@@ -409,8 +410,10 @@ export async function setActionDueDate(formData: FormData) {
 }
 
 export async function confirmSiteWeek(formData: FormData) {
-  const user = await requireUser()
   const siteId = Number(formData.get("siteId"))
+  // Scoped to this one site: dashboard users pass for any site; a non-dashboard
+  // manager may only confirm the site they run.
+  const user = await requireSiteAccess(siteId)
   const weekEnding = String(formData.get("weekEnding"))
   const siteNameConfirmed = String(formData.get("siteNameConfirmed") ?? "").trim()
   const locationConfirmed = String(formData.get("locationConfirmed") ?? "").trim()
@@ -537,8 +540,9 @@ async function syncCapacityActions(
 /** Record a site's weekly subletting (chair/room rent) income.
  *  Below the weekly target is RED and raises a quarterly review action. */
 export async function saveSubletting(formData: FormData) {
-  const user = await requireUser()
   const siteId = Number(formData.get("siteId"))
+  // Scoped to this one site (F.AF manager can record their own subletting).
+  const user = await requireSiteAccess(siteId)
   const weekEnding = String(formData.get("weekEnding"))
   const amount = Number(formData.get("amount") ?? 0) || 0
   const targetRaw = formData.get("target")

@@ -303,9 +303,11 @@ function deepLinkFor(item: SubmissionItem, weekEnding: string): string {
       return `${base}/data-entry?${w}${item.siteId != null ? `#site-${item.siteId}` : ""}`
     case "Confirmation":
     case "Subletting":
-      // Weekly confirmation dialog + subletting card both live on the site page.
+      // Weekly confirmation + subletting live on the scoped single-site page,
+      // which BOTH dashboard users and site managers (without dashboard access)
+      // can reach — so the deep-link never dead-ends on the no-access screen.
       return item.siteId != null
-        ? `${base}/sites/${item.siteId}?${w}`
+        ? `${base}/my-site/${item.siteId}?${w}`
         : `${base}/data-entry?${w}`
     case "Training":
       return `${base}/functions/Training/input?${w}`
