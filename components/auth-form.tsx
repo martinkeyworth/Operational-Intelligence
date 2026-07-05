@@ -35,7 +35,8 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       return
     }
 
-    router.push("/my-work")
+    // /start resolves each user's role-based landing page.
+    router.push("/start")
     router.refresh()
   }
 

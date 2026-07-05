@@ -53,10 +53,11 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     isSocialMedia: row.isSocialMedia,
   }
 
-  // Dashboard users manage every site implicitly, so only non-dashboard users
-  // need their managed-site list resolved (drives the "My Site" experience for
-  // site managers like branch managers who can't view the group dashboard).
-  if (!base.canViewDashboard) {
+  // Non-dashboard site managers need their managed-site list to drive the "My
+  // Site" experience; owners need it so their default landing can be their own
+  // site (e.g. the COO who also runs a branch). Other dashboard users manage
+  // every site implicitly and don't need it resolved.
+  if (!base.canViewDashboard || base.isOwner) {
     base.managedSiteIds = await getManagedSiteIds(base)
   }
 
@@ -150,6 +151,39 @@ export function managerSiteLanding(user: AccessUser): string | null {
   if (user.canViewDashboard) return null
   const ids = user.managedSiteIds ?? []
   return ids.length > 0 ? `/my-site/${ids[0]}` : null
+}
+
+/**
+ * The page a user should land on after sign-in (used by /start). Everyone keeps
+ * full access to whatever their role allows — this only chooses the first screen
+ * they see, tailored to what they mainly do:
+ *  - Non-dashboard site managers → their scoped /my-site page.
+ *  - Owners who also run a branch (e.g. the COO) → that site's dashboard page.
+ *  - A single-focus functional lead → their area (Training / HR / Marketing).
+ *  - Everyone else with the dashboard → the Group Overview.
+ *  - Plain barbers / data-entry users → My Work.
+ */
+export function defaultLandingFor(user: AccessUser): string {
+  // Non-dashboard site managers get the scoped experience.
+  const scoped = managerSiteLanding(user)
+  if (scoped) return scoped
+
+  if (!user.canViewDashboard) return "/my-work"
+
+  // Owner who also runs a specific site lands on that site (full nav retained).
+  const sites = user.managedSiteIds ?? []
+  if (user.isOwner && sites.length > 0) return `/sites/${sites[0]}`
+
+  // A lead focused on exactly one functional area lands there.
+  const onlyTraining = user.isTrainingLead && !user.isHrLead && !user.isSocialMedia
+  const onlyHr = user.isHrLead && !user.isTrainingLead && !user.isSocialMedia
+  const onlySocial = user.isSocialMedia && !user.isTrainingLead && !user.isHrLead
+  if (onlyTraining) return "/functions/Training"
+  if (onlyHr) return "/functions/HR"
+  if (onlySocial) return "/functions/Marketing"
+
+  // Executives with a broad remit land on the group-wide overview.
+  return "/"
 }
 
 /** Only company-domain dashboard users may administer people/capabilities. */
