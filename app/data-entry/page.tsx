@@ -16,6 +16,7 @@ import {
 } from "@/lib/data"
 import { FUNCTION_AREAS } from "@/lib/function-areas"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 
 export default async function DataEntryPage({
@@ -33,6 +34,13 @@ export default async function DataEntryPage({
   // record on first visit so they can submit straight away — no admin step.
   const linkedBarber = isManager ? null : await ensureBarberForUser(user)
   const ownScope = !isManager
+
+  // A site manager WITHOUT dashboard access should never see the group
+  // multi-site data-entry list. Their weekly job is reviewing + confirming
+  // their own site, which the scoped /my-site page handles — send them there.
+  if (linkedBarber && /manager/i.test(linkedBarber.role ?? "")) {
+    redirect(`/my-site/${linkedBarber.siteId}`)
+  }
 
   const { week: weekParam } = await searchParams
   const weeks = await getEntryWeeks()

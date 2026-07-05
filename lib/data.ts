@@ -1484,7 +1484,13 @@ export async function getDataEntrySites(
     .from(weeklyTakings)
     .where(eq(weeklyTakings.weekEnding, week))
 
-  return siteRows.map((s) => ({
+  // When scoped to a single barber, only surface the site(s) that barber
+  // actually belongs to — never the names/structure of other sites.
+  const scopedSiteRows = onlyBarberId
+    ? siteRows.filter((s) => barberRows.some((b) => b.siteId === s.id))
+    : siteRows
+
+  return scopedSiteRows.map((s) => ({
     id: s.id,
     name: s.name,
     location: s.location,
