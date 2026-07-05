@@ -41,6 +41,7 @@ type ShellUser = {
   isOwner?: boolean
   canViewDashboard?: boolean
   isBarber?: boolean
+  managedSiteIds?: number[]
 }
 
 export function AppShell({
@@ -60,6 +61,13 @@ export function AppShell({
 
   const canEnterData = user.isBarber || user.canViewDashboard
   const isAdmin = Boolean(user.isCompany && user.canViewDashboard)
+  // A non-dashboard user who runs a site gets a scoped "My Site" link instead
+  // of the all-sites "Weekly Takings" list — they should only ever see their
+  // own site's figures.
+  const managerSiteId =
+    !user.canViewDashboard && user.managedSiteIds && user.managedSiteIds.length > 0
+      ? user.managedSiteIds[0]
+      : null
 
   const sections: NavSection[] = [
     {
@@ -71,9 +79,11 @@ export function AppShell({
         ...(user.isBarber
           ? [{ href: "/team", label: "Team Area", icon: UserRound }]
           : []),
-        ...(canEnterData
-          ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
-          : []),
+        ...(managerSiteId
+          ? [{ href: `/my-site/${managerSiteId}`, label: "My Site", icon: Store }]
+          : canEnterData
+            ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
+            : []),
       ],
     },
     ...(user.canViewDashboard

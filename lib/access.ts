@@ -39,7 +39,7 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     .where(eq(userTable.id, session.user.id))
   if (!row) return null
 
-  return {
+  const base: AccessUser = {
     id: row.id,
     name: row.name,
     email: row.email,
@@ -52,6 +52,15 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     isHrLead: row.isHrLead,
     isSocialMedia: row.isSocialMedia,
   }
+
+  // Dashboard users manage every site implicitly, so only non-dashboard users
+  // need their managed-site list resolved (drives the "My Site" experience for
+  // site managers like branch managers who can't view the group dashboard).
+  if (!base.canViewDashboard) {
+    base.managedSiteIds = await getManagedSiteIds(base)
+  }
+
+  return base
 }
 
 /** Require a signed-in user (any). Redirects to /sign-in otherwise. */
@@ -130,6 +139,17 @@ export async function requireSiteAccess(siteId: number): Promise<AccessUser> {
   const user = await requireUser()
   if (!(await canManageSite(user, siteId))) redirect("/no-access")
   return user
+}
+
+/**
+ * For a non-dashboard site manager, the path to their own site page (they run
+ * the site but shouldn't see the group dashboard or the all-sites lists).
+ * Returns null for dashboard users and plain barbers with no managed site.
+ */
+export function managerSiteLanding(user: AccessUser): string | null {
+  if (user.canViewDashboard) return null
+  const ids = user.managedSiteIds ?? []
+  return ids.length > 0 ? `/my-site/${ids[0]}` : null
 }
 
 /** Only company-domain dashboard users may administer people/capabilities. */

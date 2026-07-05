@@ -1,4 +1,4 @@
-import { requireDataEntry, canInputArea } from "@/lib/access"
+import { requireDataEntry, canInputArea, managerSiteLanding } from "@/lib/access"
 import { ensureBarberForUser } from "@/lib/team"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
@@ -25,6 +25,11 @@ export default async function DataEntryPage({
   searchParams: Promise<{ week?: string }>
 }) {
   const user = await requireDataEntry()
+
+  // Site managers without dashboard access never use the all-sites takings
+  // list — they enter their own figures and confirm from their site page.
+  const siteLanding = managerSiteLanding(user)
+  if (siteLanding) redirect(siteLanding)
 
   // A barber who can't view the dashboard is restricted to their own entry
   // card — they must never see colleagues' takings. Managers/dashboard users

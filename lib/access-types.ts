@@ -16,6 +16,9 @@ export type AccessUser = {
   isOwner: boolean
   // Functional-area keys this user leads (e.g. ["Capacity","RTB"]).
   leadAreas: string[]
+  // Site ids a non-dashboard user manages (own workplace + named manager).
+  // Only populated for non-dashboard users; dashboard users manage all sites.
+  managedSiteIds?: number[]
 } & Capabilities
 
 // All functional areas that can have a designated lead + RAID log.

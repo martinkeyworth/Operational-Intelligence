@@ -1,19 +1,23 @@
+import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { requireUser, canManageSite } from "@/lib/access"
+import { ensureBarberForUser } from "@/lib/team"
 import { SignOutButton } from "@/components/sign-out-button"
 import { Card } from "@/components/ui/card"
 import { StatCard } from "@/components/ui-bits"
 import { RagBadge } from "@/components/rag"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { BarberEntryCard } from "@/components/barber-entry-card"
 import { SubletCard } from "@/components/sublet-card"
 import { TrainingCard } from "@/components/training-card"
 import { WeekSelector } from "@/components/week-selector"
-import { CheckCircle2 } from "lucide-react"
+import { CheckCircle2, ClipboardEdit } from "lucide-react"
 import {
   getSelectableWeeks,
   getDefaultWeek,
   getSite,
   getSiteWeek,
+  getDataEntrySites,
   getSubletForSiteWeek,
   getSubletHistory,
   getCapacityKpis,
@@ -51,6 +55,17 @@ export default async function MySitePage({
   const siteWeekRows = week ? await getSiteWeek(week) : []
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
 
+  // If the manager is also a barber based at this site, let them enter their
+  // OWN weekly takings here (scoped to just their record + this one site — no
+  // other barbers, no other site names).
+  const linkedBarber = user.isBarber ? await ensureBarberForUser(user) : null
+  const myEntry =
+    week && linkedBarber
+      ? (await getDataEntrySites(week, linkedBarber.id))
+          .find((s) => s.id === siteId)
+          ?.barbers.find((b) => b.id === linkedBarber.id) ?? null
+      : null
+
   const hasSubletting = site.brand === "F.AF"
   const sublet =
     hasSubletting && week ? await getSubletForSiteWeek(siteId, week) : null
@@ -71,7 +86,25 @@ export default async function MySitePage({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Less Than Zero · My Site
             </p>
-            <SignOutButton />
+            <div className="flex items-center gap-3">
+              {user.isBarber && (
+                <>
+                  <Link
+                    href="/team"
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Team Area
+                  </Link>
+                  <Link
+                    href="/openings"
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Open Roles
+                  </Link>
+                </>
+              )}
+              <SignOutButton />
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -98,6 +131,25 @@ export default async function MySitePage({
           for {site.name} and confirm the week below. Only your site is shown
           here.
         </p>
+
+        {myEntry && week && (
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <ClipboardEdit className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold text-foreground">
+                Your weekly takings
+              </h2>
+            </div>
+            <p className="text-pretty text-xs text-muted-foreground">
+              Enter your own cash and card takings for this week, then save.
+            </p>
+            <BarberEntryCard
+              barber={myEntry}
+              week={week}
+              siteOptions={[{ id: siteId, name: site.name }]}
+            />
+          </section>
+        )}
 
         {!week || !siteWeek ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">

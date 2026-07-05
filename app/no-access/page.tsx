@@ -1,13 +1,14 @@
 import Link from "next/link"
-import { requireUser } from "@/lib/access"
+import { requireUser, managerSiteLanding } from "@/lib/access"
 import { buttonVariants } from "@/components/ui/button"
-import { ClipboardEdit, ShieldAlert } from "lucide-react"
+import { ClipboardEdit, ShieldAlert, Store } from "lucide-react"
 import { SignOutButton } from "@/components/sign-out-button"
 
 export default async function NoAccessPage() {
   const user = await requireUser()
 
-  // Barbers/data-entry users get a friendly route to their task.
+  // Site managers get sent to their own site page; other barbers to takings.
+  const siteLanding = managerSiteLanding(user)
   const canEnterData = user.isBarber || user.canViewDashboard
 
   return (
@@ -26,11 +27,18 @@ export default async function NoAccessPage() {
         </p>
 
         <div className="mt-8 flex flex-col gap-3">
-          {canEnterData && (
-            <Link href="/data-entry" className={buttonVariants({ className: "h-11 text-base" })}>
-              <ClipboardEdit className="mr-2 h-4 w-4" />
-              Go to Weekly Takings
+          {siteLanding ? (
+            <Link href={siteLanding} className={buttonVariants({ className: "h-11 text-base" })}>
+              <Store className="mr-2 h-4 w-4" />
+              Go to my site
             </Link>
+          ) : (
+            canEnterData && (
+              <Link href="/data-entry" className={buttonVariants({ className: "h-11 text-base" })}>
+                <ClipboardEdit className="mr-2 h-4 w-4" />
+                Go to Weekly Takings
+              </Link>
+            )
           )}
           <SignOutButton />
         </div>
