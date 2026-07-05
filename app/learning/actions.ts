@@ -27,6 +27,7 @@ import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanI
 import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
 import { analysePbc } from "@/lib/pbc-ai"
 import { threeSixtyReadiness } from "@/lib/three-sixty"
+import { getComplianceSignals } from "@/lib/compliance-signals"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -199,6 +200,10 @@ export async function generateAiPbcAction(
   const period = oto.period ?? currentPeriod()
   const readiness = await threeSixtyReadiness(barberId, period)
 
+  // Auto-compile the operational-compliance evidence (missed/late confirmations,
+  // excess/stale red RAID, overdue tasks) so it feeds the AI before scoring.
+  const compliance = await getComplianceSignals(barberId)
+
   try {
     const ai = await analysePbc({
       cycleId: readiness.cycleId,
@@ -206,6 +211,7 @@ export async function generateAiPbcAction(
       role: basics.role,
       selfPrep: readSelfPrep(oto),
       kpiNotes: null,
+      complianceSignals: compliance.aiText,
       lowConfidence: readiness.lowConfidence || readiness.cycleId === null,
     })
     await saveAiPbc(oto.id, { ...ai, responded: readiness.responded, threshold: readiness.threshold })

@@ -31,7 +31,7 @@ const pbcSchema = z.object({
   overall: z.number().int().min(1).max(5).describe("Overall PBC score, 1 best - 5 lowest"),
   rationale: z
     .string()
-    .describe("2-4 sentence justification citing the 360 feedback, self-prep and KPI signals."),
+    .describe("2-4 sentence justification citing the 360 feedback, self-prep, KPI and operational-compliance signals."),
 })
 
 function bandGuide(): string {
@@ -60,6 +60,13 @@ export async function analysePbc(input: {
   role?: string | null
   selfPrep?: SelfPrep | null
   kpiNotes?: string | null
+  /**
+   * Auto-compiled operational-compliance evidence (missed/late weekly
+   * confirmations, >5 red RAID, stale RAID, overdue tasks). These are
+   * system-recorded facts and must materially weigh on Behaviours &
+   * Contribution.
+   */
+  complianceSignals?: string | null
   lowConfidence?: boolean
 }): Promise<AiPbcResult> {
   const responses = input.cycleId ? await getResponsesForCycle(input.cycleId) : []
@@ -99,7 +106,12 @@ ${summariseAnswers(self?.answers)}
 === KPI / operational notes ===
 ${input.kpiNotes ?? "(none provided)"}
 
-Weigh the 360 feedback most heavily, corroborated by the self-prep and KPI signals. Where the 360 sample is small, be conservative and avoid extreme scores. Return integer scores 1-5 for performance, behaviours, contribution, and an overall score (holistic, not a naive average), plus a concise rationale citing the evidence.`
+=== Operational-compliance signals (auto-compiled from the app) ===
+${input.complianceSignals ?? "(none provided)"}
+
+Weigh the 360 feedback most heavily for the overall picture, corroborated by the self-prep and KPI signals; where the 360 sample is small, be conservative and avoid extreme scores.
+
+However, the operational-compliance signals above are system-recorded FACTS, not opinion. Where they show failings — missed or late weekly confirmations, carrying more than five open red RAID items, stale/not-updated RAID, or overdue required tasks — they must materially LOWER the Behaviours and Contribution scores (a higher/worse number, since 1 is best and 5 is lowest) and you MUST cite the specific failing in the rationale. If the signals are clean, do not penalise. Return integer scores 1-5 for performance, behaviours, contribution, and an overall score (holistic, not a naive average), plus a concise rationale that references both the 360 feedback and any compliance failings.`
 
   const { experimental_output } = await generateText({
     model: PBC_MODEL,

@@ -14,7 +14,7 @@ import {
 } from "@/lib/learning-types"
 import { openOneToOneAction, completeOneToOneAction, generateAiPbcAction } from "@/app/learning/actions"
 import { cn } from "@/lib/utils"
-import { AlertTriangle, CheckCircle2, Sparkles, Users } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ShieldAlert, Sparkles, Users } from "lucide-react"
 
 export type ThreeSixtyStatus = {
   nominated: number
@@ -34,6 +34,12 @@ export type AiPbcSuggestion = {
   lowConfidence: boolean
 }
 
+export type ComplianceSummary = {
+  flags: string[]
+  clean: boolean
+  raidAttributable: boolean
+}
+
 type Props = {
   barberId: number
   barberName: string
@@ -46,6 +52,7 @@ type Props = {
   actionsInit: string | null
   threeSixty: ThreeSixtyStatus
   aiPbc: AiPbcSuggestion | null
+  compliance: ComplianceSummary
 }
 
 /**
@@ -63,6 +70,7 @@ export function OneToOneWorkflow(props: Props) {
     return (
       <div className="space-y-4">
         <ThreeSixtyPanel status={props.threeSixty} barberName={props.barberName} />
+        <CompliancePanel compliance={props.compliance} barberName={props.barberName} />
         <div className="rounded-lg border border-dashed border-border p-6 text-center">
           <p className="text-sm text-muted-foreground">
             {props.threeSixty.ready
@@ -189,6 +197,7 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
   return (
     <div className="space-y-6">
       <ThreeSixtyPanel status={props.threeSixty} barberName={props.barberName} />
+      <CompliancePanel compliance={props.compliance} barberName={props.barberName} />
 
       {/* AI PBC analysis — auto-set from the 360, editable by the manager. */}
       <section className="rounded-lg border border-primary/30 bg-primary/5 p-4">
@@ -423,6 +432,65 @@ function renderAnswer(v: number | boolean | string | null | undefined) {
   if (typeof v === "boolean") return v ? "Yes" : "No"
   if (typeof v === "number") return `${v} (${pbcScoreLabel(v)})`
   return v
+}
+
+/**
+ * Read-only card showing the auto-compiled operational-compliance signals
+ * (missed/late confirmations, excess/stale red RAID, overdue tasks) that the
+ * AI weighs into the PBC. Green when clean, amber when there are flags.
+ */
+function CompliancePanel({
+  compliance,
+  barberName,
+}: {
+  compliance: ComplianceSummary
+  barberName: string
+}) {
+  const clean = compliance.clean
+  return (
+    <section
+      className={cn(
+        "rounded-lg border p-4",
+        clean ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        {clean ? (
+          <CheckCircle2 className="size-4 text-emerald-600" />
+        ) : (
+          <ShieldAlert className="size-4 text-amber-600" />
+        )}
+        <h3 className="text-sm font-semibold text-foreground">Compliance signals (auto-compiled)</h3>
+      </div>
+      {clean ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          No operational-compliance concerns for {barberName.split(" ")[0]} in the last 12 weeks —
+          confirmations on time, no excess or stale red RAID, no overdue tasks.
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 text-xs text-muted-foreground">
+            System-recorded over the last 12 weeks. These feed the AI PBC and weigh on Behaviours &
+            Contribution before you start.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {compliance.flags.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-amber-800">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {!compliance.raidAttributable ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Note: this person has no linked login, so RAID ownership couldn&apos;t be checked — only
+          weekly confirmations are included.
+        </p>
+      ) : null}
+    </section>
+  )
 }
 
 /** Shows 360 feedback progress and whether it's unlocked this month's review. */

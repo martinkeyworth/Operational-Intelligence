@@ -18,6 +18,7 @@ import {
   readAiPbc,
 } from "@/lib/learning"
 import { threeSixtyReadiness } from "@/lib/three-sixty"
+import { getComplianceSignals } from "@/lib/compliance-signals"
 import { currentPeriod } from "@/lib/learning-types"
 
 export const dynamic = "force-dynamic"
@@ -49,6 +50,7 @@ export default async function PlanDetailPage({
   const otoForPeriod = oto && oto.period === currentPeriod() ? oto : null
   const readiness = await threeSixtyReadiness(barberId, currentPeriod())
   const aiPbc = readAiPbc(otoForPeriod)
+  const compliance = await getComplianceSignals(barberId)
 
   const planData: PlanEditorData = {
     barberId,
@@ -118,6 +120,11 @@ export default async function PlanDetailPage({
                     }
                   : null
               }
+              compliance={{
+                flags: compliance.flags,
+                clean: compliance.clean,
+                raidAttributable: compliance.raidAttributable,
+              }}
             />
           </TabsContent>
           <TabsContent value="plan" className="pt-4">
