@@ -19,6 +19,8 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { ArrowRight, CalendarClock } from "lucide-react"
 
+// Week-rollover banner shipped July 2026 — warns when entering against a
+// non-current week. (Publish marker to force a fresh deploy diff.)
 export default async function DataEntryPage({
   searchParams,
 }: {
