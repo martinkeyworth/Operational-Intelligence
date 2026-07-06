@@ -32,6 +32,77 @@ export function ragForSickness(days: number): Rag {
   return "green"
 }
 
+/** Days of notice between a request's creation and its start date (min 0). */
+function noticeDaysBetween(createdAt: Date | string, startDate: string): number {
+  const created = new Date(createdAt)
+  created.setHours(0, 0, 0, 0)
+  const start = new Date(startDate + "T00:00:00")
+  const diff = Math.round((start.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.max(0, diff)
+}
+
+/** Policy: holiday needs at least one month's (30 days') notice. */
+export const HOLIDAY_NOTICE_DAYS = 30
+
+export type PendingApproval = {
+  id: number
+  barberId: number
+  barberName: string
+  startDate: string
+  endDate: string
+  days: number
+  reason: string | null
+  createdAt: Date
+  noticeDays: number
+  /** True when notice is under one month (an exception to the policy). */
+  isException: boolean
+}
+
+/**
+ * Pending holiday requests this user is responsible for approving. A manager
+ * sees only their own direct reports (barbers whose `managerUserId` is them);
+ * a team admin (company + dashboard) sees every pending request. This is what
+ * lets a non-dashboard branch manager approve their staff's holiday.
+ */
+export async function getPendingHolidayApprovals(
+  userId: string,
+  seeAll = false,
+): Promise<PendingApproval[]> {
+  const rows = await db
+    .select({
+      id: leaveRequests.id,
+      barberId: leaveRequests.barberId,
+      barberName: barbers.name,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+      days: leaveRequests.days,
+      reason: leaveRequests.reason,
+      createdAt: leaveRequests.createdAt,
+      managerUserId: barbers.managerUserId,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(barbers.id, leaveRequests.barberId))
+    .where(and(eq(leaveRequests.kind, "holiday"), eq(leaveRequests.status, "Pending")))
+    .orderBy(asc(leaveRequests.startDate))
+
+  const mine = seeAll ? rows : rows.filter((r) => r.managerUserId === userId)
+  return mine.map((r) => {
+    const noticeDays = noticeDaysBetween(r.createdAt, r.startDate)
+    return {
+      id: r.id,
+      barberId: r.barberId,
+      barberName: r.barberName,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      days: r.days,
+      reason: r.reason,
+      createdAt: r.createdAt,
+      noticeDays,
+      isException: noticeDays < HOLIDAY_NOTICE_DAYS,
+    }
+  })
+}
+
 /** Holiday: counts DOWN from the 28-day allowance. Plenty left = green,
  *  running low = amber, none left (or over) = red. */
 export function ragForHoliday(remaining: number, allowance: number): Rag {

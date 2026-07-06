@@ -114,6 +114,12 @@ export default async function MySitePage({
                   </Link>
                 </>
               )}
+              <Link
+                href="/approvals"
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Approvals
+              </Link>
               <SignOutButton />
             </div>
           </div>

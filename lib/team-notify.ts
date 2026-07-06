@@ -175,7 +175,9 @@ export async function sendLeaveNotification(args: {
        ${args.reason ? `<li>Note: ${args.reason}</li>` : ""}
      </ul>`
 
-  const reviewButton = emailButton(`/admin/team/${args.barberId}`, "Review & decide")
+  // Link to the scoped /approvals page so a manager WITHOUT dashboard access
+  // can still approve their own reports (/admin/team is dashboard-gated).
+  const reviewButton = emailButton(`/approvals`, "Review & decide")
 
   // Manager gets the action email; owners + HR get an FYI copy. sendDeduped
   // guarantees nobody (e.g. a manager who is also an owner, like Cosmin) is

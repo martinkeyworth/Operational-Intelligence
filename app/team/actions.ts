@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import {
+  barbers,
   leaveRequests,
   threeSixtyCycles,
   threeSixtyNominees,
@@ -124,6 +125,45 @@ export async function logSickness(formData: FormData) {
     days,
   })
 
+  revalidatePath("/team")
+  return { ok: true }
+}
+
+/**
+ * Approve or decline a holiday request as the barber's assigned manager.
+ * This is the scoped counterpart to the admin-only `decideLeave`: a manager
+ * WITHOUT dashboard access can decide their own direct reports' requests, and
+ * a team admin can decide any request. Authorisation is enforced against the
+ * request's barber, never trusting the client.
+ */
+export async function decideLeaveScoped(formData: FormData) {
+  const user = await requireUser()
+  const id = Number(formData.get("id"))
+  const decision = String(formData.get("decision"))
+  const status = decision === "approve" ? "Approved" : "Declined"
+
+  const [row] = await db
+    .select({
+      id: leaveRequests.id,
+      managerUserId: barbers.managerUserId,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(barbers.id, leaveRequests.barberId))
+    .where(eq(leaveRequests.id, id))
+  if (!row) return { ok: false, error: "Request not found" }
+
+  const isTeamAdmin = user.isCompany && user.canViewDashboard
+  if (!isTeamAdmin && row.managerUserId !== user.id) {
+    return { ok: false, error: "You are not the manager for this request" }
+  }
+
+  await db
+    .update(leaveRequests)
+    .set({ status, decidedByUserId: user.id, decidedAt: new Date() })
+    .where(eq(leaveRequests.id, id))
+
+  revalidatePath("/approvals")
+  revalidatePath("/admin/team")
   revalidatePath("/team")
   return { ok: true }
 }
