@@ -4,10 +4,10 @@ import Link from "next/link"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RagBadge, RagDot } from "@/components/rag"
 import { getWeeks, getCurrentOperatingWeek } from "@/lib/data"
-import { getSubmissionStatus } from "@/lib/submissions"
+import { getSubmissionStatus, submissionHref } from "@/lib/submissions"
 import { previousWeekEnding } from "@/lib/reporting"
 import type { Rag } from "@/lib/format"
-import { CheckCircle2, Clock } from "lucide-react"
+import { CheckCircle2, Clock, ChevronRight } from "lucide-react"
 import { WeekPicker } from "@/components/week-picker"
 
 function ragFor(s: {
@@ -209,28 +209,31 @@ export default async function SubmissionsPage({
             )}
             <ul className="divide-y divide-border rounded-lg border border-border">
               {status.outstanding.map((item) => (
-                <li
-                  key={item.key}
-                  className="flex items-center justify-between gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {item.label}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {item.ownerRole} · {item.detail}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {item.awaitingConfirmation && (
-                      <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[11px] font-medium text-rag-amber">
-                        Awaiting sign-off
+                <li key={item.key}>
+                  <Link
+                    href={submissionHref(item, week)}
+                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-card"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {item.label}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.ownerRole} · {item.detail}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {item.awaitingConfirmation && (
+                        <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[11px] font-medium text-rag-amber">
+                          Awaiting sign-off
+                        </span>
+                      )}
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {item.category}
                       </span>
-                    )}
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {item.category}
-                    </span>
-                  </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -252,19 +255,24 @@ export default async function SubmissionsPage({
               {status.items
                 .filter((i) => i.submitted)
                 .map((item) => (
-                  <li
-                    key={item.key}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {item.label}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {item.ownerRole} · {item.detail}
-                      </p>
-                    </div>
-                    <RagDot rag="green" />
+                  <li key={item.key}>
+                    <Link
+                      href={submissionHref(item, week)}
+                      className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-card"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {item.label}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.ownerRole} · {item.detail}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <RagDot rag="green" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </Link>
                   </li>
                 ))}
             </ul>

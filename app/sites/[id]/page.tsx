@@ -32,7 +32,15 @@ import {
   fmtGBP,
   fmtWeekLong,
 } from "@/lib/data"
-import { ArrowLeft, ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { getSubmissionStatus, submissionHref } from "@/lib/submissions"
+import {
+  ArrowLeft,
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronRight,
+  Clock,
+  CheckCircle2,
+} from "lucide-react"
 
 export default async function SiteDetailPage({
   params,
@@ -67,6 +75,21 @@ export default async function SiteDetailPage({
   // Capacity / RTB / training KPIs.
   const capacity = week ? await getCapacityKpis(siteId, week) : null
   const isTraining = site.siteType === "training"
+
+  // This site's own outstanding items for the selected week, so the manager
+  // sees exactly what still needs doing (and can tap straight to it) rather
+  // than having to hunt across the app or the group submissions board.
+  const submissionStatus = week ? await getSubmissionStatus(week) : null
+  const siteOutstanding = submissionStatus
+    ? submissionStatus.outstanding.filter((i) => i.siteId === siteId)
+    : []
+  // The corrected takings item (expected roster minus approved holiday) is the
+  // source of truth for whether this site's takings are complete — not the raw
+  // reporting/headcount tally, which measures against chair capacity.
+  const takingsItem = submissionStatus?.items.find(
+    (i) => i.category === "Takings" && i.siteId === siteId,
+  )
+  const takingsComplete = takingsItem?.submitted ?? false
   const trainingConfirm =
     isTraining && week
       ? await getTrainingConfirmation(siteId, week)
@@ -115,6 +138,55 @@ export default async function SiteDetailPage({
       </PageHeader>
 
       <div className="space-y-6 px-5 py-6 md:px-8">
+        {week &&
+          (siteOutstanding.length > 0 ? (
+            <section className="rounded-lg border border-rag-amber/40 bg-rag-amber/10 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-rag-amber" />
+                <h2 className="text-sm font-semibold text-foreground">
+                  Outstanding this week ({siteOutstanding.length})
+                </h2>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {siteOutstanding.map((item) => (
+                  <li key={item.key}>
+                    <Link
+                      href={submissionHref(item, week)}
+                      className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 transition-colors hover:bg-background"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {item.label.split("—").slice(1).join("—").trim() ||
+                            item.label}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.detail}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {item.awaitingConfirmation && (
+                          <span className="rounded-full bg-rag-amber/15 px-2 py-0.5 text-[11px] font-medium text-rag-amber">
+                            Awaiting sign-off
+                          </span>
+                        )}
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {item.category}
+                        </span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <section className="flex items-center gap-2 rounded-lg border border-rag-green/40 bg-rag-green/10 p-4">
+              <CheckCircle2 className="h-4 w-4 text-rag-green" />
+              <p className="text-sm font-medium text-foreground">
+                All weekly submissions are in for this site.
+              </p>
+            </section>
+          ))}
         {!week || !siteWeek ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No data for this week.
@@ -181,20 +253,18 @@ export default async function SiteDetailPage({
                     </p>
                     <p
                       className={`text-2xl font-semibold tabular-nums ${
-                        site.headcount > 0 &&
-                        siteWeek.reportingBarbers >= site.headcount
-                          ? "text-rag-green"
-                          : "text-rag-amber"
+                        takingsComplete ? "text-rag-green" : "text-rag-amber"
                       }`}
                     >
-                      {siteWeek.reportingBarbers}/{site.headcount}
+                      {takingsItem?.detail.split("·")[0].trim() ??
+                        `${siteWeek.reportingBarbers}/${site.headcount}`}
                     </p>
                   </div>
                 </div>
-                {site.headcount === 0 && (
-                  <p className="mt-3 text-xs text-rag-amber">
-                    Number of barbers not set — update Site info so the weekly
-                    tally can track submissions.
+                {takingsItem?.detail.includes("on holiday") && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {takingsItem.detail.split("·").slice(1).join("·").trim()} —
+                    excluded from this week&apos;s expected submissions.
                   </p>
                 )}
               </Card>

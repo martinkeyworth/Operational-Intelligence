@@ -8,10 +8,20 @@ import {
   siteConfirmations,
   sublettingTakings,
   trainingWeeks,
+  leaveRequests,
 } from "@/lib/db/schema"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, gte, lte, sql } from "drizzle-orm"
 import { fmtWeekLong, isPastSubmissionDeadline } from "@/lib/format"
 import { getManualKpiResults } from "@/lib/data"
+
+// Shift an ISO date string (YYYY-MM-DD) by a number of days, returning ISO.
+// Uses UTC to avoid any timezone drift on the date-only value.
+function addDays(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + delta)
+  return dt.toISOString().slice(0, 10)
+}
 
 // ---------------------------------------------------------------------------
 // Weekly submission tracker — answers "who still hasn't entered their data for
@@ -82,6 +92,10 @@ export type SubmissionSummary = {
 export async function getSubmissionStatus(
   week: string,
 ): Promise<SubmissionSummary> {
+  // The week runs Sunday..Saturday; `week` is the Saturday (weekEnding). Derive
+  // the Sunday so we can test whether an approved holiday overlaps this week.
+  const weekStart = addDays(week, -6)
+
   const [
     siteRows,
     takingsRows,
@@ -89,6 +103,8 @@ export async function getSubmissionStatus(
     subletSiteIds,
     subletWeekRows,
     trainingWeekRows,
+    activeBarberRows,
+    holidayRows,
   ] = await Promise.all([
     db.select().from(sites),
     db
@@ -119,6 +135,25 @@ export async function getSubmissionStatus(
       .select({ siteId: trainingWeeks.siteId, confirmed: trainingWeeks.confirmed })
       .from(trainingWeeks)
       .where(eq(trainingWeeks.weekEnding, week)),
+    // The live roster: active barbers per site. This is who is actually expected
+    // to report takings — NOT the site's chair capacity (sites.headcount).
+    db
+      .select({ id: barbers.id, siteId: barbers.siteId })
+      .from(barbers)
+      .where(eq(barbers.active, true)),
+    // Approved holidays overlapping this week — those barbers are not expected
+    // to submit takings, so they don't count against completeness.
+    db
+      .select({ barberId: leaveRequests.barberId })
+      .from(leaveRequests)
+      .where(
+        and(
+          eq(leaveRequests.kind, "holiday"),
+          eq(leaveRequests.status, "Approved"),
+          lte(leaveRequests.startDate, week),
+          gte(leaveRequests.endDate, weekStart),
+        ),
+      ),
   ])
 
   const reportingBySite = new Map(
@@ -133,6 +168,20 @@ export async function getSubmissionStatus(
   const trainingConfirmed = new Set(
     trainingWeekRows.filter((r) => r.confirmed).map((r) => r.siteId),
   )
+
+  // Expected submitters per site = active barbers, minus anyone on approved
+  // holiday this week. Chair capacity (sites.headcount) is NOT used here — an
+  // empty chair or a departed barber must never keep a week outstanding.
+  const onHoliday = new Set(holidayRows.map((r) => r.barberId))
+  const activeBySite = new Map<number, number>()
+  const holidayBySite = new Map<number, number>()
+  for (const b of activeBarberRows) {
+    if (onHoliday.has(b.id)) {
+      holidayBySite.set(b.siteId, (holidayBySite.get(b.siteId) ?? 0) + 1)
+    } else {
+      activeBySite.set(b.siteId, (activeBySite.get(b.siteId) ?? 0) + 1)
+    }
+  }
 
   const items: SubmissionItem[] = []
 
@@ -159,15 +208,17 @@ export async function getSubmissionStatus(
             : "No learners/apprentices entered",
       })
     } else {
-      // Barbershop -> the manager's DECLARED headcount (sites.headcount) is the
-      // single source of truth for how many barbers should report takings.
-      // We do NOT infer it from barber records or submitted figures.
-      const declared = Number(s.headcount ?? 0)
+      // Barbershop -> expected submitters are the ACTIVE roster minus anyone on
+      // approved holiday this week. Chair capacity (sites.headcount) is not the
+      // yardstick: 8 chairs with 7 working barbers should complete at 7/7, and
+      // a barber on approved leave shouldn't hold the week open.
+      const expected = activeBySite.get(s.id) ?? 0
+      const holidaying = holidayBySite.get(s.id) ?? 0
       const reporting = reportingBySite.get(s.id) ?? 0
-      // Complete only when every declared barber has takings entered.
-      // Declared 0 means the manager hasn't set headcount yet -> outstanding,
-      // never auto-green.
-      const takingsSubmitted = declared > 0 && reporting >= declared
+      // Complete when every expected barber has takings in. Expected 0 (no
+      // active barbers rostered) means there is nothing to collect -> not
+      // outstanding.
+      const takingsSubmitted = reporting >= expected
       items.push({
         key: `takings-${s.id}`,
         category: "Takings",
@@ -177,9 +228,11 @@ export async function getSubmissionStatus(
         submitted: takingsSubmitted,
         awaitingConfirmation: false,
         detail:
-          declared === 0
-            ? "Headcount not declared by manager"
-            : `${reporting}/${declared} barbers entered`,
+          expected === 0
+            ? "No active barbers rostered"
+            : `${reporting}/${expected} barbers entered${
+                holidaying > 0 ? ` · ${holidaying} on holiday` : ""
+              }`,
       })
 
       // A weekly confirmation only counts when the underlying takings are
@@ -278,6 +331,30 @@ export async function getSubmissionStatus(
     pastDeadline,
     overdue,
     overdueCount: overdue.length,
+  }
+}
+
+/**
+ * The in-app URL that resolves a single submission item, so a board row taps
+ * straight through to the exact page + week. Mirrors the email deep-links in
+ * lib/weekly-workflow.ts, but returns a relative path for client navigation.
+ */
+export function submissionHref(item: SubmissionItem, week: string): string {
+  const w = `week=${encodeURIComponent(week)}`
+  switch (item.category) {
+    case "Takings":
+      return `/data-entry?${w}${item.siteId != null ? `#site-${item.siteId}` : ""}`
+    case "Confirmation":
+    case "Subletting":
+      return item.siteId != null ? `/my-site/${item.siteId}?${w}` : `/data-entry?${w}`
+    case "Training":
+      return `/functions/Training/input?${w}`
+    case "KPI":
+      return item.label.toLowerCase().startsWith("hr")
+        ? `/functions/HR/input?${w}`
+        : `/functions/Marketing/input?${w}`
+    default:
+      return `/data-entry?${w}`
   }
 }
 
