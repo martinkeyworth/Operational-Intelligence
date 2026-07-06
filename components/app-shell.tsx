@@ -22,6 +22,7 @@ import {
   GraduationCap,
   Megaphone,
   Inbox,
+  CalendarCheck,
   Settings,
   LogOut,
   Crown,
@@ -84,6 +85,12 @@ export function AppShell({
           : canEnterData
             ? [{ href: "/data-entry", label: "Weekly Takings", icon: ClipboardEdit }]
             : []),
+        // Holiday approvals. Dashboard users see the whole company's pending
+        // requests; site managers see their own reports. Plain barbers who
+        // manage nobody don't get the link (their page would be empty).
+        ...(user.canViewDashboard || managerSiteId
+          ? [{ href: "/approvals", label: "Approvals", icon: CalendarCheck }]
+          : []),
       ],
     },
     ...(user.canViewDashboard

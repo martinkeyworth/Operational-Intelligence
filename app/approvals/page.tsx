@@ -25,6 +25,14 @@ export default async function ApprovalsPage() {
               Less Than Zero · Approvals
             </p>
             <div className="flex items-center gap-3">
+              {user.canViewDashboard && (
+                <Link
+                  href="/"
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Dashboard
+                </Link>
+              )}
               {user.isBarber && (
                 <Link
                   href="/team"
