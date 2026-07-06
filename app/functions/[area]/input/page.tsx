@@ -6,16 +6,17 @@ import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
 import { WeekSelector } from "@/components/week-selector"
 import { KpiEntryRow } from "@/components/kpi-entry-row"
+import { MarketingEntryCard } from "@/components/marketing-entry-card"
 import { TrainingCard } from "@/components/training-card"
 import {
   getEntryWeeks,
   getManualKpiResults,
-  getManualKpiResultsByBrand,
+  getMarketingResultsBySite,
   getTrainingSitesForWeek,
   fmtWeekLong,
 } from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
-import { kpisForArea, kpisForBrand, isPerBrandArea } from "@/lib/kpi-config"
+import { kpisForArea, isPerSiteArea } from "@/lib/kpi-config"
 import { ArrowLeft } from "lucide-react"
 
 // Functional areas that have a dedicated, lead-owned input page.
@@ -41,14 +42,17 @@ export default async function FunctionAreaInputPage({
   const week = weekParam && weeks.includes(weekParam) ? weekParam : weeks[0]
 
   const isTraining = area.key === "Training"
-  const perBrand = isPerBrandArea(area.key)
-  const defs = isTraining ? [] : kpisForArea(area.key)
+  const perSite = isPerSiteArea(area.key)
+  const defs = isTraining ? kpisForArea(area.key) : perSite ? [] : kpisForArea(area.key)
   const results =
-    !isTraining && !perBrand && week
+    !isTraining && !perSite && week
       ? await getManualKpiResults(area.key, week)
       : []
-  const brandResults =
-    perBrand && week ? await getManualKpiResultsByBrand(area.key, week) : []
+  // Training social + free-haircut KPIs are group-level (one academy team).
+  const trainingKpis =
+    isTraining && week ? await getManualKpiResults(area.key, week) : []
+  const marketingSites =
+    perSite && week ? await getMarketingResultsBySite(week) : []
   const trainingSites = isTraining && week ? await getTrainingSitesForWeek(week) : []
 
   return (
@@ -87,7 +91,7 @@ export default async function FunctionAreaInputPage({
               {trainingSites.map((t) => (
                 <section key={t.id} className="space-y-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t.name}
+                    {t.name} — throughput
                   </h2>
                   <TrainingCard
                     week={week}
@@ -98,39 +102,58 @@ export default async function FunctionAreaInputPage({
                   />
                 </section>
               ))}
+              <section className="space-y-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Academy social & free haircuts
+                </h2>
+                <p className="text-xs text-muted-foreground text-pretty">
+                  One post per platform per day (7/week to be green) plus 3 free
+                  haircuts per learner. The free-haircut target scales with this
+                  week&apos;s learner count.
+                </p>
+                <div className="flex flex-col gap-3">
+                  {defs.map((def) => {
+                    const r = trainingKpis.find((x) => x.code === def.code)
+                    return (
+                      <KpiEntryRow
+                        key={def.code}
+                        def={def}
+                        week={week}
+                        initialValue={r?.value ?? null}
+                      />
+                    )
+                  })}
+                </div>
+              </section>
             </div>
           )
-        ) : perBrand ? (
-          <div className="space-y-6">
-            <p className="text-xs text-muted-foreground">
-              W/E {fmtWeekLong(week)} · enter each brand separately. The area is
-              only green when every brand hits every measure.
-            </p>
-            {brandResults.map((b) => {
-              const brandDefs = kpisForBrand(area.key)
-              return (
-                <section key={b.brand} className="space-y-2">
+        ) : perSite ? (
+          marketingSites.length === 0 ? (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              No barbershop sites yet.
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              <p className="text-xs text-muted-foreground text-pretty">
+                W/E {fmtWeekLong(week)} · social posts + ratings are entered per
+                site. Site managers enter their own site; the area is only green
+                when every site hits every measure.
+              </p>
+              {marketingSites.map((s) => (
+                <section key={s.siteId} className="space-y-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {b.brand}
+                    {s.siteName}
+                    {s.brand ? ` · ${s.brand}` : ""}
                   </h2>
-                  <div className="flex flex-col gap-3">
-                    {brandDefs.map((def) => {
-                      const r = b.kpis.find((x) => x.code === def.code)
-                      return (
-                        <KpiEntryRow
-                          key={`${b.brand}-${def.code}`}
-                          def={def}
-                          week={week}
-                          brand={b.brand}
-                          initialValue={r?.value ?? null}
-                        />
-                      )
-                    })}
-                  </div>
+                  <MarketingEntryCard
+                    week={week}
+                    siteId={s.siteId}
+                    kpis={s.kpis}
+                  />
                 </section>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          )
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">

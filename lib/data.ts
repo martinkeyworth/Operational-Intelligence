@@ -37,17 +37,19 @@ import {
   user as userTable,
   kpis,
   kpiValues,
+  marketingConfirmations,
 } from "@/lib/db/schema"
 import { FUNCTION_AREAS, canonicalAreaKey, ACTIONS_SCORED_AREAS } from "@/lib/function-areas"
 import {
   kpisForArea,
-  kpisForBrand,
-  isPerBrandArea,
-  KPI_BRANDS,
+  marketingKpisForSite,
+  isMarketingSite,
+  effectiveKpiDef,
   scoreKpi,
   rollUpWeighted,
   AREA_WEIGHTS,
   type WeightedRag,
+  type KpiDef,
 } from "@/lib/kpi-config"
 
 export type { Rag }
@@ -1033,6 +1035,10 @@ export type KpiResult = {
   entered: boolean
   // Named accountable owner for this KPI (falls back to the role label).
   owner: string
+  // Strict two-band (green/red) scoring — used by the social-post cadence KPIs.
+  noAmber?: boolean
+  // Platform label for social-post/rating KPIs (Instagram, Google, …).
+  platform?: string
 }
 
 export type AreaScore = {
@@ -1046,9 +1052,9 @@ export type AreaScore = {
   source: "operational" | "manual"
   detail: string
   kpis: KpiResult[]
-  // Present only for per-brand areas (e.g. Marketing & Social): the KPI grid
-  // split out by brand so the UI can show which brand is dragging the area.
-  brands?: BrandKpiResults[]
+  // Present only for per-site areas (Marketing & Social): the KPI grid split
+  // out by site so the UI can show which site is dragging the area.
+  sites?: SiteMarketingResults[]
 }
 
 export type BusinessScorecard = {
@@ -1088,80 +1094,103 @@ export async function getManualKpiResults(
           )
       : []
 
+  // Training's free-haircut target scales with that week's learner count
+  // (3 per learner = apprentice + private), summed across academy sites.
+  let learners = 0
+  if (areaKey === "Training") {
+    const trainRows = await db
+      .select({
+        priv: trainingWeeks.privateLearners,
+        app: trainingWeeks.apprentices,
+      })
+      .from(trainingWeeks)
+      .where(eq(trainingWeeks.weekEnding, week))
+    learners = trainRows.reduce((a, r) => a + r.priv + r.app, 0)
+  }
+
   return defs.map((def) => {
+    const scored = effectiveKpiDef(def, areaKey === "Training" ? learners : undefined)
     const id = idMap.get(def.code)
     const row = rows.find((r) => r.kpiId === id)
-    const entered = !!row
-    const value = entered ? Number(row!.value) : null
-    const rag: Rag = entered ? scoreKpi(def, value!) : "red"
-    return {
-      code: def.code,
-      name: def.name,
-      unit: def.unit,
-      value,
-      green: def.green,
-      amber: def.amber,
-      direction: def.direction,
-      weight: def.weight,
-      rag,
-      help: def.help,
-      entered,
-      owner: def.owner?.trim() || def.ownerRole,
-    }
+    return toKpiResult(scored, row ? { value: String(row.value) } : undefined)
   })
 }
 
-export type BrandKpiResults = { brand: string; kpis: KpiResult[] }
+export type SiteMarketingResults = {
+  siteId: number
+  siteName: string
+  brand: string | null
+  siteType: string | null
+  kpis: KpiResult[]
+}
+
+/** Map a KPI def + stored row into a scored KpiResult. */
+function toKpiResult(def: KpiDef, row: { value: string } | undefined): KpiResult {
+  const entered = !!row
+  const value = entered ? Number(row!.value) : null
+  const rag: Rag = entered ? scoreKpi(def, value!) : "red"
+  return {
+    code: def.code,
+    name: def.name,
+    unit: def.unit,
+    value,
+    green: def.green,
+    amber: def.amber,
+    direction: def.direction,
+    weight: def.weight,
+    rag,
+    help: def.help,
+    entered,
+    owner: def.owner?.trim() || def.ownerRole,
+    noAmber: def.noAmber,
+    platform: def.platform,
+  }
+}
 
 /**
- * Per-brand KPI results for an area tracked at brand level (e.g. Marketing &
- * Social). Returns one block per brand; any KPI not entered for that brand is
- * scored red so the area cannot read green unless every brand hits every KPI.
+ * Per-SITE Marketing/social KPI results for a week. Each participating site
+ * (barbershops + the Training Academy) reports its own platform posts and
+ * ratings (or, for the academy, posts + free haircuts). Any KPI not entered for
+ * a site is scored red, so Marketing can only read green when every site hits
+ * every measure. The free-haircut target scales to that week's learner count.
  */
-export async function getManualKpiResultsByBrand(
-  areaKey: string,
+export async function getMarketingResultsBySite(
   week: string,
-): Promise<BrandKpiResults[]> {
-  const defs = kpisForBrand(areaKey)
-  if (defs.length === 0) return []
+): Promise<SiteMarketingResults[]> {
+  const siteRows = await getSiteWeek(week)
+  const sites = siteRows.filter((s) => isMarketingSite(s))
+  if (sites.length === 0) return []
 
   const idMap = await kpiIdByCode()
-  const ids = defs.map((d) => idMap.get(d.code)).filter(Boolean) as number[]
+  const marketingIds = Array.from(idMap.entries())
+    .filter(([code]) => code.startsWith("mkt_"))
+    .map(([, id]) => id)
 
   const rows =
-    ids.length > 0
+    marketingIds.length > 0
       ? await db
           .select()
           .from(kpiValues)
           .where(
-            and(eq(kpiValues.period, week), inArray(kpiValues.kpiId, ids)),
+            and(eq(kpiValues.period, week), inArray(kpiValues.kpiId, marketingIds)),
           )
       : []
 
-  return KPI_BRANDS.map((brand) => ({
-    brand,
-    kpis: defs.map((def) => {
+  return sites.map((s) => {
+    const defs = marketingKpisForSite(s)
+    const kpis = defs.map((def) => {
       const id = idMap.get(def.code)
-      const row = rows.find((r) => r.kpiId === id && r.brand === brand)
-      const entered = !!row
-      const value = entered ? Number(row!.value) : null
-      const rag: Rag = entered ? scoreKpi(def, value!) : "red"
-      return {
-        code: def.code,
-        name: def.name,
-        unit: def.unit,
-        value,
-        green: def.green,
-        amber: def.amber,
-        direction: def.direction,
-        weight: def.weight,
-        rag,
-        help: def.help,
-        entered,
-        owner: def.owner?.trim() || def.ownerRole,
-      }
-    }),
-  }))
+      const row = rows.find((r) => r.kpiId === id && r.siteId === s.id)
+      return toKpiResult(def, row)
+    })
+    return {
+      siteId: s.id,
+      siteName: s.name,
+      brand: s.brand,
+      siteType: s.siteType,
+      kpis,
+    }
+  })
 }
 
 /**
@@ -1251,19 +1280,18 @@ export async function getBusinessScorecard(
   for (const areaKey of ["HR", "Marketing"]) {
     const areaCfg = FUNCTION_AREAS.find((a) => a.key === areaKey)
 
-    if (isPerBrandArea(areaKey)) {
-      // Per-brand area: score every brand × KPI cell. Un-entered cells are
-      // already red, so the area can only be green when every brand hits every
-      // KPI. The roll-up spans all cells across all brands.
-      const brands = await getManualKpiResultsByBrand(areaKey, week)
-      const allCells = brands.flatMap((b) => b.kpis)
+    if (areaKey === "Marketing") {
+      // Per-site area: score every site × KPI cell. Un-entered cells are
+      // already red, so Marketing can only read green when every site hits
+      // every measure. The roll-up spans all cells across all sites.
+      const marketingSites = await getMarketingResultsBySite(week)
+      const allCells = marketingSites.flatMap((s) => s.kpis)
       const enteredCells = allCells.filter((k) => k.entered)
       const roll = rollUpWeighted(
         allCells.map((k) => ({ item: k.rag, weight: k.weight }) as WeightedRag),
       )
-      const totalCells = allCells.length
-      const brandsReporting = brands.filter((b) =>
-        b.kpis.some((k) => k.entered),
+      const sitesReporting = marketingSites.filter((s) =>
+        s.kpis.some((k) => k.entered),
       ).length
       manualAreas.push({
         key: areaKey,
@@ -1274,9 +1302,9 @@ export async function getBusinessScorecard(
         rag: enteredCells.length === 0 ? "red" : roll.rag,
         pct: enteredCells.length === 0 ? 0 : roll.pct,
         source: "manual",
-        detail: `${brandsReporting}/${KPI_BRANDS.length} brands · ${enteredCells.length}/${totalCells} KPIs reported`,
+        detail: `${sitesReporting}/${marketingSites.length} sites · ${enteredCells.length}/${allCells.length} KPIs reported`,
         kpis: allCells,
-        brands,
+        sites: marketingSites,
       })
       continue
     }
@@ -1809,14 +1837,53 @@ export async function getTrainingSitesForWeek(
 }
 
 // Whether a single training site has entered + confirmed the given week.
+/** Total academy learners (private + apprentices) for a week — drives the
+ *  dynamic free-haircut target (3 per learner). */
+export async function getTrainingLearnerCount(week: string): Promise<number> {
+  const rows = await db
+    .select({
+      priv: trainingWeeks.privateLearners,
+      app: trainingWeeks.apprentices,
+    })
+    .from(trainingWeeks)
+    .where(eq(trainingWeeks.weekEnding, week))
+  return rows.reduce((a, r) => a + r.priv + r.app, 0)
+}
+
+/** Mario's weekly marketing/social sign-off status for a week. */
+export async function getMarketingConfirmation(
+  week: string,
+): Promise<{ confirmed: boolean; confirmedBy: string | null; confirmedAt: Date | null }> {
+  const [row] = await db
+    .select({
+      confirmed: marketingConfirmations.confirmed,
+      confirmedByName: marketingConfirmations.confirmedByName,
+      confirmedAt: marketingConfirmations.confirmedAt,
+    })
+    .from(marketingConfirmations)
+    .where(eq(marketingConfirmations.weekEnding, week))
+  return {
+    confirmed: Boolean(row?.confirmed),
+    confirmedBy: row?.confirmedByName ?? null,
+    confirmedAt: row?.confirmedAt ?? null,
+  }
+}
+
 export async function getTrainingConfirmation(
   siteId: number,
   week: string,
-): Promise<{ entered: boolean; confirmed: boolean; confirmedBy: string | null }> {
+): Promise<{
+  entered: boolean
+  confirmed: boolean
+  confirmedBy: string | null
+  learners: number
+}> {
   const [tw] = await db
     .select({
       confirmed: trainingWeeks.confirmed,
       confirmedBy: trainingWeeks.confirmedBy,
+      privateLearners: trainingWeeks.privateLearners,
+      apprentices: trainingWeeks.apprentices,
     })
     .from(trainingWeeks)
     .where(
@@ -1826,6 +1893,7 @@ export async function getTrainingConfirmation(
     entered: Boolean(tw),
     confirmed: Boolean(tw?.confirmed),
     confirmedBy: tw?.confirmedBy ?? null,
+    learners: tw ? tw.privateLearners + tw.apprentices : 0,
   }
 }
 

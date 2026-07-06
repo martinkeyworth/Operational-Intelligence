@@ -3,32 +3,48 @@
 import { and, eq, isNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { kpis, kpiValues } from "@/lib/db/schema"
-import { requireUser, canInputArea } from "@/lib/access"
-import { findKpi, scoreKpi, kpisForBrand, isPerBrandArea } from "@/lib/kpi-config"
+import { kpis, kpiValues, trainingWeeks } from "@/lib/db/schema"
+import { requireUser, canInputArea, canManageSite } from "@/lib/access"
+import {
+  findKpi,
+  scoreKpi,
+  effectiveKpiDef,
+  marketingKpisForSite,
+  isPerSiteArea,
+} from "@/lib/kpi-config"
+import { getSite } from "@/lib/data"
 
 /**
- * Save a single weekly functional-area KPI value (HR / Marketing). Scores it
- * RAG against its thresholds and upserts one row per KPI per week. Restricted
- * to the lead of that KPI's functional area (owners may input any area).
+ * Save a single weekly functional-area KPI value.
  *
- * For per-brand areas (Marketing & Social) an optional `brand` is captured so
- * each brand stores its own row, and the spend KPI is scored against the
- * per-brand budget rather than the whole-group budget.
+ * Marketing/social is scored PER SITE (site managers enter their own site's
+ * posts + ratings, resolved from the site's brand). HR and Training KPIs are
+ * group-level (no site). Training's free-haircut target scales with that week's
+ * learner count, so scoring matches what the entry screen shows.
  */
 export async function saveKpiValue(formData: FormData) {
   const code = String(formData.get("code") ?? "")
   const week = String(formData.get("week") ?? "")
   const raw = formData.get("value")
   const commentary = String(formData.get("commentary") ?? "").trim() || null
-  const brand = String(formData.get("brand") ?? "").trim() || null
+  const siteIdRaw = String(formData.get("siteId") ?? "").trim()
+  const siteId = siteIdRaw ? Number(siteIdRaw) : null
 
   const def = findKpi(code)
   if (!def || !week) throw new Error("Unknown KPI or week")
 
-  // Authorise against the KPI's functional area, not just "has a dashboard".
   const user = await requireUser()
-  if (!canInputArea(user, def.functionArea)) {
+
+  const perSite = isPerSiteArea(def.functionArea)
+
+  // Authorise: per-site marketing values require access to that site; group
+  // KPIs require the functional-area lead (or an owner).
+  if (perSite) {
+    if (!siteId) throw new Error("Missing site for per-site KPI")
+    if (!(await canManageSite(user, siteId)) && !canInputArea(user, def.functionArea)) {
+      throw new Error("Not authorised to input this site")
+    }
+  } else if (!canInputArea(user, def.functionArea)) {
     throw new Error("Not authorised to input this area")
   }
 
@@ -37,15 +53,34 @@ export async function saveKpiValue(formData: FormData) {
   const value = Number(raw)
   if (Number.isNaN(value)) throw new Error("Invalid KPI value")
 
-  // For per-brand areas, score against the brand-scaled thresholds so e.g.
-  // marketing spend is judged against one brand's budget.
-  const scoringDef =
-    brand && isPerBrandArea(def.functionArea)
-      ? kpisForBrand(def.functionArea).find((d) => d.code === code) ?? def
-      : def
+  // Resolve the scoring def so the stored RAG matches the entry screen.
+  let scoringDef = def
+  if (perSite && siteId) {
+    // Per-site marketing: use the site's brand-resolved def (post target +
+    // rating bands).
+    const site = await getSite(siteId)
+    if (site) {
+      const siteDefs = marketingKpisForSite({
+        brand: site.brand,
+        siteType: site.siteType,
+      })
+      scoringDef = siteDefs.find((d) => d.code === code) ?? def
+    }
+  } else if (code === "trn_free_haircuts") {
+    // Group-level Training KPI with a dynamic target of 3 per learner
+    // (apprentice + private) across the academy sites this week.
+    const trainRows = await db
+      .select({
+        priv: trainingWeeks.privateLearners,
+        app: trainingWeeks.apprentices,
+      })
+      .from(trainingWeeks)
+      .where(eq(trainingWeeks.weekEnding, week))
+    const learners = trainRows.reduce((a, r) => a + r.priv + r.app, 0)
+    scoringDef = effectiveKpiDef(def, learners)
+  }
   const rag = scoreKpi(scoringDef, value)
 
-  // Resolve the catalogue id for this code.
   const [kpi] = await db.select({ id: kpis.id }).from(kpis).where(eq(kpis.code, code))
   if (!kpi) throw new Error("KPI not seeded")
 
@@ -56,25 +91,17 @@ export async function saveKpiValue(formData: FormData) {
       and(
         eq(kpiValues.kpiId, kpi.id),
         eq(kpiValues.period, week),
-        brand ? eq(kpiValues.brand, brand) : isNull(kpiValues.brand),
+        siteId ? eq(kpiValues.siteId, siteId) : isNull(kpiValues.siteId),
       ),
     )
 
-  const row = {
-    value: String(value),
-    rag,
-    commentary,
-  }
+  const row = { value: String(value), rag, commentary }
 
   if (existing.length > 0) {
     await db.update(kpiValues).set(row).where(eq(kpiValues.id, existing[0].id))
   } else {
-    await db
-      .insert(kpiValues)
-      .values({ kpiId: kpi.id, period: week, brand, ...row })
+    await db.insert(kpiValues).values({ kpiId: kpi.id, period: week, siteId, ...row })
   }
 
-  // KPI values surface on the dashboard, the function areas and reports.
-  // Revalidate the whole tree so every dependent view updates consistently.
   revalidatePath("/", "layout")
 }

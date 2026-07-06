@@ -14,12 +14,15 @@ export function KpiEntryRow({
   week,
   initialValue,
   brand,
+  siteId,
 }: {
   def: KpiDef
   week: string
   initialValue: number | null
-  /** Optional brand scope for per-brand areas (e.g. Marketing & Social). */
+  /** Optional brand scope for per-brand areas (legacy). */
   brand?: string
+  /** Optional site scope for per-site areas (e.g. Marketing & Social). */
+  siteId?: number
 }) {
   const router = useRouter()
   const [value, setValue] = useState<string>(
@@ -44,8 +47,11 @@ export function KpiEntryRow({
     }
   }
 
-  const targetLabel =
-    def.direction === "higher_better"
+  const targetLabel = def.noAmber
+    ? def.direction === "higher_better"
+      ? `Green ≥ ${def.green} ${def.unit} · else red`
+      : `Green ≤ ${def.green} ${def.unit} · else red`
+    : def.direction === "higher_better"
       ? `Green ≥ ${def.green} ${def.unit} · Amber ≥ ${def.amber}`
       : `Green ≤ ${def.green} ${def.unit} · Amber ≤ ${def.amber}`
 
@@ -57,6 +63,9 @@ export function KpiEntryRow({
       <input type="hidden" name="code" value={def.code} />
       <input type="hidden" name="week" value={week} />
       {brand && <input type="hidden" name="brand" value={brand} />}
+      {siteId != null && (
+        <input type="hidden" name="siteId" value={siteId} />
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

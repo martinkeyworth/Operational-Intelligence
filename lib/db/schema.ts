@@ -152,6 +152,20 @@ export const weeklyTakings = pgTable("weekly_takings", {
 })
 
 // Weekly functional-leader confirmation of each site's details.
+// Mario's weekly sign-off that all social/marketing activity (every site + HR
+// + Training) has been reviewed. One row per week-ending. Entering figures is
+// separate from confirming them, mirroring the site/training confirmation flow.
+export const marketingConfirmations = pgTable("marketing_confirmations", {
+  id: serial("id").primaryKey(),
+  weekEnding: date("week_ending").notNull().unique(),
+  confirmed: boolean("confirmed").notNull().default(false),
+  confirmedBy: text("confirmed_by"),
+  confirmedByName: text("confirmed_by_name"),
+  notes: text("notes"),
+  confirmedAt: timestamp("confirmed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
 export const siteConfirmations = pgTable("site_confirmations", {
   id: serial("id").primaryKey(),
   siteId: integer("site_id").notNull(),

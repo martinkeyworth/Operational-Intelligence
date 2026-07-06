@@ -6,6 +6,7 @@ import {
   barbers,
   actions,
   siteConfirmations,
+  marketingConfirmations,
   sublettingTakings,
   trainingWeeks,
   weeklyTakings,
@@ -13,7 +14,12 @@ import {
 } from "@/lib/db/schema"
 import { and, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { requireDashboard, requireDataEntry, requireSiteAccess } from "@/lib/access"
+import {
+  requireDashboard,
+  requireDataEntry,
+  requireSiteAccess,
+  requireAreaLead,
+} from "@/lib/access"
 import { SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 import { defaultOwnerEmailForAction } from "@/lib/area-owners"
@@ -170,6 +176,42 @@ export async function editSite(formData: FormData) {
     .where(eq(sites.id, id))
   revalidatePath("/sites")
   revalidatePath(`/sites/${id}`)
+  revalidatePath("/")
+}
+
+// Mario's weekly sign-off that all social/marketing activity across every site
+// + HR + Training has been reviewed. Site managers/leads ENTER their figures;
+// this separate confirm step is what clears Marketing on the submissions board.
+export async function confirmMarketingWeek(formData: FormData) {
+  // Gated to the Marketing/social lead (Mario) or an owner.
+  const actor = await requireAreaLead("Marketing")
+  const weekEnding = String(formData.get("weekEnding"))
+  if (!weekEnding) throw new Error("Missing week")
+
+  const existing = await db
+    .select({ id: marketingConfirmations.id })
+    .from(marketingConfirmations)
+    .where(eq(marketingConfirmations.weekEnding, weekEnding))
+
+  const values = {
+    confirmed: true,
+    confirmedBy: actor.email,
+    confirmedByName: actor.name || actor.email,
+    notes: String(formData.get("notes") ?? "").trim() || null,
+    confirmedAt: new Date(),
+  }
+
+  if (existing.length > 0) {
+    await db
+      .update(marketingConfirmations)
+      .set(values)
+      .where(eq(marketingConfirmations.id, existing[0].id))
+  } else {
+    await db.insert(marketingConfirmations).values({ weekEnding, ...values })
+  }
+
+  revalidatePath("/functions/Marketing")
+  revalidatePath("/reports/submissions")
   revalidatePath("/")
 }
 

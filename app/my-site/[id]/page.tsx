@@ -8,16 +8,18 @@ import { StatCard } from "@/components/ui-bits"
 import { RagBadge } from "@/components/rag"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
 import { BarberEntryCard } from "@/components/barber-entry-card"
+import { MarketingEntryCard } from "@/components/marketing-entry-card"
 import { SubletCard } from "@/components/sublet-card"
 import { TrainingCard } from "@/components/training-card"
 import { WeekSelector } from "@/components/week-selector"
-import { CheckCircle2, ClipboardEdit, CalendarClock } from "lucide-react"
+import { CheckCircle2, ClipboardEdit, CalendarClock, Share2 } from "lucide-react"
 import {
   getSelectableWeeks,
   getDefaultWeek,
   getSite,
   getSiteWeek,
   getDataEntrySites,
+  getMarketingResultsBySite,
   getSubletForSiteWeek,
   getSubletHistory,
   getCapacityKpis,
@@ -75,6 +77,12 @@ export default async function MySitePage({
   const subletHistory = hasSubletting ? await getSubletHistory(siteId) : []
 
   const isTraining = site.siteType === "training"
+  // Barbershop managers enter their own site's social posts + reviews here.
+  const marketingKpis =
+    !isTraining && week
+      ? (await getMarketingResultsBySite(week)).find((s) => s.siteId === siteId)
+          ?.kpis ?? []
+      : []
   const capacity = week ? await getCapacityKpis(siteId, week) : null
   const trainingConfirm =
     isTraining && week
@@ -245,6 +253,27 @@ export default async function MySitePage({
                 confirmedBy={siteWeek.confirmedBy}
               />
             </Card>
+
+            {!isTraining && marketingKpis.length > 0 && (
+              <Card className="p-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Social &amp; reviews
+                  </h2>
+                </div>
+                <p className="mb-4 text-pretty text-xs text-muted-foreground">
+                  Enter how many posts went out on each platform this week, plus
+                  your latest Google and booking ratings. Post 3×/day per
+                  platform to stay green. Mario reviews and signs off the week.
+                </p>
+                <MarketingEntryCard
+                  week={week}
+                  siteId={siteId}
+                  kpis={marketingKpis}
+                />
+              </Card>
+            )}
 
             {capacity && isTraining && (
               <TrainingCard

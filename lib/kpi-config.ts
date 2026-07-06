@@ -1,38 +1,15 @@
 // ---------------------------------------------------------------------------
 // KPI catalogue + scoring — every functional area defines weekly KPIs that are
-// scored RAG against industry-standard thresholds, rolled up to a per-area RAG
-// (weighted), then to a single overall business RAG (weighted across areas).
+// scored RAG against thresholds, rolled up to a per-area RAG (weighted), then
+// to a single overall business RAG (weighted across areas).
+//
+// Marketing & Social is tracked PER SITE, PER PLATFORM: each site reports how
+// many posts went out on each of its platforms that week plus its Google and
+// booking-platform ratings. Site managers enter their own site's figures; the
+// social-media lead (Mario) reviews and confirms the whole week.
 // ---------------------------------------------------------------------------
 
 import type { Rag } from "@/lib/format"
-import { PLAN_ASSUMPTIONS } from "@/lib/plan"
-import { SITE_BRAND_OPTIONS } from "@/lib/brands"
-
-// Functional areas whose KPIs are tracked separately per brand. Marketing &
-// Social is owned at the brand level (Mario, Head of Brands), so each brand
-// reports its own posts, rating, bookings, spend and free haircuts — and the
-// area RAG rolls up every brand × KPI cell (a missing brand counts as red).
-export const PER_BRAND_AREAS = ["Marketing"]
-
-/** The brands a per-brand area is scored across (the barbershop site brands). */
-export const KPI_BRANDS = SITE_BRAND_OPTIONS
-
-export function isPerBrandArea(areaKey: string): boolean {
-  return PER_BRAND_AREAS.includes(areaKey)
-}
-
-// Marketing budget derived from the plan: £2k/yr per brand across the active
-// brands, expressed as a weekly group budget for KPI scoring.
-export const MARKETING_BRAND_COUNT = 3
-export const MARKETING_WEEKLY_BUDGET = Math.round(
-  (PLAN_ASSUMPTIONS.marketingAnnualPerBrand * MARKETING_BRAND_COUNT) /
-    PLAN_ASSUMPTIONS.weeksPerYear,
-)
-// Per-brand weekly marketing budget (one brand's £2k/yr expressed weekly). Used
-// to score the spend KPI when Marketing is tracked per brand.
-export const MARKETING_WEEKLY_BUDGET_PER_BRAND = Math.round(
-  PLAN_ASSUMPTIONS.marketingAnnualPerBrand / PLAN_ASSUMPTIONS.weeksPerYear,
-)
 
 export type KpiDirection = "higher_better" | "lower_better"
 
@@ -47,20 +24,128 @@ export type KpiDef = {
   green: number
   amber: number
   direction: KpiDirection
+  // When true the KPI has NO amber band — it is either green (target met) or
+  // red. Used for the social-posting cadence targets (hit the daily minimum
+  // for the week or it's red).
+  noAmber?: boolean
   ownerRole: string
   // Named accountable owner for this KPI (the single person on the hook).
-  // Falls back to the ownerRole label when no individual is named.
   owner?: string
   // Relative weight of this KPI within its functional area.
   weight: number
   help: string
+  // Social platform this KPI relates to (posts + ratings), for grouping in UI.
+  platform?: string
 }
 
-// Industry-standard weekly KPI catalogue for the six functional areas. Some
-// areas (Capacity/RTB/Revenue/Subletting/Training) are scored from operational
-// data elsewhere; the manually-entered KPIs below cover HR and Marketing plus
-// any qualitative weekly measures. Thresholds are sensible defaults and can be
-// tuned later by editing this file.
+// ---------------------------------------------------------------------------
+// Social platforms
+// ---------------------------------------------------------------------------
+
+export const PLATFORM_LABELS: Record<string, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  google: "Google",
+  linkedin: "LinkedIn",
+  booksy: "Booksy",
+  fresha: "Fresha",
+}
+
+export function platformLabel(code: string): string {
+  return PLATFORM_LABELS[code] ?? code
+}
+
+// Weekly posting targets, expressed as (per-day minimum × 7 days).
+export const SHOP_POSTS_PER_DAY = 3
+export const FUNCTION_POSTS_PER_DAY = 1
+export const SHOP_WEEKLY_POST_TARGET = SHOP_POSTS_PER_DAY * 7 // 21
+export const FUNCTION_WEEKLY_POST_TARGET = FUNCTION_POSTS_PER_DAY * 7 // 7
+
+// Free haircuts at the Training Academy: 3 per week per learner
+// (apprentice + private).
+export const FREE_HAIRCUTS_PER_LEARNER = 3
+export function freeHaircutTarget(learners: number): number {
+  return Math.max(0, Math.round(learners)) * FREE_HAIRCUTS_PER_LEARNER
+}
+
+// Each barbershop brand posts on a specific set of platforms and takes bookings
+// on a specific booking platform. Velvet Ash mirrors Less Than Zero (it is
+// being rebranded to LTZ). Resolve by the value stored in sites.brand.
+export type SocialProfile = { posts: string[]; booking: string }
+
+export const SOCIAL_PROFILE_BY_BRAND: Record<string, SocialProfile> = {
+  "Less Than Zero": {
+    posts: ["instagram", "google", "facebook", "booksy"],
+    booking: "Booksy",
+  },
+  "Velvet Ash": {
+    posts: ["instagram", "google", "facebook", "booksy"],
+    booking: "Booksy",
+  },
+  "F.AF": {
+    posts: ["instagram", "tiktok", "google", "fresha"],
+    booking: "Fresha",
+  },
+}
+
+/** The social profile for a barbershop brand (falls back to the LTZ set). */
+export function socialProfileForBrand(
+  brand: string | null | undefined,
+): SocialProfile {
+  const match = brand ? SOCIAL_PROFILE_BY_BRAND[brand] : undefined
+  return match ?? SOCIAL_PROFILE_BY_BRAND["Less Than Zero"]
+}
+
+// The 5 platforms HR and Training each post on daily (1/day = green, no amber).
+export const FUNCTION_POST_PLATFORMS = [
+  "instagram",
+  "facebook",
+  "tiktok",
+  "google",
+  "linkedin",
+]
+
+// ---------------------------------------------------------------------------
+// Static KPI catalogue
+// ---------------------------------------------------------------------------
+
+function shopPostDef(platform: string): KpiDef {
+  return {
+    code: `mkt_posts_${platform}`,
+    name: `${platformLabel(platform)} posts`,
+    functionArea: "Marketing",
+    unit: "posts",
+    green: SHOP_WEEKLY_POST_TARGET,
+    amber: SHOP_WEEKLY_POST_TARGET,
+    direction: "higher_better",
+    noAmber: true,
+    ownerRole: "Social Media",
+    owner: "Mario (Head of Brands)",
+    weight: 1,
+    platform,
+    help: `Posts published on ${platformLabel(platform)} this week. Target ${SHOP_POSTS_PER_DAY}/day (${SHOP_WEEKLY_POST_TARGET}/week) to be green — anything below is red.`,
+  }
+}
+
+function functionPostDef(area: "HR" | "Training", platform: string): KpiDef {
+  return {
+    code: `${area === "HR" ? "hr" : "trn"}_posts_${platform}`,
+    name: `${platformLabel(platform)} posts`,
+    functionArea: area,
+    unit: "posts",
+    green: FUNCTION_WEEKLY_POST_TARGET,
+    amber: FUNCTION_WEEKLY_POST_TARGET,
+    direction: "higher_better",
+    noAmber: true,
+    ownerRole: area === "HR" ? "HR Lead" : "Training Lead",
+    owner: area === "HR" ? "Luke (HR Director)" : "Ravi (Training Lead)",
+    weight: 1,
+    platform,
+    help: `Posts published on ${platformLabel(platform)} this week. Target ${FUNCTION_POSTS_PER_DAY}/day (${FUNCTION_WEEKLY_POST_TARGET}/week) to be green — anything below is red.`,
+  }
+}
+
 export const KPI_CATALOGUE: KpiDef[] = [
   // ---- People & HR --------------------------------------------------------
   {
@@ -102,112 +187,138 @@ export const KPI_CATALOGUE: KpiDef[] = [
     weight: 1.5,
     help: "Right-to-work, contracts and certifications overdue. Compliance is weighted heavily.",
   },
-  // ---- Marketing & Social -------------------------------------------------
+  // HR daily social posting (1/day per platform, no amber).
+  ...FUNCTION_POST_PLATFORMS.map((p) => functionPostDef("HR", p)),
+
+  // ---- Marketing & Social (per site, per platform) ------------------------
+  // Post KPIs — one per platform used across the barbershop brands. Which
+  // platforms apply to a given site is resolved from its brand.
+  shopPostDef("instagram"),
+  shopPostDef("facebook"),
+  shopPostDef("tiktok"),
+  shopPostDef("google"),
+  shopPostDef("booksy"),
+  shopPostDef("fresha"),
   {
-    code: "mkt_posts",
-    name: "Social posts published",
-    functionArea: "Marketing",
-    unit: "posts",
-    green: 5,
-    amber: 3,
-    direction: "higher_better",
-    ownerRole: "Social Media",
-    owner: "Mario (Head of Brands)",
-    weight: 1,
-    help: "Weekly content cadence across channels. Target 5+ posts/week.",
-  },
-  {
-    code: "mkt_rating",
+    code: "mkt_google_rating",
     name: "Google rating (avg)",
     functionArea: "Marketing",
     unit: "★",
-    green: 4.5,
-    amber: 4.0,
+    green: 4.8,
+    amber: 4.5,
     direction: "higher_better",
     ownerRole: "Social Media",
     owner: "Mario (Head of Brands)",
     weight: 1.5,
-    help: "Average Google review rating. Reputation is weighted heavily.",
+    help: "Average Google review rating for the site. Green ≥ 4.8 · amber 4.5–4.79 · red below 4.5.",
   },
   {
-    code: "mkt_bookings",
-    name: "Bookings from marketing",
+    code: "mkt_booking_rating",
+    name: "Booking platform rating (avg)",
     functionArea: "Marketing",
-    unit: "bookings",
-    green: 20,
-    amber: 10,
+    unit: "★",
+    green: 4.9,
+    amber: 4.7,
     direction: "higher_better",
     ownerRole: "Social Media",
     owner: "Mario (Head of Brands)",
-    weight: 1,
-    help: "Leads/bookings attributed to campaigns this week.",
+    weight: 1.5,
+    help: "Average Booksy/Fresha rating for the site. Green ≥ 4.9 · amber 4.7–4.89 · red below 4.7.",
   },
+
+  // ---- Training & Academy (social + free haircuts) ------------------------
+  ...FUNCTION_POST_PLATFORMS.map((p) => functionPostDef("Training", p)),
   {
-    code: "mkt_spend",
-    name: "Marketing spend this week (£)",
-    functionArea: "Marketing",
-    unit: "£",
-    // Plan budget: £2k/yr per brand. Weekly group budget is set in kpi-config
-    // from PLAN_ASSUMPTIONS so the threshold tracks the board-approved plan.
-    green: MARKETING_WEEKLY_BUDGET,
-    amber: Math.round(MARKETING_WEEKLY_BUDGET * 1.3),
-    direction: "lower_better",
-    ownerRole: "Social Media",
-    owner: "Mario (Head of Brands)",
-    weight: 1,
-    help: `Total marketing spend this week vs the plan budget of £${PLAN_ASSUMPTIONS.marketingAnnualPerBrand.toLocaleString()}/yr per brand (${MARKETING_BRAND_COUNT} brands ≈ £${MARKETING_WEEKLY_BUDGET}/week). On/under budget is green.`,
-  },
-  {
-    code: "mkt_free_haircuts",
+    code: "trn_free_haircuts",
     name: "Free haircuts given",
-    functionArea: "Marketing",
+    functionArea: "Training",
     unit: "cuts",
-    // Community/brand-building leading indicator: complimentary cuts (charity,
-    // schools, content, influencer/seeding). Higher is better — target 8+/week.
-    green: 8,
-    amber: 4,
+    // Dynamic target: 3 per learner per week (apprentice + private). The green
+    // threshold is computed per week from the confirmed learner count; this
+    // static value is only a fallback when learners are unknown.
+    green: FREE_HAIRCUTS_PER_LEARNER,
+    amber: FREE_HAIRCUTS_PER_LEARNER,
     direction: "higher_better",
-    ownerRole: "Social Media",
-    owner: "Mario (Head of Brands)",
+    noAmber: true,
+    ownerRole: "Training Lead",
+    owner: "Ravi (Training Lead)",
     weight: 1,
-    help: "Complimentary cuts given this week for community, content and outreach (charity, schools, influencer seeding). A leading indicator of brand reach and goodwill — target 8+/week.",
+    help: `Complimentary training cuts given this week. Target ${FREE_HAIRCUTS_PER_LEARNER} per learner (apprentice + private) to be green.`,
   },
 ]
+
+// Functional areas whose Marketing KPIs are scored PER SITE (one cell per
+// applicable platform/rating per barbershop site).
+export const PER_SITE_AREAS = ["Marketing"]
+
+export function isPerSiteArea(areaKey: string): boolean {
+  return PER_SITE_AREAS.includes(areaKey)
+}
 
 export function kpisForArea(areaKey: string): KpiDef[] {
   return KPI_CATALOGUE.filter((k) => k.functionArea === areaKey)
 }
 
-/** KPI defs for a per-brand area, with budget-style thresholds scaled to a
- *  single brand. For Marketing the spend KPI is measured against one brand's
- *  weekly budget rather than the whole-group budget. */
-export function kpisForBrand(areaKey: string): KpiDef[] {
-  return kpisForArea(areaKey).map((def) => {
-    if (def.code === "mkt_spend") {
-      return {
-        ...def,
-        green: MARKETING_WEEKLY_BUDGET_PER_BRAND,
-        amber: Math.round(MARKETING_WEEKLY_BUDGET_PER_BRAND * 1.3),
-      }
-    }
-    return def
-  })
+// A minimal shape describing a site for Marketing KPI resolution.
+export type MarketingSiteLike = {
+  brand: string | null
+  siteType: string | null
+}
+
+/**
+ * Marketing is tracked per BARBERSHOP site. The Training Academy tracks its own
+ * social posts + free haircuts under the Training area, and HR under HR — so
+ * they are not part of the per-site Marketing grid.
+ */
+export function isMarketingSite(site: MarketingSiteLike): boolean {
+  return (site.siteType ?? "barbershop") === "barbershop"
+}
+
+/**
+ * The Marketing KPI defs that apply to a barbershop site, resolved from its
+ * brand: one post KPI per platform the brand uses, plus the Google and booking
+ * ratings. Any post platform not used by the brand is simply omitted. The
+ * `learners` argument is accepted for signature symmetry with other areas but
+ * is unused for barbershops.
+ */
+export function marketingKpisForSite(
+  site: MarketingSiteLike,
+  _learners?: number,
+): KpiDef[] {
+  const profile = socialProfileForBrand(site.brand)
+  const postDefs = profile.posts
+    .map((p) => KPI_CATALOGUE.find((d) => d.code === `mkt_posts_${p}`))
+    .filter(Boolean) as KpiDef[]
+  const ratings = KPI_CATALOGUE.filter(
+    (d) => d.code === "mkt_google_rating" || d.code === "mkt_booking_rating",
+  )
+  return [...postDefs, ...ratings]
 }
 
 export function findKpi(code: string): KpiDef | undefined {
   return KPI_CATALOGUE.find((k) => k.code === code)
 }
 
+/** Effective def for scoring — applies the dynamic free-haircut target when a
+ *  learner count is supplied. */
+export function effectiveKpiDef(def: KpiDef, learners?: number): KpiDef {
+  if (def.code === "trn_free_haircuts" && learners != null) {
+    const target = freeHaircutTarget(learners)
+    return { ...def, green: target, amber: target }
+  }
+  return def
+}
+
 /** Score a single KPI value against its thresholds. */
 export function scoreKpi(def: KpiDef, value: number): Rag {
   if (def.direction === "higher_better") {
     if (value >= def.green) return "green"
-    if (value >= def.amber) return "amber"
+    if (!def.noAmber && value >= def.amber) return "amber"
     return "red"
   }
   // lower_better
   if (value <= def.green) return "green"
-  if (value <= def.amber) return "amber"
+  if (!def.noAmber && value <= def.amber) return "amber"
   return "red"
 }
 

@@ -12,7 +12,11 @@ import {
 } from "@/lib/db/schema"
 import { and, eq, gte, lte, sql } from "drizzle-orm"
 import { fmtWeekLong, isPastSubmissionDeadline } from "@/lib/format"
-import { getManualKpiResults } from "@/lib/data"
+import {
+  getManualKpiResults,
+  getMarketingResultsBySite,
+  getMarketingConfirmation,
+} from "@/lib/data"
 
 // Shift an ISO date string (YYYY-MM-DD) by a number of days, returning ISO.
 // Uses UTC to avoid any timezone drift on the date-only value.
@@ -270,21 +274,54 @@ export async function getSubmissionStatus(
     }
   }
 
-  // ---- Manual KPI areas (HR + Marketing) ----------------------------------
-  for (const area of ["HR", "Marketing"] as const) {
-    const results = await getManualKpiResults(area, week)
-    if (results.length === 0) continue
-    const enteredCount = results.filter((r) => r.entered).length
-    items.push({
-      key: `kpi-${area}`,
-      category: "KPI",
-      label: `${area} — weekly KPIs`,
-      ownerRole: area === "HR" ? "HR Lead" : "Social Media",
-      siteId: null,
-      submitted: enteredCount === results.length,
-      awaitingConfirmation: false,
-      detail: `${enteredCount}/${results.length} KPIs entered`,
-    })
+  // ---- HR manual KPIs (group-level, entered by the HR lead) ---------------
+  {
+    const results = await getManualKpiResults("HR", week)
+    if (results.length > 0) {
+      const enteredCount = results.filter((r) => r.entered).length
+      items.push({
+        key: `kpi-HR`,
+        category: "KPI",
+        label: `HR — weekly KPIs`,
+        ownerRole: "HR Lead",
+        siteId: null,
+        submitted: enteredCount === results.length,
+        awaitingConfirmation: false,
+        detail: `${enteredCount}/${results.length} KPIs entered`,
+      })
+    }
+  }
+
+  // ---- Marketing (per-site social) -----------------------------------------
+  // Each barbershop enters its own social posts + reviews; the academy adds
+  // its posts + free-haircut count. The week is DONE only when Mario reviews
+  // and confirms it (marketing_confirmations), mirroring the training gate.
+  {
+    const siteMarketing = await getMarketingResultsBySite(week)
+    if (siteMarketing.length > 0) {
+      const marketingConfirm = await getMarketingConfirmation(week)
+      // A site counts as "entered" once every one of its marketing KPIs has a
+      // value in. All sites entered => figures are ready for Mario to sign off.
+      const sitesEntered = siteMarketing.filter(
+        (s) => s.kpis.length > 0 && s.kpis.every((k) => k.entered),
+      ).length
+      const allEntered = sitesEntered === siteMarketing.length
+      const confirmed = marketingConfirm.confirmed
+      items.push({
+        key: `kpi-Marketing`,
+        category: "KPI",
+        label: `Marketing — social & reviews`,
+        ownerRole: "Social Media (Mario)",
+        siteId: null,
+        submitted: confirmed,
+        awaitingConfirmation: allEntered && !confirmed,
+        detail: confirmed
+          ? "Confirmed by Mario"
+          : allEntered
+            ? "All sites entered, awaiting Mario's sign-off"
+            : `${sitesEntered}/${siteMarketing.length} sites entered`,
+      })
+    }
   }
 
   const outstanding = items.filter((i) => !i.submitted)
@@ -350,9 +387,12 @@ export function submissionHref(item: SubmissionItem, week: string): string {
     case "Training":
       return `/functions/Training/input?${w}`
     case "KPI":
+      // HR is entered on its input page; Marketing is entered per-site by
+      // managers, so the board routes to the Marketing review page where Mario
+      // sees every site's figures and signs off the week.
       return item.label.toLowerCase().startsWith("hr")
         ? `/functions/HR/input?${w}`
-        : `/functions/Marketing/input?${w}`
+        : `/functions/Marketing?${w}`
     default:
       return `/data-entry?${w}`
   }
