@@ -24,6 +24,18 @@ function daysBetween(start: string, end: string): number {
   return Math.max(1, diff)
 }
 
+/** Days of notice between today and the holiday start date (min 0). */
+function noticeDaysUntil(start: string): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const s = new Date(start + "T00:00:00")
+  const diff = Math.round((s.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.max(0, diff)
+}
+
+/** Policy: holiday needs at least one month's (30 days') notice. */
+const HOLIDAY_NOTICE_DAYS = 30
+
 /** Resolve the logged-in user's linked barber record or throw. */
 async function requireLinkedBarber() {
   const user = await requireUser()
@@ -40,6 +52,8 @@ export async function requestHoliday(formData: FormData) {
   if (!start) return { ok: false, error: "Start date required" }
 
   const days = daysBetween(start, end)
+  const noticeDays = noticeDaysUntil(start)
+  const isException = noticeDays < HOLIDAY_NOTICE_DAYS
   await db.insert(leaveRequests).values({
     barberId: barber.id,
     kind: "holiday",
@@ -54,11 +68,14 @@ export async function requestHoliday(formData: FormData) {
 
   await sendLeaveNotification({
     kind: "holiday",
+    barberId: barber.id,
     barberName: barber.name,
     start,
     end,
     days,
     reason,
+    noticeDays,
+    isException,
   })
 
   revalidatePath("/team")
@@ -87,6 +104,7 @@ export async function logSickness(formData: FormData) {
 
   await sendLeaveNotification({
     kind: "sickness",
+    barberId: barber.id,
     barberName: barber.name,
     start,
     end,

@@ -106,38 +106,101 @@ function wrap(title: string, bodyHtml: string): string {
   </div>`
 }
 
-/** Notify leadership when a barber requests holiday or logs sickness. */
+/**
+ * Notify on a holiday request or sickness log.
+ *
+ * HOLIDAY: the barber's assigned MANAGER is the approver — they get the action
+ * email with a live "Review & decide" link; owners + HR get an FYI copy (never
+ * double-emailed). Requests made with less than one month's notice are flagged
+ * as an EXCEPTION (short notice) so the manager can apply discretion.
+ *
+ * SICKNESS: informational, goes to leadership as before.
+ */
 export async function sendLeaveNotification(args: {
   kind: "holiday" | "sickness"
+  barberId: number
   barberName: string
   start: string
   end: string
   days: number
   reason?: string | null
+  /** Days of notice given (request date → start date). Holiday only. */
+  noticeDays?: number
+  /** True when notice is under one month. Holiday only. */
+  isException?: boolean
 }): Promise<void> {
-  const label = args.kind === "holiday" ? "Holiday request" : "Sickness logged"
-  const subject = `${label}: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
-  const html = wrap(
-    subject,
-    `<p style="font-size:14px;line-height:1.6">
-       <strong>${args.barberName}</strong> ${
-         args.kind === "holiday" ? "has requested holiday" : "has logged sickness"
-       }.</p>
+  // --- Sickness: unchanged informational note to leadership ----------------
+  if (args.kind === "sickness") {
+    const subject = `Sickness logged: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
+    const html = wrap(
+      subject,
+      `<p style="font-size:14px;line-height:1.6">
+         <strong>${args.barberName}</strong> has logged sickness.</p>
+       <ul style="font-size:14px;line-height:1.7">
+         <li>Dates: ${args.start} → ${args.end}</li>
+         <li>Days: ${args.days}</li>
+         ${args.reason ? `<li>Note: ${args.reason}</li>` : ""}
+       </ul>`,
+    )
+    for (const to of leadershipRecipients()) {
+      await sendEmail({ to, subject, html, kind: "team-sickness" })
+    }
+    return
+  }
+
+  // --- Holiday: route the approval to the barber's manager -----------------
+  const people = await resolveOneToOnePeople(args.barberId)
+  const managerEmail = people?.managerEmail ?? null
+  const exception = Boolean(args.isException)
+  const subject = exception
+    ? `Holiday request — SHORT NOTICE: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
+    : `Holiday request: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
+
+  const exceptionBanner = exception
+    ? `<p style="font-size:14px;line-height:1.6;padding:10px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;color:#92400e">
+         <strong>Exception — short notice.</strong> This request gives
+         ${typeof args.noticeDays === "number" ? `${args.noticeDays} day${args.noticeDays === 1 ? "" : "s"}` : "less than one month"}
+         of notice (policy is one month). Approve only at your discretion.
+       </p>`
+    : ""
+
+  const detailHtml = `
+     ${exceptionBanner}
+     <p style="font-size:14px;line-height:1.6">
+       <strong>${args.barberName}</strong> has requested holiday.</p>
      <ul style="font-size:14px;line-height:1.7">
        <li>Dates: ${args.start} → ${args.end}</li>
        <li>Days: ${args.days}</li>
+       ${typeof args.noticeDays === "number" ? `<li>Notice given: ${args.noticeDays} day${args.noticeDays === 1 ? "" : "s"}${exception ? " (under one month)" : ""}</li>` : ""}
        ${args.reason ? `<li>Note: ${args.reason}</li>` : ""}
-     </ul>
-     ${
-       args.kind === "holiday"
-         ? `<p style="font-size:14px">Approve or decline this in the Team Area.</p>`
-         : ""
-     }`,
+     </ul>`
+
+  const reviewButton = emailButton(`/admin/team/${args.barberId}`, "Review & decide")
+
+  // Manager gets the action email; owners + HR get an FYI copy. sendDeduped
+  // guarantees nobody (e.g. a manager who is also an owner, like Cosmin) is
+  // emailed twice. If no manager is assigned, owners become the approvers.
+  const managerHtml = wrap(
+    subject,
+    `${detailHtml}
+     <p style="font-size:14px;line-height:1.6">You are ${args.barberName}'s manager — please approve or decline.</p>
+     <p>${reviewButton}</p>`,
+  )
+  const fyiHtml = wrap(
+    subject,
+    `${detailHtml}
+     <p style="font-size:14px;line-height:1.6">${
+       managerEmail
+         ? `Sent to their manager${people?.managerName ? ` (${people.managerName})` : ""} to decide. FYI copy for leadership.`
+         : "No manager is assigned — leadership can approve or decline."
+     }</p>
+     <p>${reviewButton}</p>`,
   )
 
-  for (const to of leadershipRecipients()) {
-    await sendEmail({ to, subject, html, kind: `team-${args.kind}` })
-  }
+  await sendDeduped([
+    { emails: [managerEmail], subject, html: managerHtml, kind: "team-holiday" },
+    { emails: leadershipRecipients(), subject, html: fyiHtml, kind: "team-holiday" },
+  ])
 }
 
 /** Email the 5 nominated reviewers their 360 review request. */

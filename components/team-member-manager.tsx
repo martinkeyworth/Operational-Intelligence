@@ -32,6 +32,16 @@ function fmtDate(iso: string) {
   })
 }
 
+/** True when a holiday request gives under one month's (30 days') notice —
+ *  measured from when it was requested to the holiday start date. */
+function isShortNotice(requestedAt: string | Date, startDate: string): boolean {
+  const req = new Date(requestedAt)
+  req.setHours(0, 0, 0, 0)
+  const start = new Date(startDate + "T00:00:00")
+  const days = Math.round((start.getTime() - req.getTime()) / (1000 * 60 * 60 * 24))
+  return days < 30
+}
+
 export function TeamMemberManager({
   detail,
   users,
@@ -194,10 +204,20 @@ export function TeamMemberManager({
               key={l.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
             >
-              <span className="text-sm text-foreground">
-                {fmtDate(l.startDate)} → {fmtDate(l.endDate)}{" "}
-                <span className="text-muted-foreground">({l.days}d)</span>
-                {l.reason ? <span className="text-muted-foreground"> · {l.reason}</span> : null}
+              <span className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                <span>
+                  {fmtDate(l.startDate)} → {fmtDate(l.endDate)}{" "}
+                  <span className="text-muted-foreground">({l.days}d)</span>
+                  {l.reason ? <span className="text-muted-foreground"> · {l.reason}</span> : null}
+                </span>
+                {isShortNotice(l.createdAt, l.startDate) && (
+                  <Badge
+                    variant="outline"
+                    className="border-rag-amber/40 bg-rag-amber/15 text-rag-amber"
+                  >
+                    Short notice — exception
+                  </Badge>
+                )}
               </span>
               <div className="flex gap-2">
                 <form action={(fd) => run(() => decideLeave(fd))}>
