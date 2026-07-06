@@ -17,7 +17,7 @@ import {
 import { FUNCTION_AREAS } from "@/lib/function-areas"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, CalendarClock } from "lucide-react"
 
 export default async function DataEntryPage({
   searchParams,
@@ -92,6 +92,39 @@ export default async function DataEntryPage({
       </PageHeader>
 
       <div className="space-y-8 px-5 py-6 md:px-8">
+        {week && (
+          <div
+            className={`flex items-start gap-3 rounded-lg border p-4 ${
+              week === defaultWeek
+                ? "border-primary/40 bg-primary/10"
+                : "border-rag-amber/50 bg-rag-amber/10"
+            }`}
+          >
+            <CalendarClock
+              className={`mt-0.5 h-5 w-5 shrink-0 ${
+                week === defaultWeek ? "text-primary" : "text-rag-amber"
+              }`}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {week === defaultWeek
+                  ? "You are entering the current week"
+                  : "Heads up — this is not the current week"}
+              </p>
+              <p className="text-sm text-muted-foreground text-pretty">
+                Figures you save go to{" "}
+                <span className="font-medium text-foreground">
+                  week ending {fmtWeekLong(week)}
+                </span>
+                .{" "}
+                {week === defaultWeek
+                  ? "Use the week selector above to amend a previous week."
+                  : "Use the week selector above to switch back to the current week before entering figures."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {myAreas.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-sm font-semibold text-foreground">

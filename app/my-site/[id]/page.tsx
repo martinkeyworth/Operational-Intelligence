@@ -11,7 +11,7 @@ import { BarberEntryCard } from "@/components/barber-entry-card"
 import { SubletCard } from "@/components/sublet-card"
 import { TrainingCard } from "@/components/training-card"
 import { WeekSelector } from "@/components/week-selector"
-import { CheckCircle2, ClipboardEdit } from "lucide-react"
+import { CheckCircle2, ClipboardEdit, CalendarClock } from "lucide-react"
 import {
   getSelectableWeeks,
   getDefaultWeek,
@@ -49,8 +49,11 @@ export default async function MySitePage({
 
   const { week: weekParam } = await searchParams
   const weeks = await getSelectableWeeks()
+  // The current operating week — used to warn if the manager is viewing/entering
+  // against a different week than the one in progress.
+  const currentWeek = await getDefaultWeek()
   const week =
-    weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
+    weekParam && weeks.includes(weekParam) ? weekParam : currentWeek
 
   const siteWeekRows = week ? await getSiteWeek(week) : []
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
@@ -131,6 +134,38 @@ export default async function MySitePage({
           for {site.name} and confirm the week below. Only your site is shown
           here.
         </p>
+
+        {week && (
+          <div
+            className={`flex items-start gap-3 rounded-lg border p-4 ${
+              week === currentWeek
+                ? "border-primary/40 bg-primary/10"
+                : "border-rag-amber/50 bg-rag-amber/10"
+            }`}
+          >
+            <CalendarClock
+              className={`mt-0.5 h-5 w-5 shrink-0 ${
+                week === currentWeek ? "text-primary" : "text-rag-amber"
+              }`}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {week === currentWeek
+                  ? "You are on the current week"
+                  : "Heads up — this is not the current week"}
+              </p>
+              <p className="text-sm text-muted-foreground text-pretty">
+                This page is showing{" "}
+                <span className="font-medium text-foreground">
+                  week ending {fmtWeekLong(week)}
+                </span>
+                . {week === currentWeek
+                  ? "Any figures you enter or confirm apply to this week."
+                  : "Use the week selector at the top to switch back to the current week."}
+              </p>
+            </div>
+          </div>
+        )}
 
         {myEntry && week && (
           <section className="space-y-3">
