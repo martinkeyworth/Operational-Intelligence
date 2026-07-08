@@ -1092,7 +1092,7 @@ export async function runDailyEscalation() {
     `<p style="margin:0 0 12px;"><strong>${escalated}</strong> open ${
       escalated === 1 ? "action has" : "actions have"
     } been automatically escalated because they are overdue by 7+ days or have been red for 2+ weeks without resolution.</p>
-     <p style="margin:16px 0;"><a href="${url}/actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review escalated actions</a></p>
+     <p style="margin:16px 0;"><a href="${url}/governance?tab=actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review escalated actions</a></p>
      <p style="margin:0;color:#6b7280;">This is an automated daily check.</p>`,
   )
 
