@@ -1277,7 +1277,8 @@ export async function raidAiAnalysis(weekEnding = currentWeekEnding()) {
         priorityRank(x.proposedActions[0]?.priority ?? "Medium"),
     )
     const owner = owners.find((u) => u.email.toLowerCase() === email)
-    const name = owner?.name ?? "there"
+    // Greet by first name only (e.g. "Hi Mario," not "Hi Mario Rossi,").
+    const name = owner?.name?.trim().split(/\s+/)[0] || "there"
     const areaWord =
       ordered.length === 1 ? ordered[0].areaLabel : `${ordered.length} of your areas`
     const html = emailShell(
