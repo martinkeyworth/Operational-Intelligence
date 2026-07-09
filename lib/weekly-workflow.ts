@@ -8,8 +8,9 @@ import {
   weeklyTakings,
   sites,
 } from "@/lib/db/schema"
-import { fmtWeekLong, getActions } from "@/lib/data"
-import { canonicalAreaKey } from "@/lib/function-areas"
+import { fmtWeekLong, getActions, type ActionRow } from "@/lib/data"
+import { canonicalAreaKey, FUNCTION_AREAS } from "@/lib/function-areas"
+import { analyseAreaRaid, type RaidAreaAnalysis } from "@/lib/raid-ai"
 import { fmtGBP } from "@/lib/format"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import {
@@ -1110,6 +1111,228 @@ export async function runDailyEscalation() {
   return { escalated, notified }
 }
 
+// ---------------------------------------------------------------------------
+// Weekly AI "strategic coach" — systemic RAID analysis (raidAiAnalysis).
+//
+// Once a week the AI reviews every functional area's RAID log, spots the
+// "dismal"/systemic issues (things people can see but haven't got to the root
+// of, or don't know how to execute on), performs a root-cause analysis, coaches
+// the accountable owner, and drafts a resolution plan (actions + owners + due
+// dates). For each systemic area it:
+//   - emails the area's accountable owner (cc Cosmin as COO + Martin as CEO)
+//   - creates the proposed actions in the RAID log as status "Proposed" so the
+//     owner can Accept or Dismiss them on the governance page.
+// Idempotent per week via weekly_reports.raid_ai_sent_at.
+// ---------------------------------------------------------------------------
+
+const RAID_AI_CC = ["cosmin@lessthanzerobarbers.com", "martin@lessthanzerobarbers.com"]
+
+function priorityRank(p: string): number {
+  return p === "High" ? 0 : p === "Low" ? 2 : 1
+}
+
+// Render one area analysis as an email section (situation → root cause →
+// coaching → draft plan table).
+function raidAnalysisSection(a: RaidAreaAnalysis, weekEnding: string): string {
+  const today = new Date()
+  const planRows = a.proposedActions
+    .map((p) => {
+      const due = new Date(today)
+      due.setDate(due.getDate() + p.dueInDays)
+      const dueStr = due.toISOString().slice(0, 10)
+      return `<tr>
+          <td style="padding:7px 8px 7px 0;border-bottom:1px solid #f0f0f0;font-weight:600;">${esc(p.title)}<div style="font-weight:400;color:#6b7280;">${esc(p.description)}</div></td>
+          <td style="padding:7px 8px 7px 0;border-bottom:1px solid #f0f0f0;color:#6b7280;white-space:nowrap;">${esc(p.owner)}</td>
+          <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:#6b7280;white-space:nowrap;">${esc(p.priority)} · ${esc(dueStr)}</td>
+        </tr>`
+    })
+    .join("")
+
+  return `<div style="margin:0 0 28px;padding:0 0 4px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:#6b7280;">${esc(a.areaLabel)}${a.systemic ? " · systemic issue" : ""}</p>
+      <p style="margin:0 0 12px;font-size:16px;font-weight:700;color:#111827;">${esc(a.headline)}</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#6b7280;">What the register shows</p>
+      <p style="margin:0 0 12px;color:#374151;">${esc(a.situation)}</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#6b7280;">Root cause</p>
+      <p style="margin:0 0 12px;color:#374151;">${esc(a.rootCause)}</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#6b7280;">Coaching</p>
+      <p style="margin:0 0 12px;color:#374151;">${esc(a.coaching)}</p>
+      <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#6b7280;">Draft resolution plan</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 4px;">
+        <thead><tr style="color:#6b7280;text-align:left;font-size:11px;text-transform:uppercase;">
+          <th style="padding:0 0 6px;">Action</th><th style="padding:0 0 6px;">Owner</th><th style="padding:0 0 6px;text-align:right;">Priority · due</th>
+        </tr></thead>
+        <tbody>${planRows}</tbody>
+      </table>
+      <p style="margin:6px 0 0;color:#9ca3af;font-size:12px;">These actions have been added to the RAID log as <strong>Proposed</strong> — open the register to accept or dismiss them.</p>
+    </div>`
+}
+
+// Analyse every functional area's RAID log and return the analyses (systemic
+// first). Pure read + AI; writes nothing. Reused by the send step + dry run.
+async function computeRaidAnalyses(): Promise<RaidAreaAnalysis[]> {
+  const all = await getActions()
+  const byArea = new Map<string, ActionRow[]>()
+  for (const a of all) {
+    const key = canonicalAreaKey(a.functionArea)
+    const list = byArea.get(key) ?? []
+    list.push(a)
+    byArea.set(key, list)
+  }
+  const analyses: RaidAreaAnalysis[] = []
+  for (const area of FUNCTION_AREAS) {
+    const entries = byArea.get(area.key) ?? []
+    if (entries.filter((e) => e.status !== "Closed").length === 0) continue
+    analyses.push(await analyseAreaRaid({ area: area.key, entries }))
+  }
+  return analyses
+}
+
+// Insert the AI's proposed actions into the RAID log as status "Proposed",
+// deduped against any existing Proposed entry with the same area + title. Owner
+// is the area's accountable lead; ownerUserId resolved when that lead has a
+// login. Returns the number of new draft entries created.
+async function createProposedActions(
+  analysis: RaidAreaAnalysis,
+  owners: { email: string; name: string; id: string }[],
+): Promise<number> {
+  if (analysis.proposedActions.length === 0) return 0
+  const existing = await db
+    .select({ title: actions.title })
+    .from(actions)
+    .where(
+      and(
+        eq(actions.functionArea, analysis.area),
+        eq(actions.status, "Proposed"),
+      ),
+    )
+  const existingTitles = new Set(existing.map((e) => e.title.trim().toLowerCase()))
+
+  const ownerEmail = defaultOwnerEmailForArea(analysis.area)
+  const ownerUser = owners.find(
+    (u) => u.email.toLowerCase() === ownerEmail.toLowerCase(),
+  )
+  const today = new Date()
+
+  let created = 0
+  for (const p of analysis.proposedActions) {
+    if (existingTitles.has(p.title.trim().toLowerCase())) continue
+    const due = new Date(today)
+    due.setDate(due.getDate() + p.dueInDays)
+    await db.insert(actions).values({
+      title: p.title,
+      description: p.description,
+      functionArea: analysis.area,
+      entryType: "Action",
+      owner: ownerUser?.name ?? ownerEmail,
+      ownerUserId: ownerUser?.id ?? null,
+      priority: p.priority,
+      status: "Proposed",
+      rag: "amber",
+      dueDate: due.toISOString().slice(0, 10),
+    })
+    created++
+  }
+  return created
+}
+
+// Weekly — AI strategic-coach analysis of the whole RAID log. Emails each
+// area's accountable owner (cc Cosmin + Martin) with the root-cause analysis
+// and a draft plan, and files the proposed actions for review.
+export async function raidAiAnalysis(weekEnding = currentWeekEnding()) {
+  const report = await getOrCreateReport(weekEnding)
+  if (report.raidAiSentAt) return { skipped: true, reason: "already sent" }
+
+  const analyses = await computeRaidAnalyses()
+  // Owners with ids so proposed actions can be linked to the accountable lead's
+  // login (used for their open-action view + scoping).
+  const owners = await db
+    .select({ id: userTable.id, name: userTable.name, email: userTable.email })
+    .from(userTable)
+  const url = appBaseUrl().replace(/\/+$/, "")
+
+  // Group analyses by their accountable owner email so someone who owns several
+  // areas gets ONE coaching email.
+  const byOwner = new Map<string, RaidAreaAnalysis[]>()
+  for (const a of analyses) {
+    if (!a.systemic) continue // only email where there's a real systemic issue
+    const email = defaultOwnerEmailForArea(a.area).toLowerCase()
+    const list = byOwner.get(email) ?? []
+    list.push(a)
+    byOwner.set(email, list)
+  }
+
+  // File proposed actions for EVERY systemic area (even if we can't email).
+  let proposedCreated = 0
+  for (const a of analyses) {
+    if (!a.systemic) continue
+    proposedCreated += await createProposedActions(a, owners)
+  }
+
+  let emailsSent = 0
+  for (const [email, areaAnalyses] of byOwner) {
+    const ordered = [...areaAnalyses].sort(
+      (x, y) =>
+        priorityRank(y.proposedActions[0]?.priority ?? "Medium") -
+        priorityRank(x.proposedActions[0]?.priority ?? "Medium"),
+    )
+    const owner = owners.find((u) => u.email.toLowerCase() === email)
+    const name = owner?.name ?? "there"
+    const areaWord =
+      ordered.length === 1 ? ordered[0].areaLabel : `${ordered.length} of your areas`
+    const html = emailShell(
+      `Strategic coaching · w/e ${fmtWeekLong(weekEnding)}`,
+      `<p style="margin:0 0 12px;">Hi ${esc(name)},</p>
+       <p style="margin:0 0 16px;">I've reviewed the RAID log for ${esc(
+         areaWord,
+       )} and spotted ${
+         ordered.length === 1 ? "a systemic issue" : "systemic issues"
+       } worth getting ahead of. Below is what the data shows, the likely root cause, how to approach it, and a draft plan. The proposed actions are already in the register as <strong>Proposed</strong> for you to accept or adjust.</p>
+       ${ordered.map((a) => raidAnalysisSection(a, weekEnding)).join("")}
+       <p style="margin:16px 0;"><a href="${url}/governance?tab=actions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Review &amp; accept the plan</a></p>
+       <p style="margin:0;color:#6b7280;">Automated weekly analysis from the LTZ governance dashboard. Cosmin (COO) and Martin (CEO) are copied.</p>`,
+    )
+    const res = await sendEmail({
+      to: email,
+      cc: RAID_AI_CC.filter((c) => c.toLowerCase() !== email),
+      subject: `Strategic coaching: ${
+        ordered.length === 1 ? ordered[0].areaLabel : `${ordered.length} areas`
+      } need attention (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "raid_ai_analysis",
+      weekEnding,
+    })
+    if (res.ok) emailsSent++
+  }
+
+  await db
+    .update(weeklyReports)
+    .set({ raidAiSentAt: new Date() })
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+
+  return {
+    areasAnalysed: analyses.length,
+    systemic: analyses.filter((a) => a.systemic).length,
+    ownersEmailed: byOwner.size,
+    emailsSent,
+    proposedCreated,
+  }
+}
+
+// No-send preview of the weekly RAID AI analysis: returns each area's verdict
+// and draft plan, writing nothing and sending nothing.
+export async function dryRunRaidAiAnalysis() {
+  const analyses = await computeRaidAnalyses()
+  return analyses.map((a) => ({
+    area: a.areaLabel,
+    systemic: a.systemic,
+    headline: a.headline,
+    rootCause: a.rootCause,
+    owner: defaultOwnerEmailForArea(a.area),
+    proposedActions: a.proposedActions,
+  }))
+}
+
 export const STEPS = {
   reminders: remindUsers,
   "submission-alert": submissionAlert,
@@ -1121,6 +1344,7 @@ export const STEPS = {
   "martin-response": requestMartinResponse,
   "brand-rtb": sendBrandRtbSummary,
   "red-action-reminders": remindRedActionOwners,
+  "raid-ai-analysis": raidAiAnalysis,
   escalate: runDailyEscalation,
 } as const
 

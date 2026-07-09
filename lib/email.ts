@@ -88,6 +88,9 @@ function client(): Resend | null {
 
 export type SendArgs = {
   to: string
+  // Optional carbon-copy recipient(s), e.g. copying leadership on a coaching
+  // email. Logged as part of the recipient string.
+  cc?: string | string[]
   subject: string
   html: string
   kind: string
@@ -102,16 +105,20 @@ export type SendArgs = {
  *  failures. */
 export async function sendEmail({
   to,
+  cc,
   subject,
   html,
   kind,
   weekEnding = null,
   attachments,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
+  const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter(Boolean) : []
+  // Recorded recipient string for the audit log (includes any cc).
+  const recipientLabel = ccList.length ? `${to} (cc: ${ccList.join(", ")})` : to
   const resend = client()
   if (!resend) {
     const error = "Email not configured (RESEND_API_KEY is not set)"
-    await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
+    await logEmail({ kind, recipient: recipientLabel, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
 
@@ -119,6 +126,7 @@ export async function sendEmail({
     const { error: sendError } = await resend.emails.send({
       from: FROM,
       to,
+      ...(ccList.length ? { cc: ccList } : {}),
       subject,
       html,
       ...(attachments && attachments.length
@@ -133,14 +141,14 @@ export async function sendEmail({
     })
     if (sendError) {
       const error = sendError.message || "Resend rejected the message"
-      await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
+      await logEmail({ kind, recipient: recipientLabel, subject, weekEnding, status: "failed", error })
       return { ok: false, error }
     }
-    await logEmail({ kind, recipient: to, subject, weekEnding, status: "sent" })
+    await logEmail({ kind, recipient: recipientLabel, subject, weekEnding, status: "sent" })
     return { ok: true }
   } catch (e) {
     const error = e instanceof Error ? e.message : "Unknown send error"
-    await logEmail({ kind, recipient: to, subject, weekEnding, status: "failed", error })
+    await logEmail({ kind, recipient: recipientLabel, subject, weekEnding, status: "failed", error })
     return { ok: false, error }
   }
 }

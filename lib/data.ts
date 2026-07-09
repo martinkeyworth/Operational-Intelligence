@@ -317,8 +317,8 @@ export async function getGroupSummary(week: string): Promise<GroupSummary> {
 
   const [actionAgg] = await db
     .select({
-      open: sql<number>`count(*) filter (where ${actions.status} <> 'Closed')`,
-      escalated: sql<number>`count(*) filter (where ${actions.escalated} = true and ${actions.status} <> 'Closed')`,
+      open: sql<number>`count(*) filter (where ${actions.status} not in ('Closed', 'Proposed'))`,
+      escalated: sql<number>`count(*) filter (where ${actions.escalated} = true and ${actions.status} not in ('Closed', 'Proposed'))`,
     })
     .from(actions)
 
@@ -771,6 +771,15 @@ function friendlyOwner(
   return text
 }
 
+/**
+ * Whether a RAID entry is "live" — i.e. an active, accepted item that should
+ * count toward area RAG, open counts and the operational agenda. Excludes
+ * Closed items and AI-drafted "Proposed" items (which await owner acceptance).
+ */
+export function isLiveAction(status: string): boolean {
+  return status !== "Closed" && status !== "Proposed"
+}
+
 /** Days an open action is past its due date (0 if none/closed/future). */
 export function computeOverdue(
   dueDate: string | null,
@@ -967,7 +976,7 @@ export async function getFunctionAreaSummaries(): Promise<FunctionAreaSummary[]>
     const items = all.filter(
       (a) => canonicalAreaKey(a.functionArea) === area.key,
     )
-    const open = items.filter((a) => a.status !== "Closed")
+    const open = items.filter((a) => isLiveAction(a.status))
     const red = open.filter((a) => a.rag === "red")
     const amber = open.filter((a) => a.rag === "amber")
     const escalated = open.filter((a) => a.escalated)
@@ -1349,7 +1358,7 @@ export async function getBusinessScorecard(
     const items = allActions.filter(
       (a) => canonicalAreaKey(a.functionArea) === areaKey,
     )
-    const open = items.filter((a) => a.status !== "Closed")
+    const open = items.filter((a) => isLiveAction(a.status))
     const red = open.filter((a) => a.rag === "red").length
     const amber = open.filter((a) => a.rag === "amber").length
     const areaRag: Rag = red > 0 ? "red" : amber > 0 ? "amber" : "green"
@@ -1432,7 +1441,7 @@ export type RiskRegister = {
  */
 export async function getRiskRegister(): Promise<RiskRegister> {
   const all = await getActions()
-  const live = all.filter((a) => a.status !== "Closed")
+  const live = all.filter((a) => isLiveAction(a.status))
   const open = live.filter((r) => r.status === "Open").length
   const unassigned = live.filter((r) => !r.ownerUserId).length
   const riskCount = live.filter((r) => r.isRisk).length

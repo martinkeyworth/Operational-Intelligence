@@ -343,6 +343,39 @@ export async function setActionStatus(formData: FormData) {
 }
 
 /**
+ * Accept an AI-proposed (status "Proposed") action into the live register.
+ * Flips it to "Open" so it counts toward the area RAG, open totals and the
+ * auto-escalation engine. Only acts on Proposed rows.
+ */
+export async function acceptProposedAction(formData: FormData) {
+  const u = await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  await db
+    .update(actions)
+    .set({ status: "Open", createdByUserId: u.id, updatedAt: new Date() })
+    .where(and(eq(actions.id, id), eq(actions.status, "Proposed")))
+  revalidatePath("/governance")
+  revalidatePath("/")
+}
+
+/**
+ * Dismiss an AI-proposed action. We delete the draft outright (it never became
+ * a live register item), so dismissed suggestions don't clutter the log. Only
+ * acts on Proposed rows.
+ */
+export async function dismissProposedAction(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get("id"))
+  if (!id) return
+  await db
+    .delete(actions)
+    .where(and(eq(actions.id, id), eq(actions.status, "Proposed")))
+  revalidatePath("/governance")
+  revalidatePath("/")
+}
+
+/**
  * Assign an action/risk to an owner (a dashboard user). Owners feed Cosmin's
  * weekly operational meeting register. Passing an empty value clears it.
  */

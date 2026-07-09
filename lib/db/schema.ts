@@ -321,6 +321,8 @@ export const weeklyReports = pgTable("weekly_reports", {
   confirmPromptSentAt: timestamp("confirm_prompt_sent_at"),
   // 19:00 escalation to owners for anything still outstanding an hour later.
   confirmEscalatedAt: timestamp("confirm_escalated_at"),
+  // Weekly AI "strategic coach" systemic-issue analysis of the RAID log.
+  raidAiSentAt: timestamp("raid_ai_sent_at"),
   analysisRunAt: timestamp("analysis_run_at"),
   reportSentAt: timestamp("report_sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { ActionsTable } from "@/components/actions-table"
 import { OperationsActionCard } from "@/components/operations-action-card"
 import { AddActionDialog } from "@/components/add-action-dialog"
+import { ProposedActionsPanel } from "@/components/proposed-actions-panel"
 import type { ActionRow, AssignableOwner, RiskRegister } from "@/lib/data"
 import type { SiteOption } from "@/lib/registers-types"
 import { User } from "lucide-react"
@@ -38,8 +39,15 @@ export function ActionsRegister({
   // panel), open on the flat table so the focused row can be highlighted.
   const [view, setView] = useState<View>("all")
 
+  // AI-drafted actions (status "Proposed") are shown in their own review panel,
+  // not mixed into the live register until a leader accepts them.
+  const proposed = actions.filter((a) => a.status === "Proposed")
+  const liveActions = actions.filter((a) => a.status !== "Proposed")
+
   return (
     <div className="space-y-6">
+      <ProposedActionsPanel proposed={proposed} />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Live actions" value={register.total} />
         <StatCard label="Open" value={register.open} />
@@ -97,7 +105,7 @@ export function ActionsRegister({
       </div>
 
       {view === "all" ? (
-        <ActionsTable actions={actions} owners={owners} focusId={focusId} />
+        <ActionsTable actions={liveActions} owners={owners} focusId={focusId} />
       ) : register.groups.length === 0 ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">
           No live actions. New actions you raise will appear here grouped by
