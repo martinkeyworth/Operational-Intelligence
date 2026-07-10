@@ -62,6 +62,65 @@ function chatWebhookUrl(): string {
   return (process.env.GOOGLE_CHAT_WEBHOOK_URL || "").trim()
 }
 
+/**
+ * Per-space incoming-webhook routing. Each functional Chat space has its own
+ * webhook URL in its own env var, so chases/escalations/updates land in the
+ * space that owns them. All separate from GOOGLE_CHAT_WEBHOOK_URL (the
+ * weekly-confirmation Ops-bot space, left untouched).
+ */
+export type ChatSpace =
+  | "operations"
+  | "training"
+  | "hr"
+  | "marketing"
+  | "executive"
+
+const SPACE_ENV: Record<ChatSpace, string> = {
+  operations: "GOOGLE_CHAT_WEBHOOK_OPERATIONS",
+  training: "GOOGLE_CHAT_WEBHOOK_TRAINING",
+  hr: "GOOGLE_CHAT_WEBHOOK_HR",
+  marketing: "GOOGLE_CHAT_WEBHOOK_MARKETING",
+  executive: "GOOGLE_CHAT_WEBHOOK_EXECUTIVE",
+}
+
+function spaceWebhookUrl(space: ChatSpace): string {
+  return (process.env[SPACE_ENV[space]] || "").trim()
+}
+
+/**
+ * Map a canonical functional-area key onto the Chat space that owns it.
+ * Operational areas share the Operations space; Strategy rolls up to Executive.
+ */
+export function spaceForArea(areaKey: string): ChatSpace {
+  switch (areaKey) {
+    case "Training":
+      return "training"
+    case "HR":
+      return "hr"
+    case "Marketing":
+      return "marketing"
+    case "Strategy":
+      return "executive"
+    // Capacity, RTB, Subletting and anything else operational.
+    default:
+      return "operations"
+  }
+}
+
+/** True when at least one per-space webhook is configured. */
+export function isSpaceChatConfigured(): boolean {
+  return (Object.keys(SPACE_ENV) as ChatSpace[]).some((s) => spaceWebhookUrl(s))
+}
+
+/**
+ * Leadership/area Chat is only mirrored for @lessthanzerobarbers.com people —
+ * the spaces are in-domain, so a chase to a gmail/hotmail branch manager stays
+ * email-only.
+ */
+export function isLtzLeadershipEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith("@lessthanzerobarbers.com")
+}
+
 /** True when EITHER delivery mode is usable. */
 export function isChatConfigured(): boolean {
   if (chatWebhookUrl()) return true
@@ -180,8 +239,8 @@ export type ChatDmArgs = {
   lines: string[]
   /** Primary button. */
   button?: { text: string; url: string }
-  /** Accent colour: red (urgent) / green (all-clear). */
-  tone?: "urgent" | "positive"
+  /** Accent + banner: red (urgent) / green (all-clear) / blue (neutral update). */
+  tone?: "urgent" | "positive" | "info"
 }
 
 /**
@@ -193,13 +252,22 @@ function buildCardMessage(
   args: ChatDmArgs,
   forLabel?: string,
 ): chat_v1.Schema$Message {
-  const accent = args.tone === "positive" ? "#16a34a" : "#b91c1c"
+  const accent =
+    args.tone === "positive"
+      ? "#16a34a"
+      : args.tone === "info"
+        ? "#2563eb"
+        : "#b91c1c"
+  const banner =
+    args.tone === "positive"
+      ? "All clear"
+      : args.tone === "info"
+        ? "Update"
+        : "Action needed"
   const widgets: chat_v1.Schema$GoogleAppsCardV1Widget[] = [
     {
       decoratedText: {
-        text: `<font color="${accent}"><b>${
-          args.tone === "positive" ? "All clear" : "Action needed"
-        }</b></font>`,
+        text: `<font color="${accent}"><b>${banner}</b></font>`,
       },
     },
     ...(forLabel
@@ -291,4 +359,46 @@ export async function sendChatDm(
     )
     return { ok: false, reason: "error" }
   }
+}
+
+/**
+ * Post a card to a specific functional Chat space's incoming webhook. `forLabel`
+ * (e.g. the person's name) is shown under the header so a shared space can carry
+ * per-person chases. Best-effort: returns { ok:false, reason } and NEVER throws,
+ * so the caller's email path is unaffected.
+ */
+export async function sendSpaceChat(
+  space: ChatSpace,
+  args: ChatDmArgs,
+  forLabel?: string,
+): Promise<ChatDmResult> {
+  const url = spaceWebhookUrl(space)
+  if (!url) return { ok: false, reason: "not-configured" }
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify(buildCardMessage(args, forLabel)),
+    })
+    if (!res.ok) {
+      console.log(`[v0] ${space} chat webhook non-2xx:`, res.status)
+      return { ok: false, reason: "webhook-error" }
+    }
+    return { ok: true }
+  } catch (err) {
+    console.log(
+      `[v0] ${space} chat webhook failed:`,
+      err instanceof Error ? err.message : String(err),
+    )
+    return { ok: false, reason: "error" }
+  }
+}
+
+/** Convenience: post to the space that owns a functional area. */
+export async function sendAreaChat(
+  areaKey: string,
+  args: ChatDmArgs,
+  forLabel?: string,
+): Promise<ChatDmResult> {
+  return sendSpaceChat(spaceForArea(areaKey), args, forLabel)
 }

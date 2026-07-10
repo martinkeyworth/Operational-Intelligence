@@ -19,7 +19,7 @@ import {
   type SubmissionItem,
 } from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
-import { sendChatDm } from "@/lib/google-chat"
+import { sendChatDm, sendSpaceChat, sendAreaChat } from "@/lib/google-chat"
 import { OWNER_EMAILS } from "@/lib/access-types"
 import { defaultOwnerEmailForArea } from "@/lib/area-owners"
 import {
@@ -710,19 +710,24 @@ export async function requestCosminNarrative(weekEnding = currentWeekEnding()) {
     kind: "narrative_request",
     weekEnding,
   })
-  // Also DM Cosmin on Google Chat (in-domain owner; best-effort, non-blocking).
-  const chat = await sendChatDm(cosmin.email, {
-    title: `Your COO narrative needed · w/e ${fmtWeekLong(weekEnding)}`,
-    intro: `The AI week-on-week analysis is ready (overall ${
-      report.overallRag ?? "amber"
-    }${report.overallPct != null ? ` ${report.overallPct}%` : ""}). Please add your COO narrative so it can be combined and sent to Martin ahead of the board report.`,
-    lines: [],
-    button: {
-      text: "Add my narrative",
-      url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+  // Also post to the Executive Team Chat space (leadership update; best-effort,
+  // non-blocking).
+  const chat = await sendSpaceChat(
+    "executive",
+    {
+      title: `Cosmin's COO narrative needed · w/e ${fmtWeekLong(weekEnding)}`,
+      intro: `The AI week-on-week analysis is ready (overall ${
+        report.overallRag ?? "amber"
+      }${report.overallPct != null ? ` ${report.overallPct}%` : ""}). Cosmin, please add your COO narrative so it can be combined and sent to Martin ahead of the board report.`,
+      lines: [],
+      button: {
+        text: "Add my narrative",
+        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+      },
+      tone: "urgent",
     },
-    tone: "urgent",
-  })
+    cosmin.name || "Cosmin",
+  )
   return { sent: res.ok, chat: chat.ok, to: cosmin.email }
 }
 
@@ -815,6 +820,23 @@ export async function sendBoardReport(weekEnding = currentWeekEnding()) {
     if (res.ok) sent++
   }
 
+  // Post the board-level summary to the Executive Team Chat space (best-effort).
+  const decliners = rows.filter((r) => r.trend === "declining").map((r) => r.area)
+  await sendSpaceChat("executive", {
+    title: `Weekly board report · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `Overall business RAG: ${(report.overallRag ?? "amber").toUpperCase()} ${
+      report.overallPct ?? ""
+    }%.${decliners.length ? ` Declining: ${decliners.join(", ")}.` : ""}`,
+    lines: rows.map(
+      (r) => `${r.area}: ${r.currRag.toUpperCase()} ${r.currPct}% (${r.trend})`,
+    ),
+    button: {
+      text: "View full report",
+      url: `${appBaseUrl().replace(/\/+$/, "")}/reports/${weekEnding}`,
+    },
+    tone: (report.overallRag ?? "amber") === "red" ? "urgent" : "info",
+  })
+
   await db
     .update(weeklyReports)
     .set({ reportSentAt: new Date() })
@@ -855,19 +877,24 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
     kind: "narrative_request",
     weekEnding,
   })
-  // Also DM Martin on Google Chat (in-domain owner; best-effort, non-blocking).
-  const chat = await sendChatDm(martin.email, {
-    title: `Your CEO response needed · w/e ${fmtWeekLong(weekEnding)}`,
-    intro: report.cosminNarrative
-      ? `Cosmin's COO narrative and the AI analysis are ready. Please add your CEO response.`
-      : `The AI analysis is ready (Cosmin's narrative still pending). Please add your CEO response.`,
-    lines: [],
-    button: {
-      text: "Add my response",
-      url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+  // Also post to the Executive Team Chat space (leadership update; best-effort,
+  // non-blocking).
+  const chat = await sendSpaceChat(
+    "executive",
+    {
+      title: `Martin's CEO response needed · w/e ${fmtWeekLong(weekEnding)}`,
+      intro: report.cosminNarrative
+        ? `Cosmin's COO narrative and the AI analysis are ready. Martin, please add your CEO response.`
+        : `The AI analysis is ready (Cosmin's narrative still pending). Martin, please add your CEO response.`,
+      lines: [],
+      button: {
+        text: "Add my response",
+        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+      },
+      tone: "urgent",
     },
-    tone: "urgent",
-  })
+    martin.name || "Martin",
+  )
   return { sent: res.ok, chat: chat.ok, to: martin.email }
 }
 
@@ -956,6 +983,21 @@ export async function sendBrandRtbSummary(weekEnding = currentWeekEnding()) {
     })
     if (res.ok) sent++
   }
+
+  // Post the RTB summary to the Executive Team Chat space (best-effort).
+  await sendSpaceChat("executive", {
+    title: `Cash & card RTB by brand · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `Ready-To-Bank (house rent share) for the week: ${fmtGBP(
+      grand,
+    )} total (cash ${fmtGBP(totalCash)}, card ${fmtGBP(totalCard)}).`,
+    lines: brands.map((b) => `${b.brand}: ${fmtGBP(b.cash + b.card)}`),
+    button: {
+      text: "View full report",
+      url: `${url.replace(/\/+$/, "")}/reports`,
+    },
+    tone: "info",
+  })
+
   return { brands: brands.length, totalCash, totalCard, sent }
 }
 
@@ -1067,9 +1109,38 @@ export async function remindRedActionOwners() {
     if (res.ok) emailsSent++
   }
 
+  // Also post each area's red actions to that area's Chat space (best-effort),
+  // so the responsible team sees the chase in-channel, not just by email.
+  const byArea = new Map<string, typeof redOpen>()
+  for (const a of redOpen) {
+    const key = canonicalAreaKey(a.functionArea)
+    const list = byArea.get(key) ?? []
+    list.push(a)
+    byArea.set(key, list)
+  }
+  let chatPosts = 0
+  for (const [areaKey, items] of byArea) {
+    const res = await sendAreaChat(areaKey, {
+      title: `${items.length} red action${
+        items.length === 1 ? "" : "s"
+      } need attention`,
+      intro: `These ${canonicalAreaKey(areaKey)} actions are rated red and not yet closed. Please review and update today.`,
+      lines: items.map(
+        (a) =>
+          `${a.title}${a.dueDate ? ` — due ${String(a.dueDate)}` : ""}${
+            a.overdue ? ` (${a.daysOverdue}d overdue)` : ""
+          }`,
+      ),
+      button: { text: "Review actions", url: `${url.replace(/\/+$/, "")}/governance?tab=actions` },
+      tone: "urgent",
+    })
+    if (res.ok) chatPosts++
+  }
+
   return {
     owners: groups.size,
     emailsSent,
+    chatPosts,
     actions: actionsCovered,
     unassigned,
   }
@@ -1108,6 +1179,43 @@ export async function runDailyEscalation() {
     })
     if (res.ok) notified++
   }
+
+  // Also post the escalation digest to the Executive Team Chat space, and break
+  // the currently-escalated open actions out to each owning area's space so the
+  // responsible team sees them in-channel (best-effort).
+  await sendSpaceChat("executive", {
+    title: "Actions auto-escalated",
+    intro: `${escalated} open ${
+      escalated === 1 ? "action has" : "actions have"
+    } been automatically escalated (overdue 7+ days or red for 2+ weeks).`,
+    lines: [],
+    button: { text: "Review escalated actions", url: `${url.replace(/\/+$/, "")}/governance?tab=actions` },
+    tone: "urgent",
+  })
+
+  const allNow = await getActions()
+  const escalatedOpen = allNow.filter(
+    (a) => a.escalated && a.status !== "Closed" && a.status !== "Proposed",
+  )
+  const byArea = new Map<string, typeof escalatedOpen>()
+  for (const a of escalatedOpen) {
+    const key = canonicalAreaKey(a.functionArea)
+    const list = byArea.get(key) ?? []
+    list.push(a)
+    byArea.set(key, list)
+  }
+  for (const [areaKey, items] of byArea) {
+    await sendAreaChat(areaKey, {
+      title: `${items.length} escalated action${items.length === 1 ? "" : "s"}`,
+      intro: `These ${canonicalAreaKey(areaKey)} actions are escalated and still open. Please prioritise resolution.`,
+      lines: items.map(
+        (a) => `${a.title}${a.dueDate ? ` — due ${String(a.dueDate)}` : ""}`,
+      ),
+      button: { text: "Review actions", url: `${url.replace(/\/+$/, "")}/governance?tab=actions` },
+      tone: "urgent",
+    })
+  }
+
   return { escalated, notified }
 }
 
@@ -1306,6 +1414,23 @@ export async function raidAiAnalysis(weekEnding = currentWeekEnding()) {
     if (res.ok) emailsSent++
   }
 
+  // Post each systemic area's coaching summary to its own Chat space, so the
+  // responsible team sees the root-cause + draft plan in-channel (best-effort).
+  let chatPosts = 0
+  for (const a of analyses) {
+    if (!a.systemic) continue
+    const res = await sendAreaChat(a.area, {
+      title: `Strategic coaching: ${a.areaLabel}`,
+      intro: `${a.headline} — ${a.rootCause}`,
+      lines: a.proposedActions.map(
+        (p) => `${p.title} (${p.owner}, ${p.priority}, due in ${p.dueInDays}d)`,
+      ),
+      button: { text: "Review & accept the plan", url: `${url}/governance?tab=actions` },
+      tone: "urgent",
+    })
+    if (res.ok) chatPosts++
+  }
+
   await db
     .update(weeklyReports)
     .set({ raidAiSentAt: new Date() })
@@ -1313,6 +1438,7 @@ export async function raidAiAnalysis(weekEnding = currentWeekEnding()) {
 
   return {
     areasAnalysed: analyses.length,
+    chatPosts,
     systemic: analyses.filter((a) => a.systemic).length,
     ownersEmailed: byOwner.size,
     emailsSent,
