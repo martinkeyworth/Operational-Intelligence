@@ -17,6 +17,12 @@ export default async function StartPage() {
   const user = await requireUser()
   const widerHref = defaultLandingFor(user)
   const firstName = user.name.trim().split(/\s+/)[0] || "there"
+  // A plain barber's "wider view" is their own personal work board (/my-work);
+  // dashboard/site users get the broader leadership view. Describe accordingly.
+  const widerLabel = user.canViewDashboard ? "Wider view" : "My work"
+  const widerDescription = user.canViewDashboard
+    ? "Your dashboard, sites, reports and everything you have access to."
+    : "Your actions, learning and 1-2-1s — everything assigned to you."
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center gap-6 px-4 py-10">
@@ -57,9 +63,9 @@ export default async function StartPage() {
             <LayoutDashboard className="h-6 w-6" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-base font-semibold">Wider view</span>
+            <span className="block text-base font-semibold">{widerLabel}</span>
             <span className="block text-sm text-muted-foreground">
-              Your dashboard, sites, reports and everything you have access to.
+              {widerDescription}
             </span>
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
