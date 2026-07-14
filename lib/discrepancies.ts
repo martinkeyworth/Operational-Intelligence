@@ -4,14 +4,17 @@ import { barbers, weeklyTakings } from "@/lib/db/schema"
 import { and, asc, eq, lt } from "drizzle-orm"
 import { computeRtb } from "@/lib/rtb"
 import { getBarberDailyWeek } from "@/lib/daily-takings"
+import {
+  SWING_THRESHOLD_PCT,
+  EXPECTED_WORKING_DAYS,
+} from "@/lib/discrepancies-config"
 
 // Detects takings/RTB discrepancies for a barber's week, so the manager can
 // accept or refuse each one at confirmation. Pure read (no writes).
 
-/** ± swing vs trailing average / target that trips the "big swing" flag. */
-export const SWING_THRESHOLD_PCT = 30
-/** Days a barber is expected to have entered for a "full" week. */
-export const EXPECTED_WORKING_DAYS = 5
+// Defaults live in the client-safe lib/discrepancies-config.ts; re-export them
+// here so existing server-side importers keep working.
+export { SWING_THRESHOLD_PCT, EXPECTED_WORKING_DAYS }
 
 export type DiscrepancyKind = "cash_short" | "swing" | "partial_week" | "missing"
 
@@ -38,6 +41,16 @@ export async function getBarberDiscrepancies(
   const [barber] = await db.select().from(barbers).where(eq(barbers.id, barberId))
   if (!barber) return []
 
+  // Per-barber thresholds, falling back to the system defaults when unset.
+  const swingThreshold =
+    barber.swingThresholdPct == null
+      ? SWING_THRESHOLD_PCT
+      : Number(barber.swingThresholdPct)
+  const expectedDays =
+    barber.expectedWorkingDays == null
+      ? EXPECTED_WORKING_DAYS
+      : Number(barber.expectedWorkingDays)
+
   const days = await getBarberDailyWeek(barberId, weekEnding)
   const cash = days.reduce((s, d) => s + d.cash, 0)
   const card = days.reduce((s, d) => s + d.card, 0)
@@ -58,11 +71,11 @@ export async function getBarberDiscrepancies(
   }
 
   // 2. Partial week — some days entered but fewer than expected.
-  if (daysEntered < EXPECTED_WORKING_DAYS) {
+  if (daysEntered < expectedDays) {
     flags.push({
       kind: "partial_week",
       severity: "warning",
-      detail: `Only ${daysEntered} day${daysEntered === 1 ? "" : "s"} entered (expected ${EXPECTED_WORKING_DAYS}). Days may be missing.`,
+      detail: `Only ${daysEntered} day${daysEntered === 1 ? "" : "s"} entered (expected ${expectedDays}). Days may be missing.`,
     })
   }
 
@@ -93,7 +106,7 @@ export async function getBarberDiscrepancies(
     const avg = recent.reduce((s, n) => s + n, 0) / recent.length
     if (avg > 0) {
       const swingPct = ((total - avg) / avg) * 100
-      if (Math.abs(swingPct) >= SWING_THRESHOLD_PCT) {
+      if (Math.abs(swingPct) >= swingThreshold) {
         flags.push({
           kind: "swing",
           severity: "warning",

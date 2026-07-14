@@ -1,4 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
+import { eq } from "drizzle-orm"
+import { db } from "@/lib/db"
+import { user } from "@/lib/db/schema"
 import { auth } from "@/lib/auth"
 import { ensureBarberForUser } from "@/lib/team"
 import {
@@ -7,19 +10,79 @@ import {
 } from "@/lib/daily-takings"
 import { weekEndingFor, currentWeekEnding } from "@/lib/format"
 
-// Ingestion endpoint for the separate daily-entry app. Each request is
-// authenticated as the barber (Better Auth session — both apps share the same
-// DATABASE_URL + BETTER_AUTH_SECRET). We ALWAYS resolve the barber from the
-// authenticated session, never from a client-supplied identity.
+// Ingestion endpoint for the separate daily-entry app. A day's cash/card is
+// ALWAYS attributed to a barber the server can trust — never to a raw
+// client-supplied identity. Two accepted auth modes:
+//
+//  1. Per-barber session (Better Auth). Works when the entry app shares this
+//     app's registrable domain (cookies are SameSite). Barber = the session
+//     user. Both apps must share DATABASE_URL + BETTER_AUTH_SECRET.
+//  2. Server-to-server shared secret. The entry app's OWN server (after it has
+//     authenticated the barber against the shared user table) posts here with
+//     header `x-ingest-key: <INGEST_API_KEY>` and the barber's `email`. This is
+//     the robust path across different domains, where third-party cookies fail.
+
+/** Origins allowed to make browser (credentialed) requests. Comma-separated
+ *  env var, e.g. "https://entry.example.com,https://foo.vercel.app". */
+function allowedOrigins(): string[] {
+  return (process.env.INGEST_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean)
+}
 
 function corsHeaders(origin: string | null): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": origin ?? "*",
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-ingest-key",
     Vary: "Origin",
   }
+  // Only reflect the origin (and allow credentials) if it is explicitly
+  // allowlisted. Never pair "*" with credentials — browsers reject it and it
+  // would be a security hole.
+  if (origin && allowedOrigins().includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin
+    headers["Access-Control-Allow-Credentials"] = "true"
+  }
+  return headers
+}
+
+type Resolved = {
+  barber: { id: number; name: string; siteId: number }
+  enteredByUserId: string | null
+}
+
+/** Resolve the barber this request may write for, via secret+email or session.
+ *  Returns null when unauthenticated / unresolvable. */
+async function resolveBarber(
+  req: NextRequest,
+  bodyEmail?: string | null,
+): Promise<Resolved | null> {
+  // Mode 2: server-to-server shared secret.
+  const key = req.headers.get("x-ingest-key")
+  const configured = process.env.INGEST_API_KEY
+  if (configured && key && key === configured) {
+    const email = String(bodyEmail ?? "").trim().toLowerCase()
+    if (!email) return null
+    const [u] = await db.select().from(user).where(eq(user.email, email))
+    if (!u) return null
+    const barber = await ensureBarberForUser({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+    })
+    return { barber, enteredByUserId: u.id }
+  }
+
+  // Mode 1: per-barber Better Auth session.
+  const session = await auth.api.getSession({ headers: req.headers })
+  if (!session?.user) return null
+  const barber = await ensureBarberForUser({
+    id: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+  })
+  return { barber, enteredByUserId: session.user.id }
 }
 
 export async function OPTIONS(req: NextRequest) {
@@ -29,33 +92,29 @@ export async function OPTIONS(req: NextRequest) {
   })
 }
 
-async function resolveBarber(req: NextRequest) {
-  const session = await auth.api.getSession({ headers: req.headers })
-  if (!session?.user) return null
-  // Links/creates the operational barber record for this login (by name match
-  // or self-provision) — the same helper the in-app team area uses.
-  const barber = await ensureBarberForUser({
-    id: session.user.id,
-    name: session.user.name,
-    email: session.user.email,
-  })
-  return { session, barber }
-}
-
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(req.headers.get("origin"))
-  const resolved = await resolveBarber(req)
-  if (!resolved) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: cors })
-  }
-  const { session, barber } = resolved
 
-  let body: { date?: string; cash?: number | string; card?: number | string }
+  let body: {
+    date?: string
+    cash?: number | string
+    card?: number | string
+    email?: string
+  }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400, headers: cors })
   }
+
+  const resolved = await resolveBarber(req, body.email)
+  if (!resolved) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401, headers: cors },
+    )
+  }
+  const { barber, enteredByUserId } = resolved
 
   const date = String(body.date ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -87,7 +146,7 @@ export async function POST(req: NextRequest) {
     date,
     cash,
     card,
-    enteredByUserId: session.user.id,
+    enteredByUserId,
   })
 
   return NextResponse.json(
@@ -104,9 +163,13 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const cors = corsHeaders(req.headers.get("origin"))
-  const resolved = await resolveBarber(req)
+  const emailParam = req.nextUrl.searchParams.get("email")
+  const resolved = await resolveBarber(req, emailParam)
   if (!resolved) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: cors })
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401, headers: cors },
+    )
   }
   const { barber } = resolved
 

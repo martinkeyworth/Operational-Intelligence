@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2, Trash2 } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Loader2, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +20,10 @@ import {
 import { fmtGBP } from "@/lib/format"
 import { setBarberSplit, deactivateBarber } from "@/app/admin/splits/actions"
 import type { BarberSplitRow } from "@/lib/data"
+import {
+  SWING_THRESHOLD_PCT,
+  EXPECTED_WORKING_DAYS,
+} from "@/lib/discrepancies-config"
 
 export function SplitRow({ row }: { row: BarberSplitRow }) {
   const router = useRouter()
@@ -29,6 +33,16 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [cap, setCap] = useState<string>(
+    row.cardRtbCap == null ? "" : String(row.cardRtbCap),
+  )
+  const [swing, setSwing] = useState<string>(
+    row.swingThresholdPct == null ? "" : String(row.swingThresholdPct),
+  )
+  const [days, setDays] = useState<string>(
+    row.expectedWorkingDays == null ? "" : String(row.expectedWorkingDays),
+  )
 
   const parsed = pct === "" ? row.effectiveBarberPct : Number(pct)
   const business = Number.isFinite(parsed) ? 100 - parsed : 0
@@ -64,9 +78,13 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
     <div className="flex items-stretch gap-2">
       <form
         action={action}
-        className="flex flex-1 flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+        className="flex flex-1 flex-col gap-3 rounded-lg border border-border bg-card p-4"
       >
       <input type="hidden" name="id" value={row.id} />
+      <input type="hidden" name="cardRtbCap" value={cap} />
+      <input type="hidden" name="swingThresholdPct" value={swing} />
+      <input type="hidden" name="expectedWorkingDays" value={days} />
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 
       <div className="min-w-0 md:w-56">
         <div className="flex items-center gap-2">
@@ -142,6 +160,88 @@ export function SplitRow({ row }: { row: BarberSplitRow }) {
           ) : null}
           {pending ? "Saving…" : saved ? "Saved" : "Set split"}
         </Button>
+      )}
+      </div>
+
+      {row.hasData && (
+        <div className="border-t border-border pt-2">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showAdvanced ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+            RTB cap &amp; discrepancy flags
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor={`cap-${row.id}`}
+                >
+                  Card RTB cap (£)
+                </label>
+                <Input
+                  id={`cap-${row.id}`}
+                  type="number"
+                  min={0}
+                  step={10}
+                  value={cap}
+                  onChange={(e) => setCap(e.target.value)}
+                  placeholder="200"
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor={`swing-${row.id}`}
+                >
+                  Swing alert (±%)
+                </label>
+                <Input
+                  id={`swing-${row.id}`}
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={swing}
+                  onChange={(e) => setSwing(e.target.value)}
+                  placeholder={`Default ${SWING_THRESHOLD_PCT}`}
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor={`days-${row.id}`}
+                >
+                  Expected days/week
+                </label>
+                <Input
+                  id={`days-${row.id}`}
+                  type="number"
+                  min={0}
+                  max={7}
+                  step={1}
+                  value={days}
+                  onChange={(e) => setDays(e.target.value)}
+                  placeholder={`Default ${EXPECTED_WORKING_DAYS}`}
+                  className="h-9"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-3">
+                Leave swing / days blank to use the system default. Changes save
+                with &ldquo;Set split&rdquo;.
+              </p>
+            </div>
+          )}
+        </div>
       )}
       </form>
 

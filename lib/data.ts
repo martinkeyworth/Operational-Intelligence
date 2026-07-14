@@ -1669,7 +1669,7 @@ export type CapacityKpis = {
   utilisationPct: number
   utilisationRag: Rag
   vacantChairs: number
-  // Revenue To Business (barbers x £500)
+  // Revenue To Business (barbers x ��500)
   rtbPerBarber: number
   rtbExpected: number
   rtbActual: number
@@ -1924,6 +1924,11 @@ export type BarberSplitRow = {
   hasData: boolean
   weekTakings: number
   reviewedThisWeek: boolean
+  // RTB card cap (£) + discrepancy thresholds. cap always has a value (default
+  // 200); thresholds are null when using the system default.
+  cardRtbCap: number
+  swingThresholdPct: number | null
+  expectedWorkingDays: number | null
 }
 
 /**
@@ -1972,6 +1977,11 @@ export async function getBarberSplits(week: string): Promise<BarberSplitRow[]> {
       reviewedThisWeek: setAt
         ? setAt >= new Date(`${week}T00:00:00`)
         : false,
+      cardRtbCap: b.cardRtbCap == null ? 200 : Number(b.cardRtbCap),
+      swingThresholdPct:
+        b.swingThresholdPct == null ? null : Number(b.swingThresholdPct),
+      expectedWorkingDays:
+        b.expectedWorkingDays == null ? null : Number(b.expectedWorkingDays),
     }
   })
 }

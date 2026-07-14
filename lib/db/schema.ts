@@ -121,6 +121,11 @@ export const barbers = pgTable("barbers", {
   // Per-barber weekly cap on how much RTB (house rent) may be taken from CARD.
   // Anything above the cap is driven onto cash (see lib/rtb.ts). Default £200.
   cardRtbCap: numeric("card_rtb_cap").notNull().default("200"),
+  // Discrepancy-detection thresholds (lib/discrepancies.ts). Null = use the
+  // system default. swingThresholdPct: ± % vs trailing average that trips a
+  // "big swing" flag. expectedWorkingDays: days expected for a "full" week.
+  swingThresholdPct: numeric("swing_threshold_pct"),
+  expectedWorkingDays: integer("expected_working_days"),
   // --- Team Area: links + HR profile -----------------------------------
   // Links this operational barber record to their Better Auth login account,
   // so a logged-in barber sees only their own self-service data. Null until an
