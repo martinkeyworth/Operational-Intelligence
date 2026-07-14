@@ -9,13 +9,13 @@ import { Card } from "@/components/ui/card"
 import { RagBadge } from "@/components/rag"
 import { NarrativeForm } from "@/components/narrative-form"
 import { RootCausePanel } from "@/components/root-cause-panel"
-import { buildComparison } from "@/lib/reporting"
+import { buildComparison, getOrCreateReport } from "@/lib/reporting"
 import { fmtWeekLong, type Rag } from "@/lib/data"
 import {
   saveCosminNarrative,
   saveMartinResponse,
 } from "@/app/reports/narrative-actions"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ArrowDown } from "lucide-react"
 
 function Prose({ text }: { text: string | null }) {
   if (!text)
@@ -41,6 +41,9 @@ export default async function ReportPage({
   const { week } = await params
   const user = await requireDashboard()
 
+  // Ensure a row exists so the narrative/response forms always save (and so a
+  // COO/CEO arriving from the chase email lands on a persistable page).
+  await getOrCreateReport(week)
   const [report] = await db
     .select()
     .from(weeklyReports)
@@ -52,6 +55,12 @@ export default async function ReportPage({
 
   const isCosmin = user.email.toLowerCase().startsWith("cosmin@")
   const isMartin = user.email.toLowerCase().startsWith("martin@")
+
+  // Is the signed-in user the person currently being asked to act? Drives the
+  // prominent "your input needed" prompt at the top of the page.
+  const cooNeedsInput = isCosmin && !report?.cosminNarrativeAt
+  const ceoNeedsInput = isMartin && !report?.martinResponseAt
+  const youNeedToAct = cooNeedsInput || ceoNeedsInput
 
   return (
     <AppShell user={user}>
@@ -76,6 +85,30 @@ export default async function ReportPage({
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to dashboard
         </Link>
+
+        {youNeedToAct && (
+          <a
+            href="#leadership-input"
+            className="flex items-center justify-between gap-4 rounded-lg border border-primary/40 bg-primary/10 px-5 py-4 transition-colors hover:bg-primary/15"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {cooNeedsInput
+                  ? "Your COO narrative is needed to advance this week"
+                  : "Your CEO response is needed to advance this week"}
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground text-pretty">
+                {cooNeedsInput
+                  ? "Review the AI analysis below, then add your narrative. The CEO response and board report unlock once you submit."
+                  : "Review the AI analysis and COO narrative below, then add your response. The consolidated board report unlocks once you submit."}
+              </p>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground">
+              Jump to your input
+              <ArrowDown className="h-4 w-4" />
+            </span>
+          </a>
+        )}
 
         <Card className="overflow-hidden">
           <div className="border-b border-border px-5 py-3">
@@ -131,7 +164,10 @@ export default async function ReportPage({
 
         <RootCausePanel weekEnding={week} />
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <section
+          id="leadership-input"
+          className="grid scroll-mt-24 gap-6 md:grid-cols-2"
+        >
           {isCosmin || user.isOwner ? (
             <NarrativeForm
               weekEnding={week}
@@ -171,7 +207,7 @@ export default async function ReportPage({
               </div>
             </Card>
           )}
-        </div>
+        </section>
       </div>
     </AppShell>
   )

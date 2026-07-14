@@ -230,6 +230,52 @@ Produce a single cohesive executive review (max ~180 words) that blends the data
   }
 }
 
+/**
+ * Final AI "wrap-around" synthesis for the event-driven cadence. Runs only once
+ * the AI analysis + COO narrative + CEO response all exist, and folds them into
+ * the definitive executive review that leads the consolidated board report.
+ *
+ * Unlike `reviewNarrative`, this returns `null` on AI failure (NO silent
+ * fallback) so the orchestrator can wait and retry on the next tick rather than
+ * sending a half-baked report.
+ */
+export async function synthesiseFinalReview(
+  weekEnding: string,
+): Promise<string | null> {
+  const [report] = await db
+    .select()
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  if (!report) return null
+
+  const prompt = `You are writing the definitive executive review that leads Less Than Zero's weekly board report to the whole company (week ending ${fmtWeekLong(
+    weekEnding,
+  )}). Overall business RAG: ${report.overallRag?.toUpperCase() ?? "?"} (${
+    report.overallPct ?? "?"
+  }%).
+
+Fold these three inputs into ONE cohesive, decisive board-level narrative:
+
+AI week-on-week analysis:
+${report.aiAnalysis ?? "(none)"}
+
+COO narrative (Cosmin):
+${report.cosminNarrative ?? "(none)"}
+
+CEO response (Martin):
+${report.martinResponse ?? "(none)"}
+
+Write ~200 words in one confident leadership voice for the whole team: what happened this week, why, what leadership has decided, and the top 2-3 priorities for the week ahead. Do not label the sections or attribute quotes; speak as the leadership team.`
+
+  try {
+    const res = await generateText({ model: MODEL, prompt })
+    const text = res.text.trim()
+    return text.length > 0 ? text : null
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // AI root-cause analysis + recommended actions
 // ---------------------------------------------------------------------------

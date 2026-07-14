@@ -30,6 +30,7 @@ import {
   buildComparison,
   runWeeklyAnalysis,
   reviewNarrative,
+  synthesiseFinalReview,
   appBaseUrl,
 } from "@/lib/reporting"
 
@@ -702,7 +703,7 @@ export async function requestCosminNarrative(weekEnding = currentWeekEnding()) {
      <div style="background:#f4f4f5;border-radius:8px;padding:12px;margin:0 0 16px;">${toHtml(
        report.aiAnalysis ?? "Analysis pending.",
      )}</div>
-     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Add my narrative</a></p>`,
+     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}#leadership-input" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Add my narrative</a></p>`,
   )
 
   const res = await sendEmail({
@@ -724,7 +725,7 @@ export async function requestCosminNarrative(weekEnding = currentWeekEnding()) {
       lines: [],
       button: {
         text: "Add my narrative",
-        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}#leadership-input`,
       },
       tone: "urgent",
     },
@@ -742,7 +743,10 @@ export async function sendBoardReport(weekEnding = currentWeekEnding()) {
   if (!report) return { skipped: true, reason: "no report" }
 
   const { rows } = await buildComparison(weekEnding)
-  const review = await reviewNarrative(weekEnding)
+  // Prefer the stored final AI wrap-around (folds analysis + COO + CEO). Fall
+  // back to an on-the-fly review only if it's somehow absent (e.g. the report
+  // was sent outside the orchestrator).
+  const review = report.finalAnalysis ?? (await reviewNarrative(weekEnding))
 
   const rowsHtml = rows
     .map(
@@ -869,7 +873,7 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
        <strong style="font-size:12px;color:#6b7280;text-transform:uppercase;">COO narrative</strong>
        ${toHtml(report.cosminNarrative ?? "Not yet submitted.")}
      </div>
-     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Add my response</a></p>`,
+     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}#leadership-input" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Add my response</a></p>`,
   )
 
   const res = await sendEmail({
@@ -891,7 +895,7 @@ export async function requestMartinResponse(weekEnding = currentWeekEnding()) {
       lines: [],
       button: {
         text: "Add my response",
-        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}`,
+        url: `${url.replace(/\/+$/, "")}/reports/${weekEnding}#leadership-input`,
       },
       tone: "urgent",
     },
@@ -1462,6 +1466,279 @@ export async function dryRunRaidAiAnalysis() {
   }))
 }
 
+// ---------------------------------------------------------------------------
+// Event-driven weekly cadence orchestrator
+//
+// Replaces the fixed-time chain (18:00 prompt / 19:00 escalate / 19:00 COO /
+// 20:00 board / 20:30 CEO). A single tick (every 30 min from Sat 17:00) walks
+// the chain and only advances a stage when the PREVIOUS one is actually
+// complete. While a stage is outstanding it CHASES the responsible people every
+// 30 min and escalates to the owners after 1h. The board report is NEVER
+// auto-sent — it only goes out once the CEO response AND the final AI
+// wrap-around exist.
+//
+// Chain: collection complete → AI analysis → COO narrative → CEO response →
+//        final AI wrap-around → consolidated board report to all @company.
+// ---------------------------------------------------------------------------
+
+const CADENCE_CHASE_INTERVAL_MS = 30 * 60 * 1000 // re-chase every 30 min
+const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // escalate to owners after 1h
+
+type CadencePhase = {
+  requestedAt?: string
+  lastChaseAt?: string
+  escalatedAt?: string
+}
+type CadenceState = {
+  collection?: CadencePhase
+  narrative?: CadencePhase
+  response?: CadencePhase
+}
+
+async function saveCadenceState(weekEnding: string, state: CadenceState) {
+  await db
+    .update(weeklyReports)
+    .set({ cadenceState: state })
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+}
+
+// Run one chase cycle for a phase: the first tick fires the request; subsequent
+// ticks re-chase every 30 min; escalate to owners once after 1h. Mutates
+// `phase` in place and returns what it did this tick.
+async function runChasePhase(
+  phase: CadencePhase,
+  now: Date,
+  sendFn: () => Promise<unknown>,
+  escalateFn: () => Promise<unknown>,
+): Promise<string[]> {
+  const t = now.getTime()
+  if (!phase.requestedAt) {
+    phase.requestedAt = now.toISOString()
+    await sendFn()
+    phase.lastChaseAt = now.toISOString()
+    return ["requested"]
+  }
+  const did: string[] = []
+  const lastChase = Date.parse(phase.lastChaseAt ?? phase.requestedAt)
+  if (t - lastChase >= CADENCE_CHASE_INTERVAL_MS) {
+    await sendFn()
+    phase.lastChaseAt = now.toISOString()
+    did.push("chased")
+  }
+  if (
+    !phase.escalatedAt &&
+    t - Date.parse(phase.requestedAt) >= CADENCE_ESCALATE_AFTER_MS
+  ) {
+    await escalateFn()
+    phase.escalatedAt = now.toISOString()
+    did.push("escalated")
+  }
+  return did.length ? did : ["waiting"]
+}
+
+// Chase everyone still outstanding on collection (repeatable — reuses the
+// per-person prompt, which has NO idempotency side-effects so it can fire every
+// tick).
+async function chaseOutstandingCollection(weekEnding: string): Promise<number> {
+  const status = await getSubmissionStatus(weekEnding)
+  const contacts = await getSiteManagerContacts()
+  const responsible = new Set<string>()
+  for (const item of status.outstanding)
+    for (const email of responsibleEmailsFor(item, contacts))
+      responsible.add(email)
+  let chased = 0
+  for (const email of responsible) {
+    const res = await sendConfirmPromptTo(email, weekEnding)
+    if (res.sent) chased++
+  }
+  return chased
+}
+
+// Escalate still-outstanding collection to the owners (fired once, ~1h in).
+async function escalateCollectionToOwners(weekEnding: string) {
+  const status = await getSubmissionStatus(weekEnding)
+  if (status.complete) return
+  const recipients = await getCompanyRecipients()
+  const owners = recipients.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+  const url = appBaseUrl().replace(/\/+$/, "")
+  const html = emailShell(
+    `Submissions still outstanding · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${status.outstandingCount} item${
+      status.outstandingCount === 1 ? "" : "s"
+    } still outstanding an hour into the close.</p>
+     <p style="margin:0 0 12px;">The weekly close is blocked until these are in. Please chase the responsible managers.</p>
+     ${outstandingTable(status.outstanding, weekEnding)}
+     <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>`,
+  )
+  for (const o of owners) {
+    await sendEmail({
+      to: o.email,
+      subject: `${status.outstandingCount} still outstanding (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "cadence_escalation",
+      weekEnding,
+    })
+  }
+}
+
+// Email the owners that a leadership stage (COO/CEO) has been outstanding over
+// an hour and is blocking the board report.
+async function escalateStalledStageToOwners(
+  weekEnding: string,
+  who: "COO narrative (Cosmin)" | "CEO response (Martin)",
+) {
+  const recipients = await getCompanyRecipients()
+  const owners = recipients.filter((r) =>
+    OWNER_EMAILS.includes(r.email.toLowerCase()),
+  )
+  const url = appBaseUrl().replace(/\/+$/, "")
+  const html = emailShell(
+    `Board report blocked · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">The weekly board report is waiting on the ${who}.</p>
+     <p style="margin:0 0 12px;">It has been outstanding for over an hour. The consolidated report to the company cannot go out until it is added.</p>
+     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}#leadership-input" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Open the report</a></p>`,
+  )
+  for (const o of owners) {
+    await sendEmail({
+      to: o.email,
+      subject: `Board report blocked: ${who} outstanding (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "cadence_escalation",
+      weekEnding,
+    })
+  }
+  await sendSpaceChat("executive", {
+    title: `Board report blocked · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `Waiting on the ${who} for over an hour — the company board report can't send until it's added.`,
+    lines: [],
+    button: {
+      text: "Open the report",
+      url: `${url}/reports/${weekEnding}#leadership-input`,
+    },
+    tone: "urgent",
+  })
+}
+
+// The orchestrator. One forward step per tick where a gate is newly satisfied;
+// otherwise chase the current in-flight stage. Idempotent + safe to call every
+// 30 min.
+export async function advanceWeeklyCadence(weekEnding = currentWeekEnding()) {
+  const report = await getOrCreateReport(weekEnding)
+  if (report.reportSentAt) return { stage: "sent", done: true }
+
+  const now = new Date()
+  const state: CadenceState = (report.cadenceState as CadenceState) ?? {}
+
+  // STAGE 0 — collection. Dominant activity: chase until everything is in.
+  const status = await getSubmissionStatus(weekEnding)
+  if (!status.complete) {
+    state.collection ??= {}
+    const did = await runChasePhase(
+      state.collection,
+      now,
+      () => chaseOutstandingCollection(weekEnding),
+      () => escalateCollectionToOwners(weekEnding),
+    )
+    await saveCadenceState(weekEnding, state)
+    return { stage: "collecting", outstanding: status.outstandingCount, did }
+  }
+  if (!report.collectionCompleteAt) {
+    await db
+      .update(weeklyReports)
+      .set({ collectionCompleteAt: now })
+      .where(eq(weeklyReports.weekEnding, weekEnding))
+  }
+
+  // STAGE 1 — upfront AI analysis (once; degrades to a data table on AI failure).
+  if (!report.analysisRunAt) {
+    await runAnalysis(weekEnding)
+    return { stage: "analysis-run" }
+  }
+
+  // STAGE 2 — COO narrative. Request + chase until submitted.
+  if (!report.cosminNarrativeAt) {
+    state.narrative ??= {}
+    const did = await runChasePhase(
+      state.narrative,
+      now,
+      () => requestCosminNarrative(weekEnding),
+      () => escalateStalledStageToOwners(weekEnding, "COO narrative (Cosmin)"),
+    )
+    await saveCadenceState(weekEnding, state)
+    return { stage: "awaiting-coo", did }
+  }
+
+  // STAGE 3 — CEO response. Request + chase until submitted.
+  if (!report.martinResponseAt) {
+    state.response ??= {}
+    const did = await runChasePhase(
+      state.response,
+      now,
+      () => requestMartinResponse(weekEnding),
+      () => escalateStalledStageToOwners(weekEnding, "CEO response (Martin)"),
+    )
+    await saveCadenceState(weekEnding, state)
+    return { stage: "awaiting-ceo", did }
+  }
+
+  // STAGE 4 — final AI wrap-around. Waits (retries next tick) if AI unavailable,
+  // so the report never sends without the synthesis.
+  if (!report.finalAnalysisAt) {
+    const final = await synthesiseFinalReview(weekEnding)
+    if (!final)
+      return {
+        stage: "wrap-pending",
+        note: "AI wrap-around unavailable; will retry next tick",
+      }
+    await db
+      .update(weeklyReports)
+      .set({ finalAnalysis: final, finalAnalysisAt: now })
+      .where(eq(weeklyReports.weekEnding, weekEnding))
+    return { stage: "wrap-done" }
+  }
+
+  // STAGE 5 — consolidated board report to all @company. Only reached once the
+  // whole chain is complete.
+  await sendBoardReport(weekEnding)
+  return { stage: "sent", done: true }
+}
+
+// Read-only view of where the cadence currently is (no sends, no writes).
+export async function getCadenceStatus(weekEnding = currentWeekEnding()) {
+  const [report] = await db
+    .select()
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  const status = await getSubmissionStatus(weekEnding)
+  const stage = report?.reportSentAt
+    ? "sent"
+    : !status.complete
+      ? "collecting"
+      : !report?.analysisRunAt
+        ? "analysis"
+        : !report?.cosminNarrativeAt
+          ? "awaiting-coo"
+          : !report?.martinResponseAt
+            ? "awaiting-ceo"
+            : !report?.finalAnalysisAt
+              ? "wrap-around"
+              : "ready-to-send"
+  return {
+    weekEnding,
+    stage,
+    complete: status.complete,
+    outstandingCount: status.outstandingCount,
+    analysisRunAt: report?.analysisRunAt ?? null,
+    cosminNarrativeAt: report?.cosminNarrativeAt ?? null,
+    martinResponseAt: report?.martinResponseAt ?? null,
+    finalAnalysisAt: report?.finalAnalysisAt ?? null,
+    reportSentAt: report?.reportSentAt ?? null,
+    cadenceState: (report?.cadenceState as CadenceState) ?? {},
+  }
+}
+
 export const STEPS = {
   reminders: remindUsers,
   "submission-alert": submissionAlert,
@@ -1471,6 +1748,7 @@ export const STEPS = {
   "cosmin-narrative": requestCosminNarrative,
   "board-report": sendBoardReport,
   "martin-response": requestMartinResponse,
+  cadence: advanceWeeklyCadence,
   "brand-rtb": sendBrandRtbSummary,
   "red-action-reminders": remindRedActionOwners,
   "raid-ai-analysis": raidAiAnalysis,

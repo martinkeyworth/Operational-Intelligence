@@ -368,6 +368,17 @@ export const weeklyReports = pgTable("weekly_reports", {
   raidAiSentAt: timestamp("raid_ai_sent_at"),
   analysisRunAt: timestamp("analysis_run_at"),
   reportSentAt: timestamp("report_sent_at"),
+  // Event-driven cadence (process-, not time-, gated). Marker for when all
+  // collection/confirmation was first complete (stage 1 gate).
+  collectionCompleteAt: timestamp("collection_complete_at"),
+  // Final AI "wrap-around" synthesis folding the upfront analysis + COO
+  // narrative + CEO response, generated just before the board report.
+  finalAnalysis: text("final_analysis"),
+  finalAnalysisAt: timestamp("final_analysis_at"),
+  // Chase bookkeeping for the orchestrator (mirrors discrepancy_state jsonb):
+  // { narrativeRequestedAt, narrativeLastChaseAt, narrativeEscalatedAt,
+  //   responseRequestedAt, responseLastChaseAt, responseEscalatedAt }.
+  cadenceState: jsonb("cadence_state"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
