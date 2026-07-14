@@ -212,7 +212,7 @@ function ThreeSixtyCard({ self, readOnly }: { self: SelfView; readOnly: boolean 
   const allSubmitted = cycle && cycle.nominees.length === 5
 
   return (
-    <Card className="p-5 md:col-span-2">
+    <Card id="three-sixty" className="scroll-mt-24 p-5 md:col-span-2">
       <div className="flex items-center gap-2">
         <Users className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-foreground">360 Review</h3>

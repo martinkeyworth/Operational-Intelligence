@@ -133,6 +133,11 @@ export type ThreeSixtyReadiness = {
   /** True when we should proceed but flag the AI as low-confidence (window
    *  closed with fewer than the threshold number of responses). */
   lowConfidence: boolean
+  /** True when the window has closed and the barber never nominated ANY
+   *  reviewers. This is within the barber's control, so it drives an automatic
+   *  worst PBC score (rather than low-confidence, which is for the case where
+   *  the barber nominated but reviewers didn't reply in time). */
+  notNominated: boolean
 }
 
 /**
@@ -144,13 +149,14 @@ export type ThreeSixtyReadiness = {
 export async function threeSixtyReadiness(barberId: number, period: string, now = new Date()): Promise<ThreeSixtyReadiness> {
   const cycle = await getCycleForPeriod(barberId, period)
   if (!cycle) {
-    return { cycleId: null, nominated: 0, responded: 0, threshold: THREE_SIXTY_MIN_RESPONSES, windowClosed: false, ready: false, lowConfidence: false }
+    return { cycleId: null, nominated: 0, responded: 0, threshold: THREE_SIXTY_MIN_RESPONSES, windowClosed: false, ready: false, lowConfidence: false, notNominated: false }
   }
   const { nominated, responded } = await getCycleProgress(cycle.id)
   const duePassed = cycle.dueOn ? new Date(cycle.dueOn) < now : false
   const windowClosed = cycle.status === "Closed" || duePassed
   const enough = responded >= THREE_SIXTY_MIN_RESPONSES
   const ready = enough || windowClosed
+  const notNominated = windowClosed && nominated === 0
   return {
     cycleId: cycle.id,
     nominated,
@@ -158,7 +164,11 @@ export async function threeSixtyReadiness(barberId: number, period: string, now 
     threshold: THREE_SIXTY_MIN_RESPONSES,
     windowClosed,
     ready,
-    lowConfidence: ready && !enough,
+    // A closed window with too few responses is low confidence — UNLESS the
+    // reason is that nobody was ever nominated, which is handled separately as
+    // an automatic worst score.
+    lowConfidence: ready && !enough && !notNominated,
+    notNominated,
   }
 }
 
@@ -168,20 +178,24 @@ export async function threeSixtyReadiness(barberId: number, period: string, now 
  * due at the end of the period's month. Nominees/invites are added when the
  * barber nominates from their Team Area.
  */
-export async function ensureCycleForPeriod(barberId: number, period: string): Promise<number> {
+export async function ensureCycleForPeriod(
+  barberId: number,
+  period: string,
+): Promise<{ id: number; created: boolean; dueOn: string }> {
   const existing = await getCycleForPeriod(barberId, period)
-  if (existing) return existing.id
+  if (existing) return { id: existing.id, created: false, dueOn: existing.dueOn ?? "" }
   // Due at the last day of the period month.
   const [y, m] = period.split("-").map(Number)
   const due = new Date(y, m, 0) // day 0 of next month = last day of this month
+  const dueOn = due.toISOString().slice(0, 10)
   const [cycle] = await db
     .insert(threeSixtyCycles)
     .values({
       barberId,
       period,
-      dueOn: due.toISOString().slice(0, 10),
+      dueOn,
       status: "Open",
     })
     .returning({ id: threeSixtyCycles.id })
-  return cycle.id
+  return { id: cycle.id, created: true, dueOn }
 }

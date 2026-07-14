@@ -7,6 +7,8 @@ import {
 } from "@/lib/daily-takings"
 import { getCurrentOneToOne, getPlanForBarber } from "@/lib/learning"
 import { getMyWork } from "@/lib/my-work"
+import { getCycleForPeriod, getCycleProgress } from "@/lib/three-sixty"
+import { currentPeriod } from "@/lib/learning-types"
 import { weekEndingFor, weekDates, todayIso } from "@/lib/format"
 import type { AccessUser } from "@/lib/access-types"
 
@@ -114,6 +116,47 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
       rag: overdue ? "red" : prepDone ? "green" : "amber",
       href: "/team",
     })
+  }
+
+  // 2b. This barber's 360 for the current period — they must nominate 5
+  //     reviewers, and their feedback drives the PBC rating. If the window
+  //     closes with nobody nominated the PBC defaults to the lowest score, so
+  //     surfacing this here is important.
+  try {
+    const cycle = await getCycleForPeriod(barber.id, currentPeriod())
+    if (cycle && cycle.status === "Open") {
+      const { nominated } = await getCycleProgress(cycle.id)
+      const overdue = cycle.dueOn != null && String(cycle.dueOn) < date
+      if (nominated === 0) {
+        items.push({
+          kind: "three-sixty",
+          label: "Nominate your 360 reviewers",
+          detail: overdue
+            ? "Overdue — pick 5 people to give feedback for your review. Without this your rating defaults to the lowest score."
+            : "Pick 5 people to give feedback for your review — their input drives your PBC rating.",
+          rag: overdue ? "red" : "amber",
+          href: "/team#three-sixty",
+        })
+      } else if (nominated < 5) {
+        items.push({
+          kind: "three-sixty",
+          label: "Finish nominating your 360 reviewers",
+          detail: `${nominated}/5 nominated. Add the rest so their feedback can shape your review.`,
+          rag: overdue ? "red" : "amber",
+          href: "/team#three-sixty",
+        })
+      } else {
+        items.push({
+          kind: "three-sixty",
+          label: "360 reviewers nominated",
+          detail: "All 5 reviewers are invited. Their feedback feeds your review.",
+          rag: "green",
+          href: "/team#three-sixty",
+        })
+      }
+    }
+  } catch {
+    // No cycle / lookup issue — simply nothing to prompt here.
   }
 
   // 3. This barber's L&D plan review.

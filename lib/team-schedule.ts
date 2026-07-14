@@ -2,7 +2,7 @@ import "server-only"
 import { db } from "@/lib/db"
 import { barbers, oneToOnes, threeSixtyCycles, user as userTable } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
-import { sendOneToOneInvite } from "@/lib/team-notify"
+import { sendOneToOneInvite, sendThreeSixtyNominationNudge } from "@/lib/team-notify"
 import {
   isCalendarConfigured,
   upsertCalendarEvent,
@@ -28,7 +28,16 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
   // The 360 is an integral input to this 1-2-1 — make sure a cycle exists for
   // the same period so reviewer feedback can be gathered and gate the review.
   try {
-    await ensureCycleForPeriod(barberId, period)
+    const cycle = await ensureCycleForPeriod(barberId, period)
+    // Only nudge the barber to nominate when the cycle is FIRST opened, so we
+    // don't re-email on every reschedule within the same month.
+    if (cycle.created) {
+      try {
+        await sendThreeSixtyNominationNudge({ barberId, period, dueOn: cycle.dueOn || null })
+      } catch (err) {
+        console.error(`[v0] sendThreeSixtyNominationNudge failed for barber ${barberId} (${period}):`, err instanceof Error ? err.message : err)
+      }
+    }
   } catch (err) {
     console.error(`[v0] ensureCycleForPeriod failed for barber ${barberId} (${period}):`, err instanceof Error ? err.message : err)
   }

@@ -244,6 +244,39 @@ export async function sendThreeSixtyInvites(args: {
 }
 
 /**
+ * Nudge the barber themselves when a NEW 360 cycle opens, asking them to
+ * nominate their 5 reviewers. Sent alongside the 1-2-1 invite when a cycle is
+ * first created — without this prompt barbers weren't starting their 360 at
+ * all, and a never-nominated 360 defaults their PBC to the lowest score.
+ * Best-effort: a missing barber email simply means no nudge.
+ */
+export async function sendThreeSixtyNominationNudge(args: {
+  barberId: number
+  period: string
+  dueOn: string | null
+}): Promise<void> {
+  const people = await resolveOneToOnePeople(args.barberId)
+  if (!people?.barberEmail) return
+  const firstName = people.barberName.trim().split(/\s+/)[0] || "there"
+  const periodLabel = formatPeriod(args.period)
+  const subject = `Nominate your 360 reviewers for ${periodLabel}`
+  const html = wrap(
+    subject,
+    `<p style="font-size:14px;line-height:1.6">Hi ${firstName},</p>
+     <p style="font-size:14px;line-height:1.6">
+       Your 360 feedback cycle for <strong>${periodLabel}</strong> is now open ahead of your
+       1-2-1${args.dueOn ? `, due <strong>${args.dueOn}</strong>` : ""}. Please nominate
+       <strong>5 people</strong> to give you feedback — their input is the main driver of your
+       PBC rating.</p>
+     <p style="font-size:14px;line-height:1.6">
+       Nominating takes a minute. If the cycle closes with no reviewers nominated, your rating
+       defaults to the lowest score, so please get them in early.</p>
+     <p>${emailButton(`/team#three-sixty`, "Nominate my 5 reviewers")}</p>`,
+  )
+  await sendEmail({ to: people.barberEmail, subject, html, kind: "team-360-nominate-nudge" })
+}
+
+/**
  * Chase 360 reviewers who haven't responded on Open cycles. Idempotent per
  * nominee via reminded_at (only reminds those invited but not yet reminded and
  * not yet responded). Returns how many reminder emails were sent. Because the
