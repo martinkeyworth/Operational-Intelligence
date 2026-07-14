@@ -5,7 +5,25 @@ import { ScorePicker } from "@/components/learning/pbc-scale"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { submitReviewerFeedbackAction } from "@/app/360/actions"
+
+// Coarse relationship categories only — deliberately generic so the context
+// that reaches the review can never single out an individual reviewer.
+const RELATIONSHIPS = [
+  "A colleague at the same shop",
+  "A colleague at another shop",
+  "Their manager",
+  "Someone they manage or mentor",
+  "A regular client",
+  "Prefer not to say",
+]
 
 // Reviewer-friendly framing of the three PBC dimensions (1 = excellent, 5 = needs work).
 const DIMENSIONS: { key: "performance" | "behaviours" | "contribution"; label: string; hint: string }[] = [
@@ -73,8 +91,10 @@ export function ReviewerForm({ token, barberName }: { token: string; barberName:
     <div className="space-y-6">
       <div className="rounded-lg border border-border bg-muted/40 p-4">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Score each area from <strong>1 (excellent)</strong> to <strong>5 (needs work)</strong>. Be
-          honest and fair — your individual answers are not shown to {barberName}.
+          <strong className="text-foreground">Your feedback is anonymous.</strong> {barberName} will
+          only see the combined picture from everyone — never your individual scores or comments, and
+          never your name. Please score each area from <strong>1 (excellent)</strong> to{" "}
+          <strong>5 (needs work)</strong>, and be honest and fair.
         </p>
       </div>
 
@@ -90,15 +110,23 @@ export function ReviewerForm({ token, barberName }: { token: string; barberName:
 
       <div className="space-y-2">
         <Label htmlFor="relationship" className="text-sm font-medium">
-          How do you work with {barberName}? <span className="text-muted-foreground">(optional)</span>
+          How do you know {barberName}? <span className="text-muted-foreground">(optional)</span>
         </Label>
-        <Textarea
-          id="relationship"
-          value={relationship}
-          onChange={(e) => setRelationship(e.target.value)}
-          placeholder="e.g. We work the same floor / I manage them / I'm a regular client"
-          className="min-h-16 text-base"
-        />
+        <Select value={relationship} onValueChange={(v) => setRelationship(v ?? "")}>
+          <SelectTrigger id="relationship" className="min-h-11 text-base">
+            <SelectValue placeholder="Choose one" />
+          </SelectTrigger>
+          <SelectContent>
+            {RELATIONSHIPS.map((r) => (
+              <SelectItem key={r} value={r}>
+                {r}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Kept general on purpose — this helps weight the feedback without identifying you.
+        </p>
       </div>
 
       <div className="space-y-2">
