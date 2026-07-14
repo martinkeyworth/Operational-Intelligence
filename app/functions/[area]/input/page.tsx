@@ -18,7 +18,7 @@ import {
 } from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
 import { kpisForArea, isPerSiteArea } from "@/lib/kpi-config"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, AlertCircle, CheckCircle2 } from "lucide-react"
 
 // Functional areas that have a dedicated, lead-owned input page.
 const INPUT_AREAS = ["HR", "Marketing", "Training"]
@@ -67,6 +67,30 @@ export default async function FunctionAreaInputPage({
     perSite && week ? await getMarketingResultsBySite(week) : []
   const trainingSites = isTraining && week ? await getTrainingSitesForWeek(week) : []
 
+  // "Still to enter this week" — a plain list of what this lead hasn't entered
+  // yet, so the "enter once and it pulls through" principle is obvious at a
+  // glance. Uses each KpiResult's `entered` flag (and throughput `entered`).
+  const outstanding: string[] = []
+  if (week) {
+    if (isTraining) {
+      for (const t of trainingSites)
+        if (!t.entered) outstanding.push(`${t.name} — throughput`)
+      for (const r of trainingKpis)
+        if (!r.entered) outstanding.push(r.platform ? `${r.platform} posts` : r.name)
+    } else if (perSite) {
+      for (const s of marketingSites) {
+        const missing = s.kpis.filter((k) => !k.entered).length
+        if (missing > 0)
+          outstanding.push(
+            `${s.siteName} — ${missing} measure${missing === 1 ? "" : "s"}`,
+          )
+      }
+    } else {
+      for (const r of results)
+        if (!r.entered) outstanding.push(r.platform ? `${r.platform} posts` : r.name)
+    }
+  }
+
   return (
     <AppShell user={user}>
       <PageHeader
@@ -85,6 +109,41 @@ export default async function FunctionAreaInputPage({
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to {area.label}
         </Link>
+
+        {week &&
+          (outstanding.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-lg border border-rag-green/40 bg-rag-green/10 px-4 py-3">
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-rag-green" />
+              <p className="text-sm font-medium text-foreground text-pretty">
+                All {area.label} measures are in for w/e {fmtWeekLong(week)} —
+                nothing outstanding.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-rag-amber/40 bg-rag-amber/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 shrink-0 text-rag-amber" />
+                <p className="text-sm font-semibold text-foreground">
+                  {outstanding.length} still to enter for w/e{" "}
+                  {fmtWeekLong(week)}
+                </p>
+              </div>
+              <ul className="mt-2 flex flex-wrap gap-1.5 pl-7">
+                {outstanding.map((label) => (
+                  <li
+                    key={label}
+                    className="rounded-md bg-rag-amber/15 px-2 py-0.5 text-xs font-medium text-rag-amber"
+                  >
+                    {label}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 pl-7 text-xs text-muted-foreground text-pretty">
+                Enter these once here and they pull through to the group
+                overview and sign-off automatically.
+              </p>
+            </div>
+          ))}
 
         {!week ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
