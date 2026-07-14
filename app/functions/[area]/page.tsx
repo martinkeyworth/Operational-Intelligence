@@ -14,7 +14,7 @@ import {
   getManualKpiResults,
   getMarketingResultsBySite,
   getMarketingConfirmation,
-  getLatestWeek,
+  getLeadershipDefaultWeek,
   fmtWeekLong,
 } from "@/lib/data"
 import { findFunctionArea } from "@/lib/function-areas"
@@ -32,7 +32,10 @@ export default async function FunctionAreaPage({
   if (!area) notFound()
 
   const user = await requireDashboard()
-  const week = await getLatestWeek()
+  // Default to the most recent COMPLETED week (leadership review). Using the
+  // raw latest week jumped to the in-progress week as soon as one daily-takings
+  // rollup landed, making entered KPIs look "Not reported".
+  const week = await getLeadershipDefaultWeek()
   const hasKpis = kpisForArea(area.key).length > 0
   const perSite = isPerSiteArea(area.key)
   const isMarketing = area.key === "Marketing"

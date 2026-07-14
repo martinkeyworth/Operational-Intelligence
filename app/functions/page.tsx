@@ -6,13 +6,15 @@ import { RagBadge } from "@/components/rag"
 import {
   getFunctionAreaSummaries,
   getBusinessScorecard,
-  getLatestWeek,
+  getLeadershipDefaultWeek,
   fmtWeekLong,
 } from "@/lib/data"
 
 export default async function FunctionsPage() {
   const user = await requireDashboard()
-  const week = await getLatestWeek()
+  // Most recent COMPLETED week — not the in-progress week that a daily-takings
+  // rollup can create, which would score every area against empty data.
+  const week = await getLeadershipDefaultWeek()
   const [areas, scorecard] = await Promise.all([
     getFunctionAreaSummaries(),
     week ? getBusinessScorecard(week) : Promise.resolve(null),
