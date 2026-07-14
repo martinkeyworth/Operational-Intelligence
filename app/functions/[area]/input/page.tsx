@@ -10,6 +10,7 @@ import { MarketingEntryCard } from "@/components/marketing-entry-card"
 import { TrainingCard } from "@/components/training-card"
 import {
   getEntryWeeks,
+  getLeadershipDefaultWeek,
   getManualKpiResults,
   getMarketingResultsBySite,
   getTrainingSitesForWeek,
@@ -39,7 +40,18 @@ export default async function FunctionAreaInputPage({
 
   const { week: weekParam } = await searchParams
   const weeks = await getEntryWeeks()
-  const week = weekParam && weeks.includes(weekParam) ? weekParam : weeks[0]
+  // Default the entry week to the SAME week leadership reviews (most recent
+  // completed week) so a lead's weekly figures land on the week everyone is
+  // looking at — otherwise entering "this week" saved to the in-progress week
+  // and showed as "Not reported" on the overview/Marketing sign-off. The week
+  // selector still lets a lead pick the in-progress week when needed.
+  const reviewWeek = await getLeadershipDefaultWeek()
+  const week =
+    weekParam && weeks.includes(weekParam)
+      ? weekParam
+      : weeks.includes(reviewWeek)
+        ? reviewWeek
+        : weeks[0]
 
   const isTraining = area.key === "Training"
   const perSite = isPerSiteArea(area.key)
