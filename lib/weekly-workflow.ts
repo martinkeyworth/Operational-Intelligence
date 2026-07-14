@@ -369,6 +369,8 @@ async function chatDmOutstanding(
     lines,
     button,
     tone: "urgent",
+    // @-mention the responsible person in the space so they get a personal ping.
+    mentionEmail: email,
   })
   return res.ok
 }

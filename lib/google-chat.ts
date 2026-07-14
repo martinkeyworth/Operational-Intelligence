@@ -241,16 +241,47 @@ export type ChatDmArgs = {
   button?: { text: string; url: string }
   /** Accent + banner: red (urgent) / green (all-clear) / blue (neutral update). */
   tone?: "urgent" | "positive" | "info"
+  /**
+   * If set (and the person's numeric Chat id can be resolved), the message will
+   * @-mention this person in the space so they get a personal notification.
+   * Resolution is best-effort; if it fails the card still posts (no mention).
+   */
+  mentionEmail?: string
+}
+
+/**
+ * Resolve an email to the numeric Chat user id used by `<users/{id}>` mentions.
+ * Order: (1) a manual JSON map in GOOGLE_CHAT_USER_IDS (zero Google setup),
+ * then (2) the Directory API (needs the admin.directory.user.readonly scope on
+ * the existing service account's domain-wide delegation). Returns null if
+ * neither is available — the caller then posts without a mention.
+ */
+async function resolveMentionId(email: string): Promise<string | null> {
+  const key = email.trim().toLowerCase()
+  const raw = (process.env.GOOGLE_CHAT_USER_IDS || "").trim()
+  if (raw) {
+    try {
+      const map = JSON.parse(raw) as Record<string, string>
+      for (const [k, v] of Object.entries(map)) {
+        if (k.trim().toLowerCase() === key && v) return String(v).trim()
+      }
+    } catch {
+      console.log("[v0] GOOGLE_CHAT_USER_IDS is not valid JSON — ignoring")
+    }
+  }
+  return resolveUserId(email)
 }
 
 /**
  * Build the cardsV2 payload shared by both delivery modes. When `forLabel` is
  * given (webhook mode → shared space), it's shown under the header so everyone
- * can see who the message is for.
+ * can see who the message is for. When `mentionUserId` is given, a top-level
+ * text field @-mentions the person (that's what triggers the notification).
  */
 function buildCardMessage(
   args: ChatDmArgs,
   forLabel?: string,
+  mentionUserId?: string | null,
 ): chat_v1.Schema$Message {
   const accent =
     args.tone === "positive"
@@ -289,6 +320,9 @@ function buildCardMessage(
     })
   }
   return {
+    // A top-level text field is what renders an actual @-mention notification;
+    // card widgets alone don't. Only included when we resolved a numeric id.
+    ...(mentionUserId ? { text: `<users/${mentionUserId}>` } : {}),
     cardsV2: [
       {
         cardId: "ltz-weekly-chase",
@@ -307,10 +341,13 @@ async function sendViaWebhook(
   forLabel?: string,
 ): Promise<ChatDmResult> {
   try {
+    const mentionId = args.mentionEmail
+      ? await resolveMentionId(args.mentionEmail)
+      : null
     const res = await fetch(chatWebhookUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=UTF-8" },
-      body: JSON.stringify(buildCardMessage(args, forLabel)),
+      body: JSON.stringify(buildCardMessage(args, forLabel, mentionId)),
     })
     if (!res.ok) {
       console.log("[v0] chat webhook non-2xx:", res.status)
@@ -375,10 +412,13 @@ export async function sendSpaceChat(
   const url = spaceWebhookUrl(space)
   if (!url) return { ok: false, reason: "not-configured" }
   try {
+    const mentionId = args.mentionEmail
+      ? await resolveMentionId(args.mentionEmail)
+      : null
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=UTF-8" },
-      body: JSON.stringify(buildCardMessage(args, forLabel)),
+      body: JSON.stringify(buildCardMessage(args, forLabel, mentionId)),
     })
     if (!res.ok) {
       console.log(`[v0] ${space} chat webhook non-2xx:`, res.status)
