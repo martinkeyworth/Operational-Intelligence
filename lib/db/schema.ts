@@ -190,6 +190,20 @@ export const dailyTakings = pgTable(
   }),
 )
 
+// One row per haircut. Barbers add a line as each cut is paid; the day's lines
+// are summed (by method) into the daily_takings row, which in turn drives the
+// weekly rollup + RTB. Lines are only editable for the current day.
+export const takingsLineEntries = pgTable("takings_line_entries", {
+  id: serial("id").primaryKey(),
+  barberId: integer("barber_id").notNull(),
+  siteId: integer("site_id").notNull(),
+  date: date("date").notNull(),
+  amount: numeric("amount").notNull().default("0"),
+  method: text("method").notNull().default("cash"), // 'cash' | 'card'
+  enteredByUserId: text("entered_by_user_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
 // Weekly functional-leader confirmation of each site's details.
 // Mario's weekly sign-off that all social/marketing activity (every site + HR
 // + Training) has been reviewed. One row per week-ending. Entering figures is

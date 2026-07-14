@@ -1,9 +1,23 @@
 import "server-only"
 import { db } from "@/lib/db"
-import { dailyTakings, weeklyTakings, barbers } from "@/lib/db/schema"
-import { and, eq, gte, lte, sql } from "drizzle-orm"
+import {
+  dailyTakings,
+  weeklyTakings,
+  barbers,
+  takingsLineEntries,
+} from "@/lib/db/schema"
+import { and, eq, gte, lte, sql, desc } from "drizzle-orm"
 import { weekEndingFor, weekDates } from "@/lib/format"
 import { computeRtb } from "@/lib/rtb"
+
+export type TakingsMethod = "cash" | "card"
+
+export type TakingsLine = {
+  id: number
+  amount: number
+  method: TakingsMethod
+  createdAt: string
+}
 
 // ---------------------------------------------------------------------------
 // Daily takings capture + weekly rollup
@@ -177,4 +191,114 @@ export async function getDailyBusinessTotals(
     const card = r ? Number(r.card) : 0
     return { date, cash, card, total: cash + card }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Per-haircut line entries
+// ---------------------------------------------------------------------------
+// A barber adds a line as each cut is paid. The day's lines are summed (by
+// method) into the daily_takings row via recordDailyTakings, which recomputes
+// the weekly rollup + RTB. So line entries are the capture layer; the daily +
+// weekly + RTB chain below is unchanged.
+
+/** All of a barber's line entries for one date, newest first. */
+export async function getBarberLinesForDate(
+  barberId: number,
+  date: string,
+): Promise<TakingsLine[]> {
+  const rows = await db
+    .select()
+    .from(takingsLineEntries)
+    .where(
+      and(
+        eq(takingsLineEntries.barberId, barberId),
+        eq(takingsLineEntries.date, date),
+      ),
+    )
+    .orderBy(desc(takingsLineEntries.createdAt), desc(takingsLineEntries.id))
+  return rows.map((r) => ({
+    id: r.id,
+    amount: Number(r.amount),
+    method: r.method === "card" ? "card" : "cash",
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+  }))
+}
+
+/** Re-sum a barber's line entries for a date (by method) into daily_takings,
+ *  which recomputes the weekly rollup + RTB. */
+export async function recomputeDailyFromLines(
+  barberId: number,
+  siteId: number,
+  date: string,
+  enteredByUserId?: string | null,
+) {
+  const rows = await db
+    .select({ amount: takingsLineEntries.amount, method: takingsLineEntries.method })
+    .from(takingsLineEntries)
+    .where(
+      and(
+        eq(takingsLineEntries.barberId, barberId),
+        eq(takingsLineEntries.date, date),
+      ),
+    )
+  const cash = rows
+    .filter((r) => r.method !== "card")
+    .reduce((s, r) => s + Number(r.amount), 0)
+  const card = rows
+    .filter((r) => r.method === "card")
+    .reduce((s, r) => s + Number(r.amount), 0)
+
+  return recordDailyTakings({
+    barberId,
+    siteId,
+    date,
+    cash,
+    card,
+    enteredByUserId: enteredByUserId ?? null,
+    source: "line-entries",
+  })
+}
+
+/** Add one cut and refresh the day + week rollup. */
+export async function addTakingsLineEntry(args: {
+  barberId: number
+  siteId: number
+  date: string
+  amount: number
+  method: TakingsMethod
+  enteredByUserId?: string | null
+}) {
+  const amount = Math.max(0, Number(args.amount) || 0)
+  if (amount <= 0) return null
+  await db.insert(takingsLineEntries).values({
+    barberId: args.barberId,
+    siteId: args.siteId,
+    date: args.date,
+    amount: String(amount),
+    method: args.method === "card" ? "card" : "cash",
+    enteredByUserId: args.enteredByUserId ?? null,
+  })
+  await recomputeDailyFromLines(args.barberId, args.siteId, args.date, args.enteredByUserId)
+  return { ok: true }
+}
+
+/** Delete one of a barber's cuts (only their own) and refresh the rollup. */
+export async function deleteTakingsLineEntry(args: {
+  id: number
+  barberId: number
+  siteId: number
+}) {
+  const [row] = await db
+    .select()
+    .from(takingsLineEntries)
+    .where(
+      and(
+        eq(takingsLineEntries.id, args.id),
+        eq(takingsLineEntries.barberId, args.barberId),
+      ),
+    )
+  if (!row) return null
+  await db.delete(takingsLineEntries).where(eq(takingsLineEntries.id, args.id))
+  await recomputeDailyFromLines(args.barberId, args.siteId, String(row.date), row.enteredByUserId)
+  return { date: String(row.date) }
 }

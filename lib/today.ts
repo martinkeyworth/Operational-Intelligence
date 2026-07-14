@@ -1,6 +1,10 @@
 import "server-only"
 import { ensureBarberForUser } from "@/lib/team"
-import { getBarberDailyWeek } from "@/lib/daily-takings"
+import {
+  getBarberDailyWeek,
+  getBarberLinesForDate,
+  type TakingsLine,
+} from "@/lib/daily-takings"
 import { getCurrentOneToOne, getPlanForBarber } from "@/lib/learning"
 import { getMyWork } from "@/lib/my-work"
 import { weekEndingFor, weekDates, todayIso } from "@/lib/format"
@@ -32,6 +36,7 @@ export type TodayData = {
   weekEnding: string
   todayCash: number
   todayCard: number
+  todayLines: TakingsLine[]
   enteredToday: boolean
   weekCash: number
   weekCard: number
@@ -51,31 +56,35 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
   const date = todayIso()
   const weekEnding = weekEndingFor(date)
   const days = await getBarberDailyWeek(barber.id, weekEnding)
+  const todayLines = await getBarberLinesForDate(barber.id, date)
 
-  const todayRow = days.find((d) => d.date === date)
-  const todayCash = todayRow?.cash ?? 0
-  const todayCard = todayRow?.card ?? 0
-  const enteredToday = todayRow != null
+  const todayCash = todayLines
+    .filter((l) => l.method === "cash")
+    .reduce((s, l) => s + l.amount, 0)
+  const todayCard = todayLines
+    .filter((l) => l.method === "card")
+    .reduce((s, l) => s + l.amount, 0)
+  const enteredToday = todayLines.length > 0
 
   const weekCash = days.reduce((s, d) => s + d.cash, 0)
   const weekCard = days.reduce((s, d) => s + d.card, 0)
 
   const items: TodayItem[] = []
 
-  // 1. Today's takings — the primary prompt. Green once entered.
+  // 1. Today's takings — the primary prompt. Green once at least one cut is in.
   items.push(
     enteredToday
       ? {
           kind: "takings-today",
           label: "Today's takings",
-          detail: "Logged for today. Edit above if it changes.",
+          detail: `${todayLines.length} cut${todayLines.length === 1 ? "" : "s"} logged today. Add more above as you go.`,
           rag: "green",
           href: "#today-input",
         }
       : {
           kind: "takings-today",
           label: "Log today's takings",
-          detail: "Enter today's cash and card above.",
+          detail: "Add each cut above as it's paid.",
           rag: "amber",
           href: "#today-input",
         },
@@ -155,6 +164,7 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
     weekEnding,
     todayCash,
     todayCard,
+    todayLines,
     enteredToday,
     weekCash,
     weekCard,

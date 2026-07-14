@@ -51,11 +51,10 @@ export default async function TodayPage() {
       </header>
 
       <TodayInputCard
-        date={data.date}
         dateLabel={fmtDate(data.date)}
-        initialCash={data.todayCash}
-        initialCard={data.todayCard}
-        enteredToday={data.enteredToday}
+        lines={data.todayLines}
+        todayCash={data.todayCash}
+        todayCard={data.todayCard}
         weekTotal={data.weekTotal}
       />
 
