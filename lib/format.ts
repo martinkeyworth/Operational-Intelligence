@@ -90,6 +90,27 @@ export function currentWeekEnding(now: Date = new Date()): string {
   return toISODate(sat)
 }
 
+/** Map any calendar date (yyyy-mm-dd) to the Saturday that ENDS its reporting
+ *  week (that Saturday itself, or the next Saturday). Used to roll daily
+ *  takings up into the correct week_ending bucket. */
+export function weekEndingFor(dateIso: string): string {
+  const d = new Date(dateIso + "T00:00:00")
+  const day = d.getDay() // 0 Sun ... 6 Sat
+  const daysUntilSat = (6 - day + 7) % 7
+  d.setDate(d.getDate() + daysUntilSat)
+  return toISODate(d)
+}
+
+/** The seven yyyy-mm-dd dates (Sun→Sat) of the week ending on `weekEnding`. */
+export function weekDates(weekEnding: string): string[] {
+  const sat = new Date(weekEnding + "T00:00:00")
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sat)
+    d.setDate(sat.getDate() - (6 - i))
+    return toISODate(d)
+  })
+}
+
 /** Whether the 18:00 Saturday submission deadline for a week has passed. */
 export function isPastSubmissionDeadline(
   weekEnding: string,

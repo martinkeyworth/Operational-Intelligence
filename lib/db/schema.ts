@@ -118,6 +118,9 @@ export const barbers = pgTable("barbers", {
   barberPct: numeric("barber_pct"),
   splitSetBy: text("split_set_by"),
   splitSetAt: timestamp("split_set_at"),
+  // Per-barber weekly cap on how much RTB (house rent) may be taken from CARD.
+  // Anything above the cap is driven onto cash (see lib/rtb.ts). Default £200.
+  cardRtbCap: numeric("card_rtb_cap").notNull().default("200"),
   // --- Team Area: links + HR profile -----------------------------------
   // Links this operational barber record to their Better Auth login account,
   // so a logged-in barber sees only their own self-service data. Null until an
@@ -135,21 +138,52 @@ export const barbers = pgTable("barbers", {
 })
 
 // Weekly barber takings (Saturday-to-Saturday). The core operating data.
-export const weeklyTakings = pgTable("weekly_takings", {
-  id: serial("id").primaryKey(),
-  barberId: integer("barber_id").notNull(),
-  siteId: integer("site_id").notNull(),
-  weekEnding: date("week_ending").notNull(),
-  total: numeric("total").notNull().default("0"),
-  cash: numeric("cash").notNull().default("0"),
-  card: numeric("card").notNull().default("0"),
-  cashRent: numeric("cash_rent").notNull().default("0"),
-  cardRent: numeric("card_rent").notNull().default("0"),
-  manager: text("manager").notNull().default(""),
-  transferCompleted: boolean("transfer_completed").notNull().default(true),
-  comments: text("comments"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-})
+export const weeklyTakings = pgTable(
+  "weekly_takings",
+  {
+    id: serial("id").primaryKey(),
+    barberId: integer("barber_id").notNull(),
+    siteId: integer("site_id").notNull(),
+    weekEnding: date("week_ending").notNull(),
+    total: numeric("total").notNull().default("0"),
+    cash: numeric("cash").notNull().default("0"),
+    card: numeric("card").notNull().default("0"),
+    cashRent: numeric("cash_rent").notNull().default("0"),
+    cardRent: numeric("card_rent").notNull().default("0"),
+    manager: text("manager").notNull().default(""),
+    transferCompleted: boolean("transfer_completed").notNull().default(true),
+    comments: text("comments"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique("weekly_takings_barber_week").on(t.barberId, t.weekEnding),
+  }),
+)
+
+// Per-barber, per-DAY takings. Barbers log each day's cash + card total (via a
+// separate entry app that POSTs into /api/ingest/daily-takings). This app
+// tallies the days into the weekly_takings rollup and computes RTB from the
+// split (lib/rtb.ts). One row per barber per date (re-sends upsert).
+export const dailyTakings = pgTable(
+  "daily_takings",
+  {
+    id: serial("id").primaryKey(),
+    barberId: integer("barber_id").notNull(),
+    siteId: integer("site_id").notNull(),
+    date: date("date").notNull(),
+    cash: numeric("cash").notNull().default("0"),
+    card: numeric("card").notNull().default("0"),
+    // Where the row came from (entry app, manual admin, import, ...).
+    source: text("source").notNull().default("entry-app"),
+    // The authenticated user who entered it (the barber, via the entry app).
+    enteredByUserId: text("entered_by_user_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique("daily_takings_barber_date").on(t.barberId, t.date),
+  }),
+)
 
 // Weekly functional-leader confirmation of each site's details.
 // Mario's weekly sign-off that all social/marketing activity (every site + HR
@@ -179,6 +213,10 @@ export const siteConfirmations = pgTable("site_confirmations", {
   managerConfirmed: text("manager_confirmed"),
   headcountConfirmed: integer("headcount_confirmed"),
   notes: text("notes"),
+  // Manager's per-barber, per-flag accept/refuse decisions on takings/RTB
+  // discrepancies at sign-off. Shape: { [barberId]: { [flagKind]: "accepted"
+  // | "refused" } }. Null until a confirmation with flags is saved.
+  discrepancyState: jsonb("discrepancy_state"),
   confirmedAt: timestamp("confirmed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { StatCard } from "@/components/ui-bits"
 import { RagBadge } from "@/components/rag"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { getSiteConfirmReview } from "@/lib/site-confirm-review"
 import { BarberEntryCard } from "@/components/barber-entry-card"
 import { MarketingEntryCard } from "@/components/marketing-entry-card"
 import { SubletCard } from "@/components/sublet-card"
@@ -59,6 +60,11 @@ export default async function MySitePage({
 
   const siteWeekRows = week ? await getSiteWeek(week) : []
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
+
+  // Computed per-barber RTB + discrepancy flags for the confirm dialog.
+  const confirmReview = week
+    ? await getSiteConfirmReview(siteId, week)
+    : undefined
 
   // If the manager is also a barber based at this site, let them enter their
   // OWN weekly takings here (scoped to just their record + this one site — no
@@ -257,6 +263,7 @@ export default async function MySitePage({
                 week={week}
                 confirmed={siteWeek.confirmed}
                 confirmedBy={siteWeek.confirmedBy}
+                review={confirmReview}
               />
             </Card>
 

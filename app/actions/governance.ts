@@ -498,6 +498,17 @@ export async function confirmSiteWeek(formData: FormData) {
   const headcountConfirmed =
     headcountRaw && String(headcountRaw).trim() ? Number(headcountRaw) : null
   const notes = String(formData.get("notes") ?? "").trim() || null
+  // Per-barber, per-flag accept/refuse decisions the manager made while
+  // reviewing the computed RTB (posted as a JSON string hidden field).
+  let discrepancyState: unknown = null
+  const rawDiscrepancy = formData.get("discrepancyState")
+  if (rawDiscrepancy && String(rawDiscrepancy).trim()) {
+    try {
+      discrepancyState = JSON.parse(String(rawDiscrepancy))
+    } catch {
+      discrepancyState = null
+    }
+  }
   if (!siteId || !weekEnding) throw new Error("Missing site or week")
 
   const existing = await db
@@ -518,9 +529,10 @@ export async function confirmSiteWeek(formData: FormData) {
     locationConfirmed: locationConfirmed || null,
     brandConfirmed: brandConfirmed || null,
     managerConfirmed: managerConfirmed || null,
-    headcountConfirmed,
-    notes,
-    confirmedAt: new Date(),
+  headcountConfirmed,
+  notes,
+  discrepancyState: discrepancyState ?? null,
+  confirmedAt: new Date(),
   }
 
   if (existing.length > 0) {

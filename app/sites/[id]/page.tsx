@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { getSiteConfirmReview } from "@/lib/site-confirm-review"
 import { EditSiteInfoDialog } from "@/components/edit-site-info-dialog"
 import { SubletCard } from "@/components/sublet-card"
 import { CapacityCard } from "@/components/capacity-card"
@@ -63,6 +64,9 @@ export default async function SiteDetailPage({
 
   const siteWeekRows = week ? await getSiteWeek(week) : []
   const siteWeek = siteWeekRows.find((s) => s.id === siteId)
+  const confirmReview = week
+    ? await getSiteConfirmReview(siteId, week)
+    : undefined
   const barbers = week ? await getBarberWeek(week, siteId) : []
   const reporting = barbers.filter((b) => b.reported)
 
@@ -133,6 +137,7 @@ export default async function SiteDetailPage({
             week={week}
             confirmed={siteWeek.confirmed}
             confirmedBy={siteWeek.confirmedBy}
+            review={confirmReview}
           />
         )}
       </PageHeader>

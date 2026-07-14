@@ -9,6 +9,7 @@ import { brandLogo } from "@/lib/brands"
 import { ragForUtilisation } from "@/lib/capacity-config"
 import { AddSiteDialog } from "@/components/add-site-dialog"
 import { ConfirmSiteDialog } from "@/components/confirm-site-dialog"
+import { getSiteConfirmReview } from "@/lib/site-confirm-review"
 import { WeekSelector } from "@/components/week-selector"
 import {
   getSelectableWeeks,
@@ -32,6 +33,17 @@ export default async function SitesPage({
     weekParam && weeks.includes(weekParam) ? weekParam : await getDefaultWeek()
 
   const sites = week ? await getSiteWeek(week) : []
+  // Per-site computed RTB + discrepancy review for the confirm dialogs.
+  const reviews = week
+    ? Object.fromEntries(
+        await Promise.all(
+          sites.map(async (s) => [
+            s.id,
+            await getSiteConfirmReview(s.id, week),
+          ]),
+        ),
+      )
+    : {}
   const confirmedCount = sites.filter((s) => s.confirmed).length
 
   return (
@@ -164,6 +176,7 @@ export default async function SitesPage({
                       week={week}
                       confirmed={s.confirmed}
                       confirmedBy={s.confirmedBy}
+                      review={reviews[s.id]}
                     />
                     <Link
                       href={`/sites/${s.id}?week=${week}`}
