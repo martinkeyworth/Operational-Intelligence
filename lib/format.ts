@@ -79,6 +79,11 @@ function londonNow(now: Date): Date {
   return new Date(now.toLocaleString("en-US", { timeZone: "Europe/London" }))
 }
 
+/** Today's date (yyyy-mm-dd) in UK wall-clock time. */
+export function todayIso(now: Date = new Date()): string {
+  return toISODate(londonNow(now))
+}
+
 /** The Saturday (yyyy-mm-dd) ending the current reporting week, in UK time.
  *  Returns the UPCOMING Saturday (today, if today is Saturday). */
 export function currentWeekEnding(now: Date = new Date()): string {
