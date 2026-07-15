@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/ui-bits"
 import { Card } from "@/components/ui/card"
 import { WeekSelector } from "@/components/week-selector"
-import { KpiEntryRow } from "@/components/kpi-entry-row"
+import { KpiEntryGroup } from "@/components/kpi-entry-group"
 import { MarketingEntryCard } from "@/components/marketing-entry-card"
 import { TrainingCard } from "@/components/training-card"
 import {
@@ -182,19 +182,16 @@ export default async function FunctionAreaInputPage({
                   haircuts per learner. The free-haircut target scales with this
                   week&apos;s learner count.
                 </p>
-                <div className="flex flex-col gap-3">
-                  {defs.map((def) => {
-                    const r = trainingKpis.find((x) => x.code === def.code)
-                    return (
-                      <KpiEntryRow
-                        key={def.code}
-                        def={def}
-                        week={week}
-                        initialValue={r?.value ?? null}
-                      />
-                    )
-                  })}
-                </div>
+                <KpiEntryGroup
+                  defs={defs}
+                  week={week}
+                  initial={Object.fromEntries(
+                    defs.map((def) => [
+                      def.code,
+                      trainingKpis.find((x) => x.code === def.code)?.value ?? null,
+                    ]),
+                  )}
+                />
               </section>
             </div>
           )
@@ -230,19 +227,16 @@ export default async function FunctionAreaInputPage({
             <p className="text-xs text-muted-foreground">
               W/E {fmtWeekLong(week)}
             </p>
-            <div className="flex flex-col gap-3">
-              {defs.map((def) => {
-                const r = results.find((x) => x.code === def.code)
-                return (
-                  <KpiEntryRow
-                    key={def.code}
-                    def={def}
-                    week={week}
-                    initialValue={r?.value ?? null}
-                  />
-                )
-              })}
-            </div>
+            <KpiEntryGroup
+              defs={defs}
+              week={week}
+              initial={Object.fromEntries(
+                defs.map((def) => [
+                  def.code,
+                  results.find((x) => x.code === def.code)?.value ?? null,
+                ]),
+              )}
+            />
           </div>
         )}
       </div>

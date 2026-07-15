@@ -105,3 +105,27 @@ export async function saveKpiValue(formData: FormData) {
 
   revalidatePath("/", "layout")
 }
+
+/**
+ * Save several weekly KPI values in one go ("Save all").
+ *
+ * Reuses saveKpiValue for each entry so authorisation, dynamic scoring and the
+ * upsert behaviour are identical to a per-row save — this just spares a lead
+ * from having to press Save on every single row (a common way entries were
+ * being lost). Blank values are skipped by saveKpiValue.
+ */
+export async function saveManyKpiValues(input: {
+  week: string
+  siteId?: number | null
+  values: { code: string; value: string }[]
+}) {
+  for (const v of input.values) {
+    if (v.value.trim() === "") continue
+    const fd = new FormData()
+    fd.set("code", v.code)
+    fd.set("week", input.week)
+    fd.set("value", v.value)
+    if (input.siteId != null) fd.set("siteId", String(input.siteId))
+    await saveKpiValue(fd)
+  }
+}

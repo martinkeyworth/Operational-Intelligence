@@ -6,75 +6,44 @@ import { Check, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { RagDot } from "@/components/rag"
+import { scoreKpi, type KpiDef } from "@/lib/kpi-config"
 import { saveManyKpiValues } from "@/app/data-entry/kpi-actions"
-import type { Rag } from "@/lib/format"
-
-export type MarketingEntryKpi = {
-  code: string
-  name: string
-  unit: string
-  help: string
-  value: number | null
-  green: number
-  amber: number
-  direction: "higher_better" | "lower_better"
-  noAmber?: boolean
-}
-
-function previewRag(k: MarketingEntryKpi, n: number): Rag {
-  if (k.noAmber) {
-    return k.direction === "higher_better"
-      ? n >= k.green
-        ? "green"
-        : "red"
-      : n <= k.green
-        ? "green"
-        : "red"
-  }
-  if (k.direction === "higher_better") {
-    if (n >= k.green) return "green"
-    if (n >= k.amber) return "amber"
-    return "red"
-  }
-  if (n <= k.green) return "green"
-  if (n <= k.amber) return "amber"
-  return "red"
-}
-
-function targetLabel(k: MarketingEntryKpi): string {
-  if (k.noAmber) return `Green ≥ ${k.green} ${k.unit} · below is red (no amber)`
-  return k.direction === "higher_better"
-    ? `Green ≥ ${k.green} ${k.unit} · Amber ≥ ${k.amber}`
-    : `Green ≤ ${k.green} ${k.unit} · Amber ≤ ${k.amber}`
-}
 
 /**
- * Per-site social & reviews entry with a SINGLE "Save all" button. Site
- * managers enter their own site's platform posts + Google/booking ratings here;
- * every value is held together and saved in one tap (previously each row had
- * its own Save, so entries were routinely typed but never saved).
+ * A group of weekly KPI inputs with a SINGLE "Save all" button.
+ *
+ * Replaces the old per-row form (each row had its own Save, which meant leads
+ * routinely typed numbers and left without saving every row). All values are
+ * held in one place and persisted together via saveManyKpiValues.
  */
-export function MarketingEntryCard({
+export function KpiEntryGroup({
+  defs,
   week,
+  initial,
   siteId,
-  kpis,
 }: {
+  defs: KpiDef[]
   week: string
-  siteId: number
-  kpis: MarketingEntryKpi[]
+  /** Map of KPI code -> stored value (or null if not entered). */
+  initial: Record<string, number | null>
+  /** Optional site scope for per-site areas. */
+  siteId?: number
 }) {
   const router = useRouter()
   const [values, setValues] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {}
-    for (const k of kpis) seed[k.code] = k.value === null ? "" : String(k.value)
+    for (const def of defs) {
+      const v = initial[def.code]
+      seed[def.code] = v === null || v === undefined ? "" : String(v)
+    }
     return seed
   })
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const filledCount = useMemo(
-    () => kpis.filter((k) => values[k.code]?.trim() !== "").length,
-    [kpis, values],
+    () => defs.filter((d) => values[d.code]?.trim() !== "").length,
+    [defs, values],
   )
 
   async function onSaveAll() {
@@ -83,8 +52,8 @@ export function MarketingEntryCard({
     try {
       await saveManyKpiValues({
         week,
-        siteId,
-        values: kpis.map((k) => ({ code: k.code, value: values[k.code] ?? "" })),
+        siteId: siteId ?? null,
+        values: defs.map((d) => ({ code: d.code, value: values[d.code] ?? "" })),
       })
       setSaved(true)
       router.refresh()
@@ -96,25 +65,34 @@ export function MarketingEntryCard({
 
   return (
     <div className="flex flex-col gap-3">
-      {kpis.map((kpi) => {
-        const raw = values[kpi.code] ?? ""
+      {defs.map((def) => {
+        const raw = values[def.code] ?? ""
         const num = raw.trim() === "" ? null : Number(raw)
-        const rag = num === null || Number.isNaN(num) ? null : previewRag(kpi, num)
+        const previewRag =
+          num === null || Number.isNaN(num) ? null : scoreKpi(def, num)
+        const targetLabel = def.noAmber
+          ? def.direction === "higher_better"
+            ? `Green ≥ ${def.green} ${def.unit} · else red`
+            : `Green ≤ ${def.green} ${def.unit} · else red`
+          : def.direction === "higher_better"
+            ? `Green ≥ ${def.green} ${def.unit} · Amber ≥ ${def.amber}`
+            : `Green ≤ ${def.green} ${def.unit} · Amber ≤ ${def.amber}`
+
         return (
           <div
-            key={kpi.code}
+            key={def.code}
             className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                {rag && <RagDot rag={rag} />}
-                <p className="text-sm font-medium text-foreground">{kpi.name}</p>
+                {previewRag && <RagDot rag={previewRag} />}
+                <p className="text-sm font-medium text-foreground">{def.name}</p>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
-                {kpi.help}
+                {def.help}
               </p>
               <p className="mt-1 text-[11px] font-medium text-muted-foreground">
-                {targetLabel(kpi)}
+                {targetLabel}
               </p>
             </div>
 
@@ -124,10 +102,10 @@ export function MarketingEntryCard({
               inputMode="decimal"
               value={raw}
               onChange={(e) =>
-                setValues((prev) => ({ ...prev, [kpi.code]: e.target.value }))
+                setValues((prev) => ({ ...prev, [def.code]: e.target.value }))
               }
               placeholder="—"
-              aria-label={`${kpi.name} value`}
+              aria-label={`${def.name} value`}
               className="h-11 w-full text-base sm:w-28"
             />
           </div>
@@ -136,7 +114,7 @@ export function MarketingEntryCard({
 
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
         <p className="text-xs text-muted-foreground">
-          {filledCount} of {kpis.length} filled — saved together in one tap.
+          {filledCount} of {defs.length} filled — saved together in one tap.
         </p>
         <Button
           type="button"
