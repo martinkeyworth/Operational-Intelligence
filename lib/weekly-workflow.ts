@@ -287,9 +287,10 @@ function responsibleEmailsFor(
   }
   // Group-level KPI areas.
   if (item.category === "KPI") {
-    return item.label.toLowerCase().startsWith("hr")
-      ? [defaultOwnerEmailForArea("HR")]
-      : [defaultOwnerEmailForArea("Marketing")]
+    const l = item.label.toLowerCase()
+    if (l.startsWith("hr")) return [defaultOwnerEmailForArea("HR")]
+    if (l.startsWith("training")) return [defaultOwnerEmailForArea("Training")]
+    return [defaultOwnerEmailForArea("Marketing")]
   }
   return []
 }
@@ -314,10 +315,12 @@ function deepLinkFor(item: SubmissionItem, weekEnding: string): string {
         : `${base}/data-entry?${w}`
     case "Training":
       return `${base}/functions/Training/input?${w}`
-    case "KPI":
-      return item.label.toLowerCase().startsWith("hr")
-        ? `${base}/functions/HR/input?${w}`
-        : `${base}/functions/Marketing/input?${w}`
+    case "KPI": {
+      const l = item.label.toLowerCase()
+      if (l.startsWith("hr")) return `${base}/functions/HR/input?${w}`
+      if (l.startsWith("training")) return `${base}/functions/Training/input?${w}`
+      return `${base}/functions/Marketing/input?${w}`
+    }
     default:
       return `${base}/data-entry?${w}`
   }

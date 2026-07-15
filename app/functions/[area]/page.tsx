@@ -165,22 +165,35 @@ export default async function FunctionAreaPage({
             <h2 className="text-sm font-semibold text-foreground">
               Function social posts (for sign-off)
             </h2>
-            {hrPosts.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  HR — entered by Luke
-                </h3>
-                <KpiScorecard kpis={hrPosts} />
-              </section>
-            )}
-            {trainingPosts.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Training — entered by Ravi
-                </h3>
-                <KpiScorecard kpis={trainingPosts} />
-              </section>
-            )}
+            {/* Both functions render identically: owner name + an explicit
+                Entered / Awaiting / Partial status for the review week, so the
+                view is consistent whether or not the lead has entered yet. */}
+            {[
+              { title: "HR social posts", name: "Luke", posts: hrPosts },
+              { title: "Training social posts", name: "Ravi", posts: trainingPosts },
+            ]
+              .filter((b) => b.posts.length > 0)
+              .map(({ title, name, posts }) => {
+                const total = posts.length
+                const entered = posts.filter((k) => k.entered).length
+                const allIn = entered === total
+                const status = allIn
+                  ? `Entered · w/e ${fmtWeekLong(week)}`
+                  : entered === 0
+                    ? `Awaiting ${name} · w/e ${fmtWeekLong(week)}`
+                    : `Partially entered (${entered}/${total}) · w/e ${fmtWeekLong(week)}`
+                return (
+                  <section key={title} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {title} — {name}
+                      </h3>
+                      <RagBadge rag={allIn ? "green" : "amber"} label={status} />
+                    </div>
+                    <KpiScorecard kpis={posts} />
+                  </section>
+                )
+              })}
           </div>
         )}
 

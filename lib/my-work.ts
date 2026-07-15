@@ -1,6 +1,6 @@
 import "server-only"
 import { getActions, getLatestWeek, type ActionRow } from "@/lib/data"
-import { getSubmissionStatus } from "@/lib/submissions"
+import { getSubmissionStatus, submissionHref } from "@/lib/submissions"
 import { FUNCTION_AREAS, canonicalAreaKey } from "@/lib/function-areas"
 import { canInputArea } from "@/lib/access"
 import type { AccessUser } from "@/lib/access-types"
@@ -154,19 +154,17 @@ export async function getMyWork(user: AccessUser): Promise<MyWork> {
         const relevant =
           user.isOwner ||
           (item.key === "kpi-HR" && myAreas.includes("HR")) ||
+          (item.key === "kpi-Training" && myAreas.includes("Training")) ||
           (item.key === "kpi-Marketing" && myAreas.includes("Marketing")) ||
           (item.key.startsWith("training-") && myAreas.includes("Training"))
         if (!relevant) continue
-        const href = item.key.startsWith("kpi-")
-          ? "/data-entry"
-          : item.key.startsWith("training-")
-            ? "/data-entry"
-            : "/reports/submissions"
         submissions.push({
           key: item.key,
           label: item.label,
           detail: item.detail,
-          href,
+          // Route straight to the exact entry page + week (same resolver the
+          // submissions board uses), so every lead lands where they enter.
+          href: submissionHref(item, week),
         })
       }
     }

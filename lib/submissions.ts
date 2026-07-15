@@ -292,6 +292,27 @@ export async function getSubmissionStatus(
     }
   }
 
+  // ---- Training manual KPIs (group-level, entered by the Training lead) ----
+  // Mirrors the HR item exactly so Training's weekly KPIs (social posts + free
+  // haircuts) are tracked — and therefore nudged/chased — the same way HR's are.
+  // Without this, the Training lead was never prompted to enter their posts.
+  {
+    const results = await getManualKpiResults("Training", week)
+    if (results.length > 0) {
+      const enteredCount = results.filter((r) => r.entered).length
+      items.push({
+        key: `kpi-Training`,
+        category: "KPI",
+        label: `Training — weekly KPIs`,
+        ownerRole: "Training Lead",
+        siteId: null,
+        submitted: enteredCount === results.length,
+        awaitingConfirmation: false,
+        detail: `${enteredCount}/${results.length} KPIs entered`,
+      })
+    }
+  }
+
   // ---- Marketing (per-site social) -----------------------------------------
   // Each barbershop enters its own social posts + reviews; the academy adds
   // its posts + free-haircut count. The week is DONE only when Mario reviews
@@ -387,12 +408,14 @@ export function submissionHref(item: SubmissionItem, week: string): string {
     case "Training":
       return `/functions/Training/input?${w}`
     case "KPI":
-      // HR is entered on its input page; Marketing is entered per-site by
-      // managers, so the board routes to the Marketing review page where Mario
-      // sees every site's figures and signs off the week.
+      // HR and Training are entered on their own input pages; Marketing is
+      // entered per-site by managers, so the board routes to the Marketing
+      // review page where Mario sees every site's figures and signs off.
       return item.label.toLowerCase().startsWith("hr")
         ? `/functions/HR/input?${w}`
-        : `/functions/Marketing?${w}`
+        : item.label.toLowerCase().startsWith("training")
+          ? `/functions/Training/input?${w}`
+          : `/functions/Marketing?${w}`
     default:
       return `/data-entry?${w}`
   }
