@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Store,
   ClipboardEdit,
+  ClipboardList,
   ShieldAlert,
   LayoutGrid,
   LifeBuoy,
@@ -76,6 +77,12 @@ export function AppShell({
       icon: Inbox,
       items: [
         { href: "/my-work", label: "My Work", icon: Inbox },
+        // Anyone who cuts hair (including barber-owners like the COO) can reach
+        // their per-cut daily takings screen from every page, not just the
+        // post-login chooser.
+        ...(user.isBarber
+          ? [{ href: "/today", label: "Daily input", icon: ClipboardList }]
+          : []),
         { href: "/openings", label: "Open Roles", icon: Megaphone },
         ...(user.isBarber
           ? [{ href: "/team", label: "Team Area", icon: UserRound }]
