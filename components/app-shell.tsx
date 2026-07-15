@@ -77,12 +77,9 @@ export function AppShell({
       icon: Inbox,
       items: [
         { href: "/my-work", label: "My Work", icon: Inbox },
-        // Anyone who cuts hair (including barber-owners like the COO) can reach
-        // their per-cut daily takings screen from every page, not just the
-        // post-login chooser.
-        ...(user.isBarber
-          ? [{ href: "/today", label: "Daily input", icon: ClipboardList }]
-          : []),
+        // Note: "Daily input" (/today) is pinned at the top of the nav for
+        // barbers rather than listed here, so it's never buried in a collapsed
+        // section.
         { href: "/openings", label: "Open Roles", icon: Megaphone },
         ...(user.isBarber
           ? [{ href: "/team", label: "Team Area", icon: UserRound }]
@@ -242,6 +239,23 @@ export function AppShell({
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
+          {/* Daily input is pinned at the very top for anyone who cuts hair
+              (including barber-owners like the COO), so it's a one-tap
+              destination and never buried inside a collapsed section. */}
+          {user.isBarber && (
+            <Link
+              href="/today"
+              className={cn(
+                "mb-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
+                isItemActive("/today")
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-primary/10 text-primary hover:bg-primary/20",
+              )}
+            >
+              <ClipboardList className="h-4 w-4" />
+              Daily input
+            </Link>
+          )}
           {sections.map((section) => {
             const SectionIcon = section.icon
             const isOpen = openSections[section.title] ?? false
@@ -367,6 +381,22 @@ export function AppShell({
         {/* Mobile section tabs (top tier) — tapping navigates to the section's
             landing page and selects it, so each section shows distinct content. */}
         <div className="md:hidden flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
+          {/* Pinned Daily input — always the first, visually distinct tab for
+              barbers so it's reachable in one tap from any screen. */}
+          {user.isBarber && (
+            <Link
+              href="/today"
+              className={cn(
+                "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+                isItemActive("/today")
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-primary/10 text-primary",
+              )}
+            >
+              <ClipboardList className="h-4 w-4" />
+              Daily
+            </Link>
+          )}
           {sections.map((section) => {
             const SectionIcon = section.icon
             const selected = section.title === mobileSection
