@@ -121,7 +121,7 @@ export function ConfirmSiteDialog({
           Confirm week
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <form action={action}>
           <input type="hidden" name="siteId" value={siteId} />
           <input type="hidden" name="weekEnding" value={week} />
@@ -152,7 +152,7 @@ export function ConfirmSiteDialog({
                   </span>
                 )}
               </div>
-              <div className="grid gap-2 max-h-64 overflow-y-auto pr-1">
+              <div className="grid gap-2">
                 {review.barbers.map((b) => (
                   <div
                     key={b.barberId}
@@ -286,7 +286,7 @@ export function ConfirmSiteDialog({
               </p>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-4 -mb-4 border-t bg-popover px-4 py-3">
             <DialogClose render={<Button type="button" variant="outline" />}>
               Cancel
             </DialogClose>
