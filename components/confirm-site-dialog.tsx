@@ -78,6 +78,22 @@ export function ConfirmSiteDialog({
   }, [review, decisions])
   const allResolved = totalFlags === 0 || decidedFlags === totalFlags
 
+  // Flat list of every flag across all barbers, so they can be grouped together
+  // at the top and resolved in one place — otherwise flags are scattered through
+  // a long barber list and easy to miss (leaving the confirm button stuck).
+  const flagItems = useMemo(
+    () =>
+      review?.barbers.flatMap((b) =>
+        b.flags.map((f) => ({
+          barberId: b.barberId,
+          name: b.name,
+          kind: f.kind,
+          detail: f.detail,
+        })),
+      ) ?? [],
+    [review],
+  )
+
   function setDecision(
     barberId: number,
     kind: string,
@@ -138,19 +154,75 @@ export function ConfirmSiteDialog({
               resolve any flags, then confirm.
             </DialogDescription>
           </DialogHeader>
+          {flagItems.length > 0 && (
+            <div className="grid gap-2 border-b py-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  Flags to resolve
+                </h4>
+                <span
+                  className={`text-xs font-medium ${
+                    allResolved ? "text-rag-green" : "text-rag-amber"
+                  }`}
+                >
+                  {decidedFlags}/{totalFlags} resolved
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Accept or refuse each flag below to enable confirmation.
+              </p>
+              {flagItems.map((f) => {
+                const decided = decisions[f.barberId]?.[f.kind]
+                return (
+                  <div
+                    key={`${f.barberId}-${f.kind}`}
+                    className={`rounded border p-2 ${
+                      decided
+                        ? "border-rag-green/40 bg-rag-green/10"
+                        : "border-rag-amber/40 bg-rag-amber/10"
+                    }`}
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle
+                        className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                          decided ? "text-rag-green" : "text-rag-amber"
+                        }`}
+                      />
+                      <span className="text-xs">
+                        <span className="font-medium">{f.name}</span> — {f.detail}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={decided === "accepted" ? "default" : "outline"}
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() =>
+                          setDecision(f.barberId, f.kind, "accepted")
+                        }
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={decided === "refused" ? "destructive" : "outline"}
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => setDecision(f.barberId, f.kind, "refused")}
+                      >
+                        Refuse
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {review && review.barbers.length > 0 && (
             <div className="grid gap-3 border-b py-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium">This week&apos;s takings &amp; RTB</h4>
-                {totalFlags > 0 && (
-                  <span
-                    className={`text-xs font-medium ${
-                      allResolved ? "text-rag-green" : "text-rag-amber"
-                    }`}
-                  >
-                    {decidedFlags}/{totalFlags} flags resolved
-                  </span>
-                )}
               </div>
               <div className="grid gap-2">
                 {review.barbers.map((b) => (
@@ -176,36 +248,25 @@ export function ConfirmSiteDialog({
                       return (
                         <div
                           key={f.kind}
-                          className="mt-2 rounded border border-rag-amber/40 bg-rag-amber/10 p-2"
+                          className="mt-2 flex items-start gap-1.5 text-xs"
                         >
-                          <div className="flex items-start gap-1.5">
-                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rag-amber" />
-                            <span className="text-xs">{f.detail}</span>
-                          </div>
-                          <div className="mt-1.5 flex gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={decided === "accepted" ? "default" : "outline"}
-                              className="h-6 px-2 text-xs"
-                              onClick={() =>
-                                setDecision(b.barberId, f.kind, "accepted")
-                              }
-                            >
-                              Accept
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={decided === "refused" ? "destructive" : "outline"}
-                              className="h-6 px-2 text-xs"
-                              onClick={() =>
-                                setDecision(b.barberId, f.kind, "refused")
-                              }
-                            >
-                              Refuse
-                            </Button>
-                          </div>
+                          <AlertTriangle
+                            className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                              decided ? "text-rag-green" : "text-rag-amber"
+                            }`}
+                          />
+                          <span className="text-muted-foreground">
+                            {f.detail}
+                            {decided ? (
+                              <span className="ml-1 font-medium text-rag-green">
+                                · {decided === "accepted" ? "accepted" : "refused"}
+                              </span>
+                            ) : (
+                              <span className="ml-1 font-medium text-rag-amber">
+                                · resolve above
+                              </span>
+                            )}
+                          </span>
                         </div>
                       )
                     })}
