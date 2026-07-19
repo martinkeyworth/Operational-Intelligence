@@ -1584,6 +1584,63 @@ async function escalateCollectionToOwners(weekEnding: string) {
       weekEnding,
     })
   }
+
+  // Weekly SITE CONFIRMATION is the COO's remit — escalate any site whose week
+  // hasn't been signed off directly to Cosmin so he can confirm or chase.
+  await escalateUnconfirmedToCosmin(weekEnding, status, recipients)
+}
+
+// Escalate outstanding weekly CONFIRMATION items to Cosmin (COO), who owns
+// sign-off. Fires as part of the ~1h collection escalation (once). Best-effort:
+// no-ops when nothing is awaiting confirmation or Cosmin can't be resolved.
+async function escalateUnconfirmedToCosmin(
+  weekEnding: string,
+  status: Awaited<ReturnType<typeof getSubmissionStatus>>,
+  recipients: Awaited<ReturnType<typeof getCompanyRecipients>>,
+) {
+  const unconfirmed = status.outstanding.filter(
+    (i) => i.category === "Confirmation",
+  )
+  if (unconfirmed.length === 0) return
+
+  const cosmin = recipients.find((r) =>
+    r.email.toLowerCase().startsWith("cosmin@"),
+  )
+  if (!cosmin) return
+
+  const url = appBaseUrl().replace(/\/+$/, "")
+  const html = emailShell(
+    `Weekly sign-off needed · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;">Hi ${esc(cosmin.name || "Cosmin")},</p>
+     <p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${
+       unconfirmed.length
+     } site${
+       unconfirmed.length === 1 ? "" : "s"
+     } still need this week's confirmation.</p>
+     <p style="margin:0 0 12px;">As COO you own weekly sign-off. Please confirm each site below (or chase its manager) so the close isn't blocked. Each links straight to the confirmation:</p>
+     ${outstandingTable(unconfirmed, weekEnding)}
+     <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>`,
+  )
+  await sendEmail({
+    to: cosmin.email,
+    subject: `Sign-off needed: ${unconfirmed.length} site${
+      unconfirmed.length === 1 ? "" : "s"
+    } unconfirmed (w/e ${fmtWeekLong(weekEnding)})`,
+    html,
+    kind: "cadence_escalation",
+    weekEnding,
+  })
+  // Personal Chat ping to Cosmin, landing on the first site's confirmation.
+  await sendChatDm(cosmin.email, {
+    title: `Weekly sign-off needed · w/e ${fmtWeekLong(weekEnding)}`,
+    intro: `${unconfirmed.length} site${
+      unconfirmed.length === 1 ? " is" : "s are"
+    } still awaiting your weekly confirmation. Please confirm or chase the manager.`,
+    lines: unconfirmed.map((i) => `${i.label} — ${i.detail}`),
+    button: { text: "Confirm now", url: deepLinkFor(unconfirmed[0], weekEnding) },
+    tone: "urgent",
+    mentionEmail: cosmin.email,
+  })
 }
 
 // Email the owners that a leadership stage (COO/CEO) has been outstanding over
