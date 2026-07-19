@@ -95,6 +95,22 @@ export function currentWeekEnding(now: Date = new Date()): string {
   return toISODate(sat)
 }
 
+/** The Saturday (yyyy-mm-dd) that MOST RECENTLY passed, in UK time — today if
+ *  today is Saturday, otherwise the previous Saturday.
+ *
+ *  This is the week the Saturday-evening → Monday reporting cadence should keep
+ *  working on. `currentWeekEnding()` is wrong for that window: the moment
+ *  midnight Sat→Sun passes it jumps to the NEXT (not-yet-started, empty) week,
+ *  which would restart collection chases for a week nobody has traded yet. */
+export function mostRecentWeekEnding(now: Date = new Date()): string {
+  const london = londonNow(now)
+  const day = london.getDay() // 0 Sun ... 6 Sat
+  const daysSinceSat = (day + 1) % 7 // 0 when today is Saturday, 1 Sun, 2 Mon ...
+  const sat = new Date(london)
+  sat.setDate(london.getDate() - daysSinceSat)
+  return toISODate(sat)
+}
+
 /** Map any calendar date (yyyy-mm-dd) to the Saturday that ENDS its reporting
  *  week (that Saturday itself, or the next Saturday). Used to roll daily
  *  takings up into the correct week_ending bucket. */

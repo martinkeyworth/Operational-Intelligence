@@ -11,7 +11,7 @@ import {
 import { fmtWeekLong, getActions, type ActionRow } from "@/lib/data"
 import { canonicalAreaKey, FUNCTION_AREAS } from "@/lib/function-areas"
 import { analyseAreaRaid, type RaidAreaAnalysis } from "@/lib/raid-ai"
-import { fmtGBP } from "@/lib/format"
+import { fmtGBP, mostRecentWeekEnding } from "@/lib/format"
 import { sendEmail, emailShell, ragChip } from "@/lib/email"
 import {
   getSubmissionStatus,
@@ -1356,7 +1356,7 @@ async function createProposedActions(
 // Weekly — AI strategic-coach analysis of the whole RAID log. Emails each
 // area's accountable owner (cc Cosmin + Martin) with the root-cause analysis
 // and a draft plan, and files the proposed actions for review.
-export async function raidAiAnalysis(weekEnding = currentWeekEnding()) {
+export async function raidAiAnalysis(weekEnding = mostRecentWeekEnding()) {
   const report = await getOrCreateReport(weekEnding)
   if (report.raidAiSentAt) return { skipped: true, reason: "already sent" }
 
@@ -1627,7 +1627,7 @@ async function escalateStalledStageToOwners(
 // The orchestrator. One forward step per tick where a gate is newly satisfied;
 // otherwise chase the current in-flight stage. Idempotent + safe to call every
 // 30 min.
-export async function advanceWeeklyCadence(weekEnding = currentWeekEnding()) {
+export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) {
   const report = await getOrCreateReport(weekEnding)
   if (report.reportSentAt) return { stage: "sent", done: true }
 
@@ -1709,7 +1709,7 @@ export async function advanceWeeklyCadence(weekEnding = currentWeekEnding()) {
 }
 
 // Read-only view of where the cadence currently is (no sends, no writes).
-export async function getCadenceStatus(weekEnding = currentWeekEnding()) {
+export async function getCadenceStatus(weekEnding = mostRecentWeekEnding()) {
   const [report] = await db
     .select()
     .from(weeklyReports)
