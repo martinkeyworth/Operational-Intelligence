@@ -20,14 +20,10 @@ import {
   upsertPbcRating,
   getBarberBasics,
   getCurrentOneToOne,
-  saveAiPbc,
-  readSelfPrep,
 } from "@/lib/learning"
 import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanItemStatus } from "@/lib/learning-types"
 import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
-import { analysePbc } from "@/lib/pbc-ai"
-import { threeSixtyReadiness } from "@/lib/three-sixty"
-import { getComplianceSignals } from "@/lib/compliance-signals"
+import { regeneratePbcForBarber } from "@/lib/pbc-refresh"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -194,65 +190,20 @@ export async function generateAiPbcAction(
   const basics = await getBarberBasics(barberId)
   if (!basics || !canRatePbc(user, basics.managerUserId)) return { ok: false, error: "Not authorised." }
 
-  const oto = await getCurrentOneToOne(barberId)
-  if (!oto) return { ok: false, error: "Open the 1-2-1 first." }
-
-  const period = oto.period ?? currentPeriod()
-  const readiness = await threeSixtyReadiness(barberId, period)
-
-  // Policy: if the 360 window has closed and the barber never nominated ANY
-  // reviewers, that failure is within their control — so the PBC defaults to the
-  // lowest score (5) rather than running the AI on partial data. The manager can
-  // still override. (Band 1 "Outperformed" even requires completed 360 feedback,
-  // so a never-started 360 can never be a top score anyway.) This is distinct
-  // from the case where they DID nominate but reviewers didn't reply in time —
-  // that stays low-confidence for the manager to score manually.
-  if (readiness.notNominated) {
-    const WORST = 5
-    const autoPbc = {
-      performance: WORST,
-      behaviours: WORST,
-      contribution: WORST,
-      overall: WORST,
-      rationale: `No 360 reviewers were nominated for the ${period} cycle before the window closed. Per policy, a 360 that is never started defaults to the lowest score (${WORST}). Nominate reviewers and gather feedback to enable a full assessment; the manager may override this.`,
-      lowConfidence: false,
-      model: "policy-auto",
+  // Delegate to the shared regenerator (also used by the automatic refresh when
+  // a 360 response lands). requireReady:false lets the manager force a suggestion
+  // at any time. The notNominated policy-auto + AI analysis live in the helper.
+  const res = await regeneratePbcForBarber(barberId, { requireReady: false })
+  if (!res.ok) {
+    const errorFor: Record<string, string> = {
+      "no-1-2-1": "Open the 1-2-1 first.",
+      completed: "This 1-2-1 is already completed.",
+      "ai-error": "The AI analysis could not be generated. Please score manually.",
     }
-    await saveAiPbc(oto.id, {
-      ...autoPbc,
-      responded: readiness.responded,
-      threshold: readiness.threshold,
-      notNominated: true,
-      autoScored: true,
-    })
-    revalidatePath(`/learning/plans/${barberId}`)
-    return {
-      ok: true,
-      ai: { ...autoPbc, responded: readiness.responded, threshold: readiness.threshold, notNominated: true, autoScored: true },
-    }
+    return { ok: false, error: errorFor[res.skipped ?? ""] ?? "Could not generate the PBC." }
   }
-
-  // Auto-compile the operational-compliance evidence (missed/late confirmations,
-  // excess/stale red RAID, overdue tasks) so it feeds the AI before scoring.
-  const compliance = await getComplianceSignals(barberId)
-
-  try {
-    const ai = await analysePbc({
-      cycleId: readiness.cycleId,
-      barberName: basics.name,
-      role: basics.role,
-      selfPrep: readSelfPrep(oto),
-      kpiNotes: null,
-      complianceSignals: compliance.aiText,
-      lowConfidence: readiness.lowConfidence || readiness.cycleId === null,
-    })
-    await saveAiPbc(oto.id, { ...ai, responded: readiness.responded, threshold: readiness.threshold })
-    revalidatePath(`/learning/plans/${barberId}`)
-    return { ok: true, ai: { ...ai, responded: readiness.responded, threshold: readiness.threshold } }
-  } catch (e) {
-    console.log("[v0] analysePbc failed:", (e as Error).message)
-    return { ok: false, error: "The AI analysis could not be generated. Please score manually." }
-  }
+  revalidatePath(`/learning/plans/${barberId}`)
+  return { ok: true, ai: res.ai }
 }
 
 export async function saveManagerAnswersAction(

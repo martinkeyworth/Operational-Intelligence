@@ -15,6 +15,7 @@ export const THREE_SIXTY_MIN_RESPONSES = 3
 export type ReviewerContext = {
   nomineeId: number
   cycleId: number
+  barberId: number
   reviewerName: string
   barberName: string
   period: string
@@ -45,6 +46,7 @@ export async function getReviewerContext(token: string): Promise<ReviewerContext
   return {
     nomineeId: nominee.id,
     cycleId: cycle.id,
+    barberId: cycle.barberId,
     reviewerName: nominee.name,
     barberName: barber?.name ?? "your colleague",
     period: cycle.period,
@@ -82,6 +84,20 @@ export async function submitReviewerFeedback(input: {
     .update(threeSixtyNominees)
     .set({ respondedAt: new Date(), completedAt: new Date(), status: "Completed" })
     .where(eq(threeSixtyNominees.id, ctx.nomineeId))
+
+  // Auto-refresh the 1-2-1's AI PBC so a completed 360 pulls straight through
+  // (only once the 360 is ready). Best-effort + dynamic import to avoid a
+  // circular dependency; a failure here must never block the reviewer's submit.
+  try {
+    const { regeneratePbcForBarber } = await import("@/lib/pbc-refresh")
+    const res = await regeneratePbcForBarber(ctx.barberId, { requireReady: true })
+    if (res.ok) {
+      const { revalidatePath } = await import("next/cache")
+      revalidatePath(`/learning/plans/${ctx.barberId}`)
+    }
+  } catch (e) {
+    console.log("[v0] auto PBC refresh after 360 response failed:", (e as Error).message)
+  }
 
   return { ok: true }
 }
