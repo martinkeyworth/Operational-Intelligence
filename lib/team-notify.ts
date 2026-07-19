@@ -4,7 +4,7 @@ import { buildIcs } from "@/lib/ics"
 import { resolvedFrom } from "@/lib/email"
 import { db } from "@/lib/db"
 import { barbers, oneToOnes, user as userTable, threeSixtyCycles, threeSixtyNominees } from "@/lib/db/schema"
-import { and, desc, eq, isNull, isNotNull } from "drizzle-orm"
+import { and, desc, eq, isNull, isNotNull, lt, or } from "drizzle-orm"
 import { PBC_BANDS, formatPeriod } from "@/lib/learning-types"
 
 const APP_NAME = "Less Than Zero"
@@ -277,12 +277,15 @@ export async function sendThreeSixtyNominationNudge(args: {
 }
 
 /**
- * Chase 360 reviewers who haven't responded on Open cycles. Idempotent per
- * nominee via reminded_at (only reminds those invited but not yet reminded and
- * not yet responded). Returns how many reminder emails were sent. Because the
- * 360 gates the 1-2-1, keeping responses flowing keeps reviews on schedule.
+ * Chase 360 reviewers who haven't responded on Open cycles. Re-nudges DAILY:
+ * reminds any invited-but-not-responded nominee whose last reminder was never
+ * sent OR was more than ~20h ago (the chase cron runs daily at 06:00; the 20h
+ * window absorbs cron timing drift so each reviewer gets at most one nudge per
+ * day until they respond or the cycle closes). Because the 360 gates the 1-2-1,
+ * keeping responses flowing keeps reviews on schedule.
  */
 export async function remindPendingReviewers(): Promise<number> {
+  const staleBefore = new Date(Date.now() - 20 * 60 * 60 * 1000) // ~20h ago
   const rows = await db
     .select({
       nomineeId: threeSixtyNominees.id,
@@ -299,8 +302,11 @@ export async function remindPendingReviewers(): Promise<number> {
       and(
         eq(threeSixtyCycles.status, "Open"),
         isNull(threeSixtyNominees.respondedAt),
-        isNull(threeSixtyNominees.remindedAt),
         isNotNull(threeSixtyNominees.invitedAt),
+        or(
+          isNull(threeSixtyNominees.remindedAt),
+          lt(threeSixtyNominees.remindedAt, staleBefore),
+        ),
       ),
     )
 
