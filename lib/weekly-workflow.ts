@@ -78,7 +78,7 @@ export async function remindUsers(weekEnding = currentWeekEnding()) {
       `<p style="margin:0 0 12px;">Hi ${esc(name || "there")},</p>
        <p style="margin:0 0 12px;">This is your Saturday reminder to update your area for the week ending <strong>${fmtWeekLong(
          weekEnding,
-       )}</strong>. Please enter your takings, KPIs and any actions before this evening's board report.</p>
+       )}</strong>. Please enter your takings, KPIs and any actions before this week's board report goes out.</p>
        <p style="margin:16px 0;"><a href="${url}/data-entry" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Update my section</a></p>
        <p style="margin:0;color:#6b7280;">Thank you.</p>`,
     )
@@ -150,14 +150,14 @@ export async function submissionAlert(weekEnding = currentWeekEnding()) {
     const intro = status.complete
       ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">All weekly submissions are in for w/e ${fmtWeekLong(
           weekEnding,
-        )}. Nothing outstanding ahead of tonight's board report.</p>`
+        )}. Nothing outstanding ahead of this week's board report.</p>`
       : items.length === 0
         ? `<p style="margin:0 0 12px;color:#16a34a;font-weight:600;">Nothing outstanding in your area for w/e ${fmtWeekLong(
             weekEnding,
           )}. Thank you.</p>`
         : `<p style="margin:0 0 12px;">The following <strong>${items.length}</strong> ${
             items.length === 1 ? "item is" : "items are"
-          } still outstanding ahead of tonight's 20:00 board report${
+          } still outstanding ahead of this week's board report${
             forOwner ? "" : " in your area"
           }:</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
@@ -195,7 +195,7 @@ export async function submissionAlert(weekEnding = currentWeekEnding()) {
       }
      ${intro}
      <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>
-     <p style="margin:0;color:#6b7280;">Sent at 18:00 so there's time to chase before the board report.</p>`,
+     <p style="margin:0;color:#6b7280;">There's still time to chase before this week's board report goes out.</p>`,
     )
   }
 
@@ -369,7 +369,7 @@ async function chatDmOutstanding(
   const button = { text: "Confirm now", url: deepLinkFor(items[0], weekEnding) }
   const res = await sendChatDm(email, {
     title: `Action needed · w/e ${fmtWeekLong(weekEnding)}`,
-    intro: `These items are still outstanding ahead of tonight's 20:00 board report. Tap to confirm:`,
+    intro: `These items are still outstanding ahead of this week's board report. Tap to confirm:`,
     lines,
     button,
     tone: "urgent",
@@ -448,8 +448,8 @@ export async function sendConfirmPromptTo(
     return { sent: 0, email: target, reason: "nothing outstanding for this person" }
 
   const html = emailShell(
-    `Action needed tonight · w/e ${fmtWeekLong(weekEnding)}`,
-    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before tonight's 20:00 board report.</p>
+    `Action needed · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before this week's board report goes out.</p>
      <p style="margin:0 0 12px;">These items for week ending <strong>${fmtWeekLong(
        weekEnding,
      )}</strong> are still outstanding. <strong>Tap each item below</strong> to go straight to the exact page you need to update (enter the figures, then tick the weekly confirmation):</p>
@@ -460,7 +460,7 @@ export async function sendConfirmPromptTo(
     to: target,
     subject: `Urgent: confirm ${items.length} item${
       items.length === 1 ? "" : "s"
-    } tonight (w/e ${fmtWeekLong(weekEnding)})`,
+    } (w/e ${fmtWeekLong(weekEnding)})`,
     html,
     kind: "confirm_prompt",
     weekEnding,
@@ -506,19 +506,19 @@ export async function confirmationPrompt(weekEnding = currentWeekEnding()) {
   let chatSent = 0
   for (const [email, items] of byPerson) {
     const html = emailShell(
-      `Action needed tonight · w/e ${fmtWeekLong(weekEnding)}`,
-      `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before tonight's 20:00 board report.</p>
+      `Action needed · w/e ${fmtWeekLong(weekEnding)}`,
+      `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">Please confirm and submit the following before this week's board report goes out.</p>
        <p style="margin:0 0 12px;">These items for week ending <strong>${fmtWeekLong(
          weekEnding,
        )}</strong> are still outstanding. <strong>Tap each item below</strong> to go straight to the exact page you need to update (enter the figures, and tick the weekly confirmation once your barbers' takings are in):</p>
        ${outstandingTable(items, weekEnding)}
-       <p style="margin:0;color:#6b7280;">If this isn't resolved within the hour it will be escalated to Martin and Cosmin at 19:00.</p>`,
+       <p style="margin:0;color:#6b7280;">If this isn't resolved within the hour it will be escalated to Martin and Cosmin.</p>`,
     )
     const res = await sendEmail({
       to: email,
       subject: `Urgent: confirm ${items.length} item${
         items.length === 1 ? "" : "s"
-      } tonight (w/e ${fmtWeekLong(weekEnding)})`,
+      } (w/e ${fmtWeekLong(weekEnding)})`,
       html,
       kind: "confirm_prompt",
       weekEnding,
@@ -559,7 +559,7 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
     for (const owner of owners) {
       await sendChatDm(owner.email, {
         title: `All submissions in · w/e ${fmtWeekLong(weekEnding)}`,
-        intro: `Every weekly submission is confirmed and in ahead of tonight's board report. Nothing outstanding.`,
+        intro: `Every weekly submission is confirmed and in ahead of this week's board report. Nothing outstanding.`,
         lines: [`${status.submittedCount}/${status.total} submitted (100%)`],
         button: {
           text: "Open submission board",
@@ -593,8 +593,8 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
       status.outstandingCount
     } item${
       status.outstandingCount === 1 ? " is" : "s are"
-    } still outstanding an hour after the 18:00 urgent prompt.</p>
-     <p style="margin:0 0 12px;">The responsible managers were asked to confirm at 18:00 and have not done so. Please chase them directly to resolve before the board report. Each item links to the exact page that resolves it:</p>
+    } still outstanding more than an hour after the urgent prompt.</p>
+     <p style="margin:0 0 12px;">The responsible managers were asked to confirm and have not done so. Please chase them directly to resolve before this week's board report goes out. Each item links to the exact page that resolves it:</p>
      ${outstandingTable(status.outstanding, weekEnding)}
      <p style="margin:0 0 12px;color:#6b7280;">Responsible to chase: ${
        [...responsible].map((e) => esc(e)).join(", ") || "n/a"
@@ -619,7 +619,7 @@ export async function escalateUnconfirmed(weekEnding = currentWeekEnding()) {
       title: `Escalation · w/e ${fmtWeekLong(weekEnding)}`,
       intro: `${status.outstandingCount} item${
         status.outstandingCount === 1 ? " is" : "s are"
-      } still outstanding an hour after the 18:00 prompt. Chase: ${
+      } still outstanding more than an hour after the urgent prompt. Chase: ${
         [...responsible].join(", ") || "n/a"
       }.`,
       lines: status.outstanding.map((i) => `${i.label} — ${i.detail}`),
