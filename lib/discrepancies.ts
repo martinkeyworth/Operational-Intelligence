@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 import { barbers, weeklyTakings } from "@/lib/db/schema"
 import { and, asc, eq, lt } from "drizzle-orm"
 import { computeRtb } from "@/lib/rtb"
-import { getBarberDailyWeek } from "@/lib/daily-takings"
+import { getBarberWeekTakings } from "@/lib/daily-takings"
 import {
   SWING_THRESHOLD_PCT,
   EXPECTED_WORKING_DAYS,
@@ -51,16 +51,18 @@ export async function getBarberDiscrepancies(
       ? EXPECTED_WORKING_DAYS
       : Number(barber.expectedWorkingDays)
 
-  const days = await getBarberDailyWeek(barberId, weekEnding)
-  const cash = days.reduce((s, d) => s + d.cash, 0)
-  const card = days.reduce((s, d) => s + d.card, 0)
-  const total = cash + card
-  const daysEntered = days.filter((d) => d.cash > 0 || d.card > 0).length
+  // Prefer per-cut daily rows, but fall back to the weekly figure the barber
+  // (or manager) entered — otherwise a weekly-only entry looks like "no takings".
+  const wk = await getBarberWeekTakings(barberId, weekEnding)
+  const cash = wk.cash
+  const card = wk.card
+  const total = wk.total
+  const daysEntered = wk.daysEntered
 
   const flags: Discrepancy[] = []
 
-  // 1. Missing / zero — no takings at all this week.
-  if (daysEntered === 0 || total === 0) {
+  // 1. Missing / zero — no takings at all this week (neither daily nor weekly).
+  if (total === 0) {
     flags.push({
       kind: "missing",
       severity: "critical",
@@ -70,8 +72,9 @@ export async function getBarberDiscrepancies(
     return flags
   }
 
-  // 2. Partial week — some days entered but fewer than expected.
-  if (daysEntered < expectedDays) {
+  // 2. Partial week — only meaningful when per-cut DAILY logging is used; a
+  //    weekly-only entry (daysEntered 0, source weekly) is complete by design.
+  if (wk.source === "daily" && daysEntered < expectedDays) {
     flags.push({
       kind: "partial_week",
       severity: "warning",

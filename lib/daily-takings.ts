@@ -161,6 +161,80 @@ export async function getBarberDailyWeek(
   }))
 }
 
+export type WeekTakings = {
+  cash: number
+  card: number
+  total: number
+  /** Number of days with entries (0 when figures came from the weekly total). */
+  daysEntered: number
+  /** Where the figures came from — per-cut daily rows or the weekly entry. */
+  source: "daily" | "weekly" | "none"
+}
+
+/**
+ * Resolve a barber's cash/card for a week, preferring the per-cut DAILY rows
+ * but FALLING BACK to the weekly_takings figure the barber (or manager) entered.
+ *
+ * This is the single source of truth for "what did this barber take this week"
+ * used by the confirmation review + discrepancy detector. Without the fallback,
+ * a barber who entered their weekly total (but never logged per-cut days) shows
+ * as £0 / "no takings entered", which is wrong.
+ */
+export async function getBarberWeekTakings(
+  barberId: number,
+  weekEnding: string,
+): Promise<WeekTakings> {
+  const days = await getBarberDailyWeek(barberId, weekEnding)
+  const dailyCash = days.reduce((s, d) => s + d.cash, 0)
+  const dailyCard = days.reduce((s, d) => s + d.card, 0)
+  const daysEntered = days.filter((d) => d.cash > 0 || d.card > 0).length
+
+  if (dailyCash + dailyCard > 0) {
+    return {
+      cash: dailyCash,
+      card: dailyCard,
+      total: dailyCash + dailyCard,
+      daysEntered,
+      source: "daily",
+    }
+  }
+
+  // Fall back to the weekly rollup / weekly entry.
+  const [wk] = await db
+    .select({
+      total: weeklyTakings.total,
+      cash: weeklyTakings.cash,
+      card: weeklyTakings.card,
+    })
+    .from(weeklyTakings)
+    .where(
+      and(
+        eq(weeklyTakings.barberId, barberId),
+        eq(weeklyTakings.weekEnding, weekEnding),
+      ),
+    )
+
+  if (wk) {
+    const total = Number(wk.total)
+    let cash = Number(wk.cash)
+    let card = Number(wk.card)
+    // Older/weekly-only rows may store just the total with no split — treat the
+    // whole amount as cash so RTB + flags still compute sensibly.
+    if (cash + card === 0 && total > 0) cash = total
+    if (total > 0 || cash + card > 0) {
+      return {
+        cash,
+        card,
+        total: total > 0 ? total : cash + card,
+        daysEntered: 0,
+        source: "weekly",
+      }
+    }
+  }
+
+  return { cash: 0, card: 0, total: 0, daysEntered: 0, source: "none" }
+}
+
 export type DailyBusinessTotal = {
   date: string
   cash: number

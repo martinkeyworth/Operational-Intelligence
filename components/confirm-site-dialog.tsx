@@ -294,7 +294,9 @@ export function ConfirmSiteDialog({
               {pending
                 ? "Saving…"
                 : !allResolved
-                  ? "Resolve flags to confirm"
+                  ? `Resolve ${totalFlags - decidedFlags} more flag${
+                      totalFlags - decidedFlags === 1 ? "" : "s"
+                    } to confirm`
                   : "Confirm week"}
             </Button>
           </DialogFooter>

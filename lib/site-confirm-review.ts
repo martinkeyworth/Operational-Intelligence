@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 import { barbers, siteConfirmations } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
 import { computeRtb } from "@/lib/rtb"
-import { getBarberDailyWeek } from "@/lib/daily-takings"
+import { getBarberWeekTakings } from "@/lib/daily-takings"
 import {
   getBarberDiscrepancies,
   type Discrepancy,
@@ -50,10 +50,10 @@ export async function getSiteConfirmReview(
 
   const rows: BarberRtbReview[] = []
   for (const b of roster) {
-    const days = await getBarberDailyWeek(b.id, weekEnding)
-    const cash = days.reduce((s, d) => s + d.cash, 0)
-    const card = days.reduce((s, d) => s + d.card, 0)
-    const daysEntered = days.filter((d) => d.cash > 0 || d.card > 0).length
+    // Prefer per-cut daily rows, fall back to the weekly figure entered.
+    const wk = await getBarberWeekTakings(b.id, weekEnding)
+    const cash = wk.cash
+    const card = wk.card
     const rtb = computeRtb({
       cash,
       card,
@@ -66,12 +66,12 @@ export async function getSiteConfirmReview(
       name: b.name,
       cash,
       card,
-      total: cash + card,
+      total: wk.total,
       cashRent: rtb.cashRent,
       cardRent: rtb.cardRent,
       totalRent: rtb.totalRent,
       cardCap: rtb.cardCap,
-      days: daysEntered,
+      days: wk.daysEntered,
       flags,
     })
   }
