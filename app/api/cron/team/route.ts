@@ -5,6 +5,8 @@ import {
   syncOneToOneRsvps,
 } from "@/lib/team-schedule"
 import { remindDueOneToOnes, escalateOverdueOneToOnes, remindPendingReviewers } from "@/lib/team-notify"
+import { isOutboundHold } from "@/lib/outbound-hold"
+import { isCommEnabled } from "@/lib/comms"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -30,17 +32,23 @@ export async function GET(req: Request) {
     }
   }
 
+  const held = isOutboundHold()
+  // Scheduling + RSVP sync are record-keeping (not chase messages) so they keep
+  // running; only the outbound reminders honour the hold + per-channel toggles.
+  const threeSixtyOn = !held && (await isCommEnabled("three-sixty"))
+  const oneToOneOn = !held && (await isCommEnabled("one-to-one"))
+
   try {
     const oneToOnes = await autoScheduleOneToOnes()
     const threeSixties = await autoOpenThreeSixtyCycles()
     // Chase 360 reviewers who haven't responded (the 360 gates the 1-2-1).
-    const reviewerReminders = await remindPendingReviewers()
+    const reviewerReminders = threeSixtyOn ? await remindPendingReviewers() : 0
     // Pull accept/decline responses back from Google Calendar so leadership
     // sees RSVP status in the app.
     const rsvpUpdates = await syncOneToOneRsvps()
     // 1-2-1 reminders (due soon) + overdue escalation. Both idempotent.
-    const reminders = await remindDueOneToOnes(2)
-    const overdue = await escalateOverdueOneToOnes()
+    const reminders = oneToOneOn ? await remindDueOneToOnes(2) : 0
+    const overdue = oneToOneOn ? await escalateOverdueOneToOnes() : 0
     return NextResponse.json({
       ok: true,
       oneToOnes,

@@ -807,3 +807,13 @@ export const pbcRatings = pgTable(
     key: unique("pbc_ratings_barber_period").on(t.barberId, t.period),
   }),
 )
+
+// Per-communication on/off toggles, controlled from /admin/comms. A missing
+// row means the channel is ENABLED (default on), so the app behaves normally
+// until an owner explicitly pauses a channel.
+export const commSettings = pgTable("comm_settings", {
+  key: text("key").primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedByUserId: text("updated_by_user_id"),
+})

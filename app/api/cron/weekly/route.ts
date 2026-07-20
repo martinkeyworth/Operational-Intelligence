@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server"
 import { STEPS, type StepName } from "@/lib/weekly-workflow"
 import { isOutboundHold } from "@/lib/outbound-hold"
+import { isCommEnabled, type CommKey } from "@/lib/comms"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
+
+// Which /admin/comms channel controls each cron step. If the channel is paused,
+// the step is skipped (200 no-op) so Vercel Cron records no failure.
+const STEP_CHANNEL: Partial<Record<StepName, CommKey>> = {
+  reminders: "weekly-reminders",
+  cadence: "board-cadence",
+  analysis: "board-cadence",
+  "cosmin-narrative": "board-cadence",
+  "board-report": "board-cadence",
+  "martin-response": "board-cadence",
+  "brand-rtb": "board-cadence",
+  "submission-alert": "board-cadence",
+  "confirmation-prompt": "board-cadence",
+  "escalate-unconfirmed": "board-cadence",
+  "red-action-reminders": "raid-reminders",
+  escalate: "raid-reminders",
+  "raid-ai-analysis": "raid-ai",
+}
 
 /**
  * Saturday reporting workflow runner. Triggered by Vercel Cron at the UK times
@@ -38,6 +57,12 @@ export async function GET(req: Request) {
   // Vercel Cron doesn't record failures while held.
   if (isOutboundHold()) {
     return NextResponse.json({ ok: true, step, held: true })
+  }
+
+  // Per-channel pause set from /admin/comms.
+  const channel = STEP_CHANNEL[step]
+  if (channel && !(await isCommEnabled(channel))) {
+    return NextResponse.json({ ok: true, step, paused: channel })
   }
 
   try {

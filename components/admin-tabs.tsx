@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Users, Scissors, Percent, Mail, UserCog } from "lucide-react"
+import { Users, Scissors, Percent, Mail, UserCog, MessageSquare } from "lucide-react"
 
 type Tab = { href: string; label: string; icon: typeof Users }
 
@@ -19,6 +19,7 @@ export function AdminTabs({ isOwner }: { isOwner: boolean }) {
       ? [
           { href: "/admin/splits", label: "Profit Split", icon: Percent },
           { href: "/admin/email", label: "Email", icon: Mail },
+          { href: "/admin/comms", label: "Communications", icon: MessageSquare },
         ]
       : []),
   ]
