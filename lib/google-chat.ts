@@ -1,5 +1,6 @@
 import "server-only"
 import { google, type chat_v1 } from "googleapis"
+import { isOutboundHold } from "@/lib/outbound-hold"
 
 /**
  * Google Chat integration for the weekly submission chase.
@@ -374,6 +375,7 @@ export async function sendChatDm(
   args: ChatDmArgs,
 ): Promise<ChatDmResult> {
   try {
+    if (isOutboundHold()) return { ok: false, reason: "on-hold" }
     if (!isChatConfigured()) return { ok: false, reason: "not-configured" }
 
     // Easy mode: one shared-space webhook, no domain limit.
@@ -409,6 +411,7 @@ export async function sendSpaceChat(
   args: ChatDmArgs,
   forLabel?: string,
 ): Promise<ChatDmResult> {
+  if (isOutboundHold()) return { ok: false, reason: "on-hold" }
   const url = spaceWebhookUrl(space)
   if (!url) return { ok: false, reason: "not-configured" }
   try {

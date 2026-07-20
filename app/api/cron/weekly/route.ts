@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { STEPS, type StepName } from "@/lib/weekly-workflow"
+import { isOutboundHold } from "@/lib/outbound-hold"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -29,6 +30,14 @@ export async function GET(req: Request) {
       { error: "Invalid step", valid: Object.keys(STEPS) },
       { status: 400 },
     )
+  }
+
+  // Temporary global hold: skip the entire weekend cadence + every automated
+  // step (chasers, escalations, RAID-AI, team/360 reminders, board report).
+  // Flip OUTBOUND_HOLD in project settings to resume. No-ops cleanly (200) so
+  // Vercel Cron doesn't record failures while held.
+  if (isOutboundHold()) {
+    return NextResponse.json({ ok: true, step, held: true })
   }
 
   try {
