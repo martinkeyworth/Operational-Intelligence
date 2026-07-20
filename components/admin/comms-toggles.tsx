@@ -31,7 +31,7 @@ export function CommsToggles({ initial, canEdit }: Props) {
               return (
                 <div
                   key={c.key}
-                  className="flex items-start justify-between gap-4 p-4"
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
                 >
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
@@ -46,7 +46,7 @@ export function CommsToggles({ initial, canEdit }: Props) {
                             : "bg-rag-red/15 text-rag-red",
                         )}
                       >
-                        {on ? "On" : "Paused"}
+                        {on ? "Active" : "Paused"}
                       </span>
                     </div>
                     <p className="text-sm leading-relaxed text-muted-foreground">
@@ -54,29 +54,26 @@ export function CommsToggles({ initial, canEdit }: Props) {
                     </p>
                   </div>
                   {/* Plain form submit: posts the explicit target value, server
-                      writes + revalidates, page re-reads DB. No client state. */}
-                  <form action={setCommAction} className="mt-1 shrink-0">
+                      writes + revalidates, page re-reads DB. No client state.
+                      An explicit labelled button (not a subtle switch) so the
+                      control is always clearly visible, including when paused. */}
+                  <form action={setCommAction} className="shrink-0">
                     <input type="hidden" name="key" value={c.key} />
                     <input type="hidden" name="enabled" value={on ? "0" : "1"} />
                     <button
                       type="submit"
-                      role="switch"
-                      aria-checked={on}
-                      aria-label={`${on ? "Pause" : "Enable"} ${c.label}`}
                       disabled={!canEdit}
+                      aria-label={`${on ? "Pause" : "Turn on"} ${c.label}`}
                       className={cn(
-                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        "inline-flex h-11 min-w-28 items-center justify-center rounded-md px-4 text-sm font-semibold transition-colors",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                        on ? "bg-rag-green" : "bg-muted",
+                        on
+                          ? "border border-border bg-transparent text-foreground hover:bg-muted"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90",
                         !canEdit && "cursor-not-allowed opacity-60",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform",
-                          on ? "translate-x-5" : "translate-x-0.5",
-                        )}
-                      />
+                      {on ? "Pause" : "Turn on"}
                     </button>
                   </form>
                 </div>
