@@ -23,13 +23,21 @@ export function CommsToggles({ initial, canEdit }: Props) {
   const [busyKey, setBusyKey] = useState<CommKey | null>(null)
 
   function onToggle(key: CommKey, next: boolean) {
-    if (!canEdit) return
+    if (!canEdit || busyKey) return
     setBusyKey(key)
     setState((s) => ({ ...s, [key]: next })) // optimistic
     startTransition(async () => {
-      const res = await toggleComm(key, next)
-      if (!res.ok) setState((s) => ({ ...s, [key]: !next })) // revert on failure
-      setBusyKey(null)
+      try {
+        const res = await toggleComm(key, next)
+        // Apply the value the server actually persisted (falls back to the
+        // requested value on older responses); revert if the save failed.
+        const confirmed = res.ok ? res.enabled ?? next : !next
+        setState((s) => ({ ...s, [key]: confirmed }))
+      } catch {
+        setState((s) => ({ ...s, [key]: !next })) // revert on unexpected error
+      } finally {
+        setBusyKey(null)
+      }
     })
   }
 

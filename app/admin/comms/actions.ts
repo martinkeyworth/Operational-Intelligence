@@ -11,13 +11,18 @@ import { setCommEnabled, COMM_CHANNELS, type CommKey } from "@/lib/comms"
 export async function toggleComm(
   key: CommKey,
   enabled: boolean,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; enabled?: boolean; error?: string }> {
   const user = await requireAdmin()
   if (!user.isOwner) return { ok: false, error: "Owner only." }
   if (!COMM_CHANNELS.some((c) => c.key === key)) {
     return { ok: false, error: "Unknown channel." }
   }
-  await setCommEnabled(key, enabled, user.id)
-  revalidatePath("/admin/comms")
-  return { ok: true }
+  try {
+    const persisted = await setCommEnabled(key, enabled, user.id)
+    revalidatePath("/admin/comms")
+    return { ok: true, enabled: persisted }
+  } catch (e) {
+    console.log("[v0] toggleComm failed:", (e as Error).message)
+    return { ok: false, error: "Could not save. Please try again." }
+  }
 }

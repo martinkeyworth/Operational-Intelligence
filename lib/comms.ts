@@ -30,17 +30,19 @@ export async function isCommEnabled(key: CommKey): Promise<boolean> {
   return rows[0]?.enabled ?? true
 }
 
-/** Upsert a channel's enabled flag. */
+/** Upsert a channel's enabled flag. Returns the value actually persisted. */
 export async function setCommEnabled(
   key: CommKey,
   enabled: boolean,
   userId: string | null,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .insert(commSettings)
     .values({ key, enabled, updatedByUserId: userId, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: commSettings.key,
       set: { enabled, updatedByUserId: userId, updatedAt: new Date() },
     })
+    .returning({ enabled: commSettings.enabled })
+  return rows[0]?.enabled ?? enabled
 }
