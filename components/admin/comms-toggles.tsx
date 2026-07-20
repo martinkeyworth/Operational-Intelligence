@@ -1,9 +1,6 @@
-"use client"
-
-import { useState, useTransition } from "react"
 import { cn } from "@/lib/utils"
 import { COMM_CHANNELS, type CommKey } from "@/lib/comms-config"
-import { toggleComm } from "@/app/admin/comms/actions"
+import { setCommAction } from "@/app/admin/comms/actions"
 
 type Props = {
   initial: Record<CommKey, boolean>
@@ -18,29 +15,6 @@ const GROUP_ORDER = [
 ] as const
 
 export function CommsToggles({ initial, canEdit }: Props) {
-  const [state, setState] = useState<Record<CommKey, boolean>>(initial)
-  const [pending, startTransition] = useTransition()
-  const [busyKey, setBusyKey] = useState<CommKey | null>(null)
-
-  function onToggle(key: CommKey, next: boolean) {
-    if (!canEdit || busyKey) return
-    setBusyKey(key)
-    setState((s) => ({ ...s, [key]: next })) // optimistic
-    startTransition(async () => {
-      try {
-        const res = await toggleComm(key, next)
-        // Apply the value the server actually persisted (falls back to the
-        // requested value on older responses); revert if the save failed.
-        const confirmed = res.ok ? res.enabled ?? next : !next
-        setState((s) => ({ ...s, [key]: confirmed }))
-      } catch {
-        setState((s) => ({ ...s, [key]: !next })) // revert on unexpected error
-      } finally {
-        setBusyKey(null)
-      }
-    })
-  }
-
   const grouped = GROUP_ORDER.map((group) => ({
     group,
     items: COMM_CHANNELS.filter((c) => c.group === group),
@@ -53,7 +27,7 @@ export function CommsToggles({ initial, canEdit }: Props) {
           <h2 className="text-sm font-semibold text-muted-foreground">{group}</h2>
           <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
             {items.map((c) => {
-              const on = state[c.key]
+              const on = initial[c.key]
               return (
                 <div
                   key={c.key}
@@ -79,27 +53,32 @@ export function CommsToggles({ initial, canEdit }: Props) {
                       {c.description}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={on}
-                    aria-label={`${on ? "Pause" : "Enable"} ${c.label}`}
-                    disabled={!canEdit || (pending && busyKey === c.key)}
-                    onClick={() => onToggle(c.key, !on)}
-                    className={cn(
-                      "relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                      on ? "bg-rag-green" : "bg-muted",
-                      !canEdit && "cursor-not-allowed opacity-60",
-                    )}
-                  >
-                    <span
+                  {/* Plain form submit: posts the explicit target value, server
+                      writes + revalidates, page re-reads DB. No client state. */}
+                  <form action={setCommAction} className="mt-1 shrink-0">
+                    <input type="hidden" name="key" value={c.key} />
+                    <input type="hidden" name="enabled" value={on ? "0" : "1"} />
+                    <button
+                      type="submit"
+                      role="switch"
+                      aria-checked={on}
+                      aria-label={`${on ? "Pause" : "Enable"} ${c.label}`}
+                      disabled={!canEdit}
                       className={cn(
-                        "inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform",
-                        on ? "translate-x-5" : "translate-x-0.5",
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                        on ? "bg-rag-green" : "bg-muted",
+                        !canEdit && "cursor-not-allowed opacity-60",
                       )}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform",
+                          on ? "translate-x-5" : "translate-x-0.5",
+                        )}
+                      />
+                    </button>
+                  </form>
                 </div>
               )
             })}
