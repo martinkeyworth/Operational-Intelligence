@@ -31,6 +31,7 @@ import {
   UserRound,
   ChevronDown,
   Map,
+  Target,
   Users,
   FileText,
 } from "lucide-react"
@@ -104,6 +105,7 @@ export function AppShell({
             icon: Crown,
             items: [
               { href: "/", label: "Group Overview", icon: LayoutDashboard },
+              { href: "/plan", label: "2030 Plan", icon: Target },
               { href: "/roadmap", label: "Growth Roadmap", icon: Map },
               { href: "/functions/Strategy", label: "Expansion Strategy", icon: LayoutGrid },
             ],

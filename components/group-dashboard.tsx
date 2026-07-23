@@ -1,10 +1,8 @@
 import Link from "next/link"
 import { Card } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { RagBadge, RagDot } from "@/components/rag"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RevenueTrendChart } from "@/components/revenue-trend-chart"
-import { VisionPanel } from "@/components/vision-panel"
 import { AiCommentary } from "@/components/ai-commentary"
 import { WeekSelector } from "@/components/week-selector"
 import { fmtGBP, fmtWeekLong, ragFromAttainment } from "@/lib/data"
@@ -16,23 +14,24 @@ import type {
   ActionRow,
   BusinessScorecard,
 } from "@/lib/data"
-import type {
-  VisionGlidePath,
-  VisionMonthlyPlan,
-  ExpansionRecommendation,
-  PlanBoardSummary,
-} from "@/lib/vision"
 import type { SubmissionSummary } from "@/lib/submissions"
 import type { RecruitmentPlan } from "@/lib/hr"
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarClock,
   CheckCircle2,
   Clock,
-  Store,
-  Target,
   UserPlus,
+  UserRound,
 } from "lucide-react"
+
+/** Short due-date label, e.g. "31 Jul". */
+function fmtDue(iso: string) {
+  const d = new Date(iso + "T00:00:00")
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+}
 
 function barFill(rag: "green" | "amber" | "red") {
   return rag === "green"
@@ -40,6 +39,43 @@ function barFill(rag: "green" | "amber" | "red") {
     : rag === "amber"
       ? "bg-rag-amber"
       : "bg-rag-red"
+}
+
+function ragText(rag: "green" | "amber" | "red") {
+  return rag === "green"
+    ? "text-rag-green"
+    : rag === "amber"
+      ? "text-rag-amber"
+      : "text-rag-red"
+}
+
+/** One labelled performance dimension on a site card (e.g. Trading, Capacity),
+ *  keeping revenue and capacity visually distinct rather than aggregated. */
+function SiteDimension({
+  label,
+  valueText,
+  pct,
+  rag,
+}: {
+  label: string
+  valueText: string
+  pct: number
+  rag: "green" | "amber" | "red"
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={`font-medium ${ragText(rag)}`}>{valueText}</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${barFill(rag)}`}
+          style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
+        />
+      </div>
+    </div>
+  )
 }
 
 export function GroupDashboard({
@@ -50,10 +86,6 @@ export function GroupDashboard({
   barbers,
   actions,
   scorecard,
-  vision,
-  monthly,
-  expansion,
-  planProgress,
   submissions,
   recruitment,
 }: {
@@ -64,10 +96,6 @@ export function GroupDashboard({
   barbers: BarberWeekRow[]
   actions: ActionRow[]
   scorecard: BusinessScorecard
-  vision: VisionGlidePath
-  monthly: VisionMonthlyPlan
-  expansion: ExpansionRecommendation
-  planProgress: PlanBoardSummary
   submissions: SubmissionSummary
   recruitment: RecruitmentPlan
 }) {
@@ -77,18 +105,15 @@ export function GroupDashboard({
   const reporting = barbers.filter((b) => b.reported)
   const leaderboard = reporting.slice(0, 5)
 
-  // 5x5 plan weekly target: this month's required chair takings spread across
-  // the ~4.33 weeks in a month. Compares actual takings to the £5m glide path.
-  const weekMonth = new Date(summary.week + "T00:00:00").getMonth() + 1
-  const planMonth =
-    monthly.months.find((m) => m.month === weekMonth) ?? monthly.months[0]
-  const planWeeklyTarget = planMonth
-    ? Math.round(planMonth.requiredTakings / (52 / 12))
-    : 0
-  const planAttainmentPct =
-    planWeeklyTarget > 0 ? (summary.weekRevenue / planWeeklyTarget) * 100 : 0
-  const planRag = ragFromAttainment(planAttainmentPct)
-  const planDelta = summary.weekRevenue - planWeeklyTarget
+  // The overview measures against ONE consistent yardstick: the current
+  // operating target (what today's team + chairs should realistically bill —
+  // sum of per-barber weekly targets + sublet + training). The stretch 5×5 /
+  // 2030 plan requirement lives in the dedicated 2030 Plan view so the two
+  // targets never sit side-by-side looking like a calculation error.
+  const opRag = ragFromAttainment(summary.attainmentPct)
+  const opDelta = summary.weekRevenue - summary.weekTarget
+  const wowRag: "green" | "amber" | "red" =
+    summary.wowPct >= 0 ? "green" : summary.wowPct <= -15 ? "red" : "amber"
 
   // Headcount variance: the site manager's stated headcount vs the number of
   // barbers who actually submitted takings this week. Any discrepancy is a
@@ -155,8 +180,8 @@ export function GroupDashboard({
             }
             label={
               submissions.complete
-                ? "All submissions in"
-                : `${submissions.outstandingCount} submissions outstanding`
+                ? `${summary.confirmedSites}/${summary.siteCount} confirmed · all data in`
+                : `${summary.confirmedSites}/${summary.siteCount} confirmed · ${submissions.outstandingCount} outstanding`
             }
             className="px-3 py-1 text-sm"
           />
@@ -171,41 +196,53 @@ export function GroupDashboard({
             label={`Takings · W/E ${fmtWeekLong(summary.week)}`}
             value={fmtGBP(summary.weekRevenue)}
             sub={
-              planWeeklyTarget > 0 ? (
+              summary.weekTarget > 0 ? (
                 <span className="flex flex-col gap-1">
                   <span className="flex items-center gap-2">
-                    <RagBadge rag={planRag} />
+                    <RagBadge rag={opRag} />
                     <span
                       className={
-                        planRag === "green"
+                        opRag === "green"
                           ? "text-rag-green"
-                          : planRag === "amber"
+                          : opRag === "amber"
                             ? "text-rag-amber"
                             : "text-rag-red"
                       }
                     >
-                      {planDelta >= 0 ? "+" : "-"}
-                      {fmtGBP(Math.abs(planDelta))} vs 5×5 plan
+                      {summary.attainmentPct.toFixed(0)}% of operating target
                     </span>
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    Target {fmtGBP(planWeeklyTarget)} ·{" "}
-                    {planAttainmentPct.toFixed(0)}%
+                    {opDelta >= 0 ? "+" : "-"}
+                    {fmtGBP(Math.abs(opDelta))} vs {fmtGBP(summary.weekTarget)}{" "}
+                    target
                   </span>
                 </span>
               ) : (
-                "No 5×5 target set"
+                "No operating target set"
               )
             }
           />
           <StatCard
-            label="Target Attainment"
-            value={`${summary.attainmentPct.toFixed(0)}%`}
+            label="Week-on-week"
+            value={
+              <span
+                className={
+                  wowRag === "green"
+                    ? "text-rag-green"
+                    : wowRag === "amber"
+                      ? "text-rag-amber"
+                      : "text-rag-red"
+                }
+              >
+                {summary.wowPct >= 0 ? "↑" : "↓"}
+                {Math.abs(summary.wowPct).toFixed(0)}%
+              </span>
+            }
             sub={
-              <Progress
-                value={Math.min(summary.attainmentPct, 100)}
-                className="mt-2 h-1.5"
-              />
+              <span className="text-xs text-muted-foreground">
+                vs {fmtGBP(summary.prevWeekRevenue)} last week
+              </span>
             }
           />
           <StatCard
@@ -378,9 +415,6 @@ export function GroupDashboard({
           </Card>
         </div>
 
-        {/* 2030 vision glide path */}
-        <VisionPanel vision={vision} monthly={monthly} />
-
         {/* Site performance */}
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -407,69 +441,81 @@ export function GroupDashboard({
                 href={`/sites/${s.id}?week=${summary.week}`}
                 className="group rounded-lg border border-border bg-background p-4 transition-colors hover:border-primary/40"
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <RagDot rag={s.rag} />
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {s.name}
-                      </p>
-                      {s.confirmed ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-rag-green" />
-                      ) : (
-                        <Clock className="h-3.5 w-3.5 shrink-0 text-rag-amber" />
-                      )}
-                    </div>
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {s.name}
+                    </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {s.siteType === "training"
                         ? `${s.location} · Academy`
-                        : `${s.location} · ${s.activeBarbers}/${s.chairCapacity} chairs`}
+                        : s.location}
                     </p>
                   </div>
-                  <span className="text-sm font-semibold text-foreground">
-                    {s.siteType === "training"
-                      ? s.trainingRag === "green"
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {s.confirmed ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-rag-green" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-rag-amber" />
+                    )}
+                    <span
+                      className={
+                        s.rag === "green"
+                          ? "flex items-center gap-1 rounded-full bg-rag-green/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-green"
+                          : s.rag === "amber"
+                            ? "flex items-center gap-1 rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber"
+                            : "flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red"
+                      }
+                    >
+                      {s.rag === "green"
                         ? "On track"
-                        : "Below"
-                      : `${s.attainmentPct.toFixed(0)}%`}
+                        : s.rag === "amber"
+                          ? "At risk"
+                          : "Critical"}
+                    </span>
                   </span>
                 </div>
-                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={`h-full rounded-full ${barFill(s.rag)}`}
-                    style={{
-                      width:
-                        s.siteType === "training"
-                          ? "100%"
-                          : `${Math.min(s.attainmentPct, 100)}%`,
-                    }}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  {s.siteType === "training" ? (
-                    <>
-                      <span>Training academy</span>
-                      <span className="flex items-center gap-1">
-                        <RagDot rag={s.trainingRag} />
-                        Capacity
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span>{fmtGBP(s.weekRevenue)}</span>
-                      <span className="flex items-center gap-2">
-                        <span className="flex items-center gap-1">
-                          <RagDot rag={s.utilisationRag} />
-                          Chairs
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <RagDot rag={s.rtbRag} />
-                          RTB
-                        </span>
-                      </span>
-                    </>
-                  )}
-                </div>
+                {s.siteType === "training" ? (
+                  <div className="mt-3">
+                    <SiteDimension
+                      label="Learner capacity"
+                      valueText={s.trainingRag === "green" ? "On track" : "Below"}
+                      pct={100}
+                      rag={s.trainingRag}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-col gap-2.5">
+                    <SiteDimension
+                      label="Trading vs target"
+                      valueText={`${s.attainmentPct.toFixed(0)}% · ${fmtGBP(
+                        s.weekRevenue,
+                      )}`}
+                      pct={s.attainmentPct}
+                      rag={ragFromAttainment(s.attainmentPct)}
+                    />
+                    <SiteDimension
+                      label="Staffed capacity"
+                      valueText={`${s.activeBarbers}/${s.chairCapacity} chairs${
+                        s.chairCapacity > 0
+                          ? ` · ${Math.round(
+                              (s.activeBarbers / s.chairCapacity) * 100,
+                            )}%`
+                          : ""
+                      }`}
+                      pct={
+                        s.chairCapacity > 0
+                          ? (s.activeBarbers / s.chairCapacity) * 100
+                          : 0
+                      }
+                      rag={s.utilisationRag}
+                    />
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <RagDot rag={s.rtbRag} />
+                      Revenue to business
+                    </div>
+                  </div>
+                )}
               </Link>
             ))}
           </div>
@@ -679,159 +725,12 @@ export function GroupDashboard({
           <Card className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  Board Summary — {planProgress.quarterLabel}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Tracking vs the LTZ 2025–2030 plan milestones
-                </p>
-              </div>
-              <RagBadge rag={planProgress.chairRag} />
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Chair turnover
-                  </p>
-                  <RagDot rag={planProgress.chairRag} />
-                </div>
-                <p className="mt-1 text-base font-semibold text-foreground">
-                  {fmtGBP(planProgress.chairAnnualised)}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {planProgress.chairAttainmentPct}% of{" "}
-                  {fmtGBP(planProgress.chairMilestone)} {planProgress.year}{" "}
-                  milestone
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Shops open
-                  </p>
-                  <RagDot rag={planProgress.shopsRag} />
-                </div>
-                <p className="mt-1 text-base font-semibold text-foreground">
-                  {planProgress.shopsOpen} / {planProgress.shopsPlanned}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  open vs planned by now
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Headcount
-                  </p>
-                  <RagDot rag={planProgress.headcountRag} />
-                </div>
-                <p className="mt-1 text-base font-semibold text-foreground">
-                  {planProgress.headcountActual} / {planProgress.headcountPlanned}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  barbers vs plan (4/shop)
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                Academy income target {planProgress.year}:{" "}
-                <span className="font-medium text-foreground">
-                  {fmtGBP(planProgress.academyMilestone)}
-                </span>{" "}
-                · Group revenue target{" "}
-                <span className="font-medium text-foreground">
-                  {fmtGBP(planProgress.totalMilestone)}
-                </span>
-              </span>
-              {planProgress.nextOpeningLabel && (
-                <span>
-                  Next opening:{" "}
-                  <span className="font-medium text-foreground">
-                    {planProgress.nextOpeningLabel}
-                  </span>
-                </span>
-              )}
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Store className="h-4 w-4 text-muted-foreground" />
-                  Expansion Plan
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Next opening on the LTZ plan schedule ·{" "}
-                  {expansion.leadTimeMonths}-month fit-out lead time
-                </p>
-              </div>
-              {expansion.needed && <RagBadge rag={expansion.rag} />}
-            </div>
-            {!expansion.needed ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                {expansion.headline} {expansion.actualShopsOpen} shops open.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <div
-                  className={
-                    expansion.rag === "red"
-                      ? "rounded-lg border border-rag-red/30 bg-rag-red/10 p-3"
-                      : "rounded-lg border border-rag-amber/30 bg-rag-amber/10 p-3"
-                  }
-                >
-                  <p className="text-sm font-medium text-foreground">
-                    {expansion.headline}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {expansion.actualShopsOpen}/{expansion.plannedShopsByNow}{" "}
-                    shops open vs plan · {expansion.currentChairs} chairs across
-                    the estate
-                  </p>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-border bg-background p-3 text-center">
-                    <p className="text-lg font-semibold text-foreground">
-                      {expansion.nextOpeningTier ?? "—"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {expansion.nextOpeningLocation ?? "Next brand"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-background p-3 text-center">
-                    <p className="text-lg font-semibold text-foreground">
-                      {expansion.nextOpeningMonthLabel}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Opens</p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-background p-3 text-center">
-                    <p className="text-lg font-semibold text-foreground">
-                      {expansion.startByMonthLabel}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {expansion.monthsUntilStart !== null &&
-                      expansion.monthsUntilStart <= 0
-                        ? "Start now"
-                        : "Start by"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
                 <h2 className="text-sm font-semibold text-foreground">
-                  Key Risks &amp; Escalations
+                  Decisions &amp; Interventions Required
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Critical and escalated items requiring attention
+                  Critical &amp; escalated items — what must happen, who owns it,
+                  and by when
                 </p>
               </div>
               <Link
@@ -858,18 +757,43 @@ export function GroupDashboard({
                       <p className="text-sm font-medium text-foreground">
                         {r.title}
                       </p>
-                      {r.escalated && (
+                      {r.overdue ? (
                         <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
                           <AlertTriangle className="h-3 w-3" />
-                          Escalated
+                          {r.daysOverdue}d overdue
                         </span>
+                      ) : (
+                        r.escalated && (
+                          <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                            <AlertTriangle className="h-3 w-3" />
+                            Escalated
+                          </span>
+                        )
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {r.functionArea}
-                      {r.siteName ? ` · ${r.siteName}` : " · Group"} · Owner:{" "}
-                      {r.ownerLabel}
-                    </p>
+                    {r.description && (
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {r.description}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>
+                        {r.functionArea}
+                        {r.siteName ? ` · ${r.siteName}` : " · Group"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <UserRound className="h-3 w-3" />
+                        {r.ownerLabel}
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 ${
+                          r.overdue ? "font-medium text-rag-red" : ""
+                        }`}
+                      >
+                        <CalendarClock className="h-3 w-3" />
+                        {r.dueDate ? fmtDue(r.dueDate) : "No due date"}
+                      </span>
+                    </div>
                   </Link>
                 ))}
               </div>

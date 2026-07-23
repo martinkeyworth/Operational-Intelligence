@@ -528,7 +528,16 @@ export async function getSite(id: number) {
 // Group revenue trend (per week)
 // ---------------------------------------------------------------------------
 
-export type TrendPoint = { week: string; label: string; revenue: number; target: number }
+export type TrendPoint = {
+  week: string
+  label: string
+  revenue: number
+  target: number
+  /** True when this week's Saturday submission deadline has NOT yet passed —
+   *  i.e. it's still being reported. Charts should render it as provisional
+   *  (dotted) rather than a completed data point that appears to collapse. */
+  inProgress: boolean
+}
 
 export async function getGroupTrend(): Promise<TrendPoint[]> {
   // Chair takings per week.
@@ -597,6 +606,7 @@ export async function getGroupTrend(): Promise<TrendPoint[]> {
       label: fmtWeek(wk),
       revenue: Math.round(total),
       target: Math.round(weekTarget),
+      inProgress: !isPastSubmissionDeadline(wk),
     }
   })
 }

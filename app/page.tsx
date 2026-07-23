@@ -12,12 +12,6 @@ import {
   getActions,
   getBusinessScorecard,
 } from "@/lib/data"
-import {
-  getVisionGlidePath,
-  getVisionMonthlyPlan,
-  getExpansionPlan,
-  getPlanProgress,
-} from "@/lib/vision"
 import { getSubmissionStatus } from "@/lib/submissions"
 import { getRecruitmentPlan } from "@/lib/hr"
 
@@ -52,10 +46,6 @@ export default async function Page({
     barbers,
     actions,
     scorecard,
-    vision,
-    monthly,
-    expansion,
-    planProgress,
     submissions,
     recruitment,
   ] = await Promise.all([
@@ -65,10 +55,6 @@ export default async function Page({
     getBarberWeek(week),
     getActions(),
     getBusinessScorecard(week),
-    getVisionGlidePath(),
-    getVisionMonthlyPlan(),
-    getExpansionPlan(),
-    getPlanProgress(),
     getSubmissionStatus(week),
     getRecruitmentPlan(),
   ])
@@ -83,10 +69,6 @@ export default async function Page({
         barbers={barbers}
         actions={actions}
         scorecard={scorecard}
-        vision={vision}
-        monthly={monthly}
-        expansion={expansion}
-        planProgress={planProgress}
         submissions={submissions}
         recruitment={recruitment}
       />
