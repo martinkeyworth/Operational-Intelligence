@@ -8,12 +8,10 @@ import {
   getGroupSummary,
   getSiteWeek,
   getGroupTrend,
-  getBarberWeek,
   getActions,
   getBusinessScorecard,
 } from "@/lib/data"
 import { getSubmissionStatus } from "@/lib/submissions"
-import { getRecruitmentPlan } from "@/lib/hr"
 
 export default async function Page({
   searchParams,
@@ -39,25 +37,15 @@ export default async function Page({
     )
   }
 
-  const [
-    summary,
-    sites,
-    trend,
-    barbers,
-    actions,
-    scorecard,
-    submissions,
-    recruitment,
-  ] = await Promise.all([
-    getGroupSummary(week),
-    getSiteWeek(week),
-    getGroupTrend(),
-    getBarberWeek(week),
-    getActions(),
-    getBusinessScorecard(week),
-    getSubmissionStatus(week),
-    getRecruitmentPlan(),
-  ])
+  const [summary, sites, trend, actions, scorecard, submissions] =
+    await Promise.all([
+      getGroupSummary(week),
+      getSiteWeek(week),
+      getGroupTrend(),
+      getActions(),
+      getBusinessScorecard(week),
+      getSubmissionStatus(week),
+    ])
 
   return (
     <AppShell user={user}>
@@ -66,11 +54,9 @@ export default async function Page({
         weeks={weeks}
         sites={sites}
         trend={trend}
-        barbers={barbers}
         actions={actions}
         scorecard={scorecard}
         submissions={submissions}
-        recruitment={recruitment}
       />
       <div className="px-5 pb-8 md:px-8">
         <RoadmapSummaryCard />

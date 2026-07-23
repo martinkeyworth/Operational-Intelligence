@@ -3,26 +3,22 @@ import { Card } from "@/components/ui/card"
 import { RagBadge, RagDot } from "@/components/rag"
 import { PageHeader, StatCard } from "@/components/ui-bits"
 import { RevenueTrendChart } from "@/components/revenue-trend-chart"
-import { AiCommentary } from "@/components/ai-commentary"
 import { WeekSelector } from "@/components/week-selector"
 import { fmtGBP, fmtWeekLong, ragFromAttainment } from "@/lib/data"
 import type {
   GroupSummary,
   SiteWeekRow,
   TrendPoint,
-  BarberWeekRow,
   ActionRow,
   BusinessScorecard,
 } from "@/lib/data"
 import type { SubmissionSummary } from "@/lib/submissions"
-import type { RecruitmentPlan } from "@/lib/hr"
 import {
   AlertTriangle,
   ArrowRight,
   CalendarClock,
   CheckCircle2,
   Clock,
-  UserPlus,
   UserRound,
 } from "lucide-react"
 
@@ -83,27 +79,21 @@ export function GroupDashboard({
   weeks,
   sites,
   trend,
-  barbers,
   actions,
   scorecard,
   submissions,
-  recruitment,
 }: {
   summary: GroupSummary
   weeks: string[]
   sites: SiteWeekRow[]
   trend: TrendPoint[]
-  barbers: BarberWeekRow[]
   actions: ActionRow[]
   scorecard: BusinessScorecard
   submissions: SubmissionSummary
-  recruitment: RecruitmentPlan
 }) {
   const risks = actions
     .filter((a) => a.status !== "Closed" && (a.rag === "red" || a.escalated))
     .slice(0, 5)
-  const reporting = barbers.filter((b) => b.reported)
-  const leaderboard = reporting.slice(0, 5)
 
   // The overview measures against ONE consistent yardstick: the current
   // operating target (what today's team + chairs should realistically bill —
@@ -114,47 +104,6 @@ export function GroupDashboard({
   const opDelta = summary.weekRevenue - summary.weekTarget
   const wowRag: "green" | "amber" | "red" =
     summary.wowPct >= 0 ? "green" : summary.wowPct <= -15 ? "red" : "amber"
-
-  // Headcount variance: the site manager's stated headcount vs the number of
-  // barbers who actually submitted takings this week. Any discrepancy is a
-  // manager action to chase the missing reporters (or correct the headcount).
-  const headcountVariances = sites
-    .filter((s) => s.siteType !== "training" && s.headcount > 0)
-    .map((s) => ({
-      site: s.name,
-      manager: s.managerName,
-      headcount: s.headcount,
-      reported: s.reportingBarbers,
-      variance: s.headcount - s.reportingBarbers,
-    }))
-    .filter((v) => v.variance !== 0)
-    .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
-
-  // Recruitment trigger: a barber running at >=95% of their weekly yield
-  // target is effectively at capacity. The site manager and HR should be
-  // actioned to recruit before the barber maxes out and growth stalls.
-  const RECRUIT_YIELD_THRESHOLD = 95
-  const managerBySite = new Map(sites.map((s) => [s.name, s.managerName]))
-  const recruitTriggers = barbers
-    .filter((b) => b.reported && b.attainmentPct >= RECRUIT_YIELD_THRESHOLD)
-    .map((b) => ({
-      barber: b.name,
-      site: b.siteName,
-      manager: managerBySite.get(b.siteName) ?? null,
-      yieldPct: Math.round(b.attainmentPct),
-    }))
-    .sort((a, b) => b.yieldPct - a.yieldPct)
-
-  // Role-aware recruitment: the plan staffing model (manager + brand cutting
-  // staff + apprentice per shop, plus academy trainers/assessors) drives the
-  // true recruitment requirement, not just vacant chairs. Full detail lives on
-  // the Workforce Plan page; here we surface the headline gap and worst shops.
-  const recruitGapSites = recruitment.sites
-    .filter((s) => s.totalGap > 0)
-    .sort((a, b) => b.totalGap - a.totalGap)
-  const topRecruitRoles = recruitment.byRole
-    .filter((r) => r.gap > 0)
-    .sort((a, b) => b.gap - a.gap)
 
   return (
     <div>
@@ -336,84 +285,18 @@ export function GroupDashboard({
           </div>
         </Card>
 
-        {/* Trend + RAG distribution / commentary */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="p-5 lg:col-span-2">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-foreground">
-                Group Weekly Takings
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Combined sites, subletting and training income vs target
-              </p>
-            </div>
-            <div className="mb-4 grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border bg-background p-3">
-                <p className="text-[11px] text-muted-foreground">Sites (chairs)</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {fmtGBP(summary.revenue.chairRevenue)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <p className="text-[11px] text-muted-foreground">Subletting</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {fmtGBP(summary.revenue.subletRevenue)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <p className="text-[11px] text-muted-foreground">
-                  Training (£92/learner)
-                </p>
-                <p className="text-sm font-semibold text-foreground">
-                  {fmtGBP(summary.revenue.trainingRevenue)}
-                </p>
-              </div>
-            </div>
-            <RevenueTrendChart data={trend} />
-          </Card>
-
-          <Card className="flex flex-col p-5">
+        {/* Group weekly takings: actual vs target */}
+        <Card className="p-5">
+          <div className="mb-4">
             <h2 className="text-sm font-semibold text-foreground">
-              Site RAG Distribution
+              Group Weekly Takings
             </h2>
-            <p className="text-xs text-muted-foreground">Status roll-up by site</p>
-            <div className="mt-4 flex flex-col gap-3">
-              {(["green", "amber", "red"] as const).map((rag) => {
-                const count = summary.ragCounts[rag]
-                const pct =
-                  summary.siteCount > 0 ? (count / summary.siteCount) * 100 : 0
-                return (
-                  <div key={rag} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2 text-foreground">
-                        <RagDot rag={rag} />
-                        <span>
-                          {rag === "green"
-                            ? "On track"
-                            : rag === "amber"
-                              ? "At risk"
-                              : "Critical"}
-                        </span>
-                      </span>
-                      <span className="text-muted-foreground">
-                        {count} site{count === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full ${barFill(rag)}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="mt-auto pt-5">
-              <AiCommentary summary={summary} sites={sites} barbers={barbers} />
-            </div>
-          </Card>
-        </div>
+            <p className="text-xs text-muted-foreground">
+              Actual takings vs target
+            </p>
+          </div>
+          <RevenueTrendChart data={trend} />
+        </Card>
 
         {/* Site performance */}
         <Card className="p-5">
@@ -452,27 +335,18 @@ export function GroupDashboard({
                         : s.location}
                     </p>
                   </div>
-                  <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     {s.confirmed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-rag-green" />
+                      <>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-rag-green" />
+                        Confirmed
+                      </>
                     ) : (
-                      <Clock className="h-3.5 w-3.5 text-rag-amber" />
+                      <>
+                        <Clock className="h-3.5 w-3.5 text-rag-amber" />
+                        Awaiting
+                      </>
                     )}
-                    <span
-                      className={
-                        s.rag === "green"
-                          ? "flex items-center gap-1 rounded-full bg-rag-green/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-green"
-                          : s.rag === "amber"
-                            ? "flex items-center gap-1 rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber"
-                            : "flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red"
-                      }
-                    >
-                      {s.rag === "green"
-                        ? "On track"
-                        : s.rag === "amber"
-                          ? "At risk"
-                          : "Critical"}
-                    </span>
                   </span>
                 </div>
                 {s.siteType === "training" ? (
@@ -521,226 +395,26 @@ export function GroupDashboard({
           </div>
         </Card>
 
-        {/* Barber leaderboard + Risks */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">
-                  Barber Leaderboard
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Top 5 performers this week, group-wide
-                </p>
-              </div>
-            </div>
-            {leaderboard.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No takings reported for this week yet.
+        {/* Decisions & interventions — linked to the RAID register */}
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Decisions &amp; Interventions Required
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Critical &amp; escalated items — what must happen, who owns it,
+                and by when
               </p>
-            ) : (
-              <div className="flex flex-col divide-y divide-border">
-                {leaderboard.map((b, i) => (
-                  <div
-                    key={b.id}
-                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
-                  >
-                    <span className="w-5 text-center text-xs font-semibold text-muted-foreground">
-                      {i + 1}
-                    </span>
-                    <RagDot rag={b.rag} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {b.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {b.role} · {b.siteName}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-foreground">
-                        {fmtGBP(b.revenue)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {b.attainmentPct.toFixed(0)}% of target
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">
-                  Headcount Variance
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Manager headcount vs barbers who reported · W/E{" "}
-                  {fmtWeekLong(summary.week)}
-                </p>
-              </div>
             </div>
-            {headcountVariances.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                All sites reconciled. Every barber on headcount reported.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {headcountVariances.map((v) => {
-                  const missing = v.variance > 0
-                  return (
-                    <div
-                      key={v.site}
-                      className="rounded-lg border border-border bg-background p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-medium text-foreground">
-                          {v.site}
-                        </p>
-                        <span
-                          className={
-                            missing
-                              ? "flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red"
-                              : "flex shrink-0 items-center gap-1 rounded-full bg-rag-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-amber"
-                          }
-                        >
-                          <AlertTriangle className="h-3 w-3" />
-                          {missing
-                            ? `${v.variance} not reporting`
-                            : `${Math.abs(v.variance)} over headcount`}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Headcount {v.headcount} · Reported {v.reported} · Action:{" "}
-                        {v.manager ?? "Site Manager"}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <UserPlus className="h-4 w-4 text-muted-foreground" />
-                  Recruitment &amp; Capacity
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Role gaps vs the plan model, plus barbers at ≥95% yield
-                </p>
-              </div>
-              <Link
-                href="/reports/workforce"
-                className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                Workforce Plan
-                <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-            {recruitment.totalGap > 0 ? (
-              <Link
-                href="/reports/workforce"
-                className="mb-3 block rounded-lg border border-rag-red/30 bg-rag-red/10 p-3 transition-colors hover:bg-rag-red/15"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">
-                    HR to recruit {recruitment.totalGap} role
-                    {recruitment.totalGap > 1 ? "s" : ""} to meet the plan
-                    staffing model
-                  </p>
-                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
-                    <AlertTriangle className="h-3 w-3" />
-                    HR action
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {topRecruitRoles.map((r) => (
-                    <span
-                      key={r.role}
-                      className="rounded-md border border-rag-red/30 bg-background px-1.5 py-0.5 text-[11px] text-rag-red"
-                    >
-                      {r.role} +{r.gap}
-                    </span>
-                  ))}
-                </div>
-                {recruitGapSites.length > 0 && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {recruitGapSites
-                      .slice(0, 3)
-                      .map((s) => `${s.siteName} (${s.totalGap})`)
-                      .join(" · ")}
-                    {recruitGapSites.length > 3
-                      ? ` +${recruitGapSites.length - 3} more`
-                      : ""}
-                  </p>
-                )}
-              </Link>
-            ) : (
-              <div className="mb-3 rounded-lg border border-rag-green/30 bg-rag-green/10 p-3">
-                <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-rag-green" />
-                  All shops meet the plan staffing model
-                </p>
-              </div>
-            )}
-            {recruitTriggers.length === 0 ? (
-              <p className="py-2 text-center text-xs text-muted-foreground">
-                No barbers at ≥95% yield this week.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {recruitTriggers.map((r) => (
-                  <div
-                    key={`${r.site}-${r.barber}`}
-                    className="rounded-lg border border-border bg-background p-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">
-                        {r.barber}
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · {r.site}
-                        </span>
-                      </p>
-                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-green/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-green">
-                        {r.yieldPct}% yield
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      At capacity · Action: {r.manager ?? "Site Manager"} &amp; HR
-                      to recruit
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">
-                  Decisions &amp; Interventions Required
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Critical &amp; escalated items — what must happen, who owns it,
-                  and by when
-                </p>
-              </div>
-              <Link
-                href="/governance?tab=actions"
-                className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
-                Register
-                <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
+            <Link
+              href="/governance?tab=actions"
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              RAID register
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
             {risks.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 No critical risks. All clear.
@@ -799,7 +473,6 @@ export function GroupDashboard({
               </div>
             )}
           </Card>
-        </div>
       </div>
     </div>
   )
