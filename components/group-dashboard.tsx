@@ -112,12 +112,6 @@ export function GroupDashboard({
         title="Operational Intelligence & Governance"
         subtitle="Weekly group performance, RAG status and key risks across all LTZ sites. Saturday-to-Saturday reporting with worst-status roll-up at every level."
       >
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            Business RAG · {scorecard.overallPct}%
-          </span>
-          <RagBadge rag={scorecard.overallRag} className="px-3 py-1 text-sm" />
-        </div>
         <Link href="/reports/submissions" aria-label="View weekly submissions">
           <RagBadge
             rag={
