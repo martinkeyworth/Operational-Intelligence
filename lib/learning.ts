@@ -1,5 +1,6 @@
 import "server-only"
 import { db } from "@/lib/db"
+import { resolveAccountabilityMiss } from "@/lib/accountability"
 import {
   barbers,
   sites,
@@ -510,6 +511,10 @@ export async function completeOneToOne(
       },
     })
     .where(eq(oneToOnes.id, oneToOneId))
+
+  // If this 1-2-1 had been logged as an overdue accountability miss, mark it
+  // resolved now that it's complete (so a late completion clears the flag).
+  await resolveAccountabilityMiss({ kind: "1-2-1", ref: `1-2-1:${oneToOneId}` })
 
   const pbcId = await upsertPbcRating({
     barberId: row.barberId,

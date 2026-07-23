@@ -4,7 +4,6 @@ import { useState, useTransition, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Card } from "@/components/ui/card"
-import { RagSelect } from "@/components/rag-select"
 import {
   Table,
   TableBody,
@@ -22,7 +21,7 @@ import {
 } from "@/components/ui/select"
 import { setActionStatus, assignActionOwner, setActionRisk, setActionDueDate, editActionDetails } from "@/app/actions/governance"
 import type { ActionRow, AssignableOwner } from "@/lib/data"
-import { AlertTriangle, Flag, Clock } from "lucide-react"
+import { Flag, Clock } from "lucide-react"
 import { EditActionDialog } from "@/components/edit-action-dialog"
 
 const STATUSES = ["Open", "In Progress", "Blocked", "Closed"]
@@ -262,7 +261,6 @@ export function ActionsTable({
               <TableHead>Risk</TableHead>
               <TableHead>Priority</TableHead>
               <TableHead>Due</TableHead>
-              <TableHead>RAG</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="sr-only">Edit</TableHead>
             </TableRow>
@@ -280,40 +278,28 @@ export function ActionsTable({
                 )}
               >
                 <TableCell>
-                  <div className="flex items-start gap-2">
-                    {a.escalated && a.status !== "Closed" && (
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rag-red" />
+                  <div>
+                    <EditActionDialog
+                      action={a}
+                      owners={owners}
+                      trigger={
+                        <button
+                          type="button"
+                          className="text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                        />
+                      }
+                    />
+                    {a.description && (
+                      <p className="text-xs text-muted-foreground">
+                        {a.description}
+                      </p>
                     )}
-                    <div>
-                      <EditActionDialog
-                        action={a}
-                        owners={owners}
-                        trigger={
-                          <button
-                            type="button"
-                            className="text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-                          />
-                        }
-                      />
-                      {a.description && (
-                        <p className="text-xs text-muted-foreground">
-                          {a.description}
-                        </p>
-                      )}
-                      {a.overdue && (
-                        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
-                          <Clock className="h-3 w-3" />
-                          {a.daysOverdue} day{a.daysOverdue === 1 ? "" : "s"} overdue
-                        </span>
-                      )}
-                      {a.escalated && a.status !== "Closed" && (
-                        <span className="mt-1 ml-1 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
-                          <AlertTriangle className="h-3 w-3" />
-                          {a.autoEscalated ? "Auto-escalated" : "Escalated"}
-                          {a.escalationReason ? `: ${a.escalationReason}` : ""}
-                        </span>
-                      )}
-                    </div>
+                    {a.overdue && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
+                        <Clock className="h-3 w-3" />
+                        {a.daysOverdue} day{a.daysOverdue === 1 ? "" : "s"} overdue
+                      </span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
@@ -339,9 +325,6 @@ export function ActionsTable({
                   <DueDateInput id={a.id} dueDate={a.dueDate} overdue={a.overdue} />
                 </TableCell>
                 <TableCell>
-                  <RagSelect id={a.id} rag={a.rag} overridden={a.ragOverridden} />
-                </TableCell>
-                <TableCell>
                   <StatusSelect id={a.id} status={a.status} />
                 </TableCell>
                 <TableCell>
@@ -353,7 +336,7 @@ export function ActionsTable({
             {actions.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={9}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   No actions on the register.

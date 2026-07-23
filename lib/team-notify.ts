@@ -4,8 +4,9 @@ import { buildIcs } from "@/lib/ics"
 import { resolvedFrom } from "@/lib/email"
 import { db } from "@/lib/db"
 import { barbers, oneToOnes, user as userTable, threeSixtyCycles, threeSixtyNominees } from "@/lib/db/schema"
-import { and, desc, eq, isNull, isNotNull, lt, or } from "drizzle-orm"
+import { and, desc, eq, isNull, isNotNull } from "drizzle-orm"
 import { PBC_BANDS, formatPeriod } from "@/lib/learning-types"
+import { logAccountabilityMiss } from "@/lib/accountability"
 
 const APP_NAME = "Less Than Zero"
 
@@ -277,15 +278,14 @@ export async function sendThreeSixtyNominationNudge(args: {
 }
 
 /**
- * Chase 360 reviewers who haven't responded on Open cycles. Re-nudges DAILY:
- * reminds any invited-but-not-responded nominee whose last reminder was never
- * sent OR was more than ~20h ago (the chase cron runs daily at 06:00; the 20h
- * window absorbs cron timing drift so each reviewer gets at most one nudge per
- * day until they respond or the cycle closes). Because the 360 gates the 1-2-1,
- * keeping responses flowing keeps reviews on schedule.
+ * Chase 360 reviewers who haven't responded on Open cycles. Sends a SINGLE
+ * reminder per nominee (only those never reminded — `reminded_at IS NULL`) then
+ * stops. We deliberately do NOT re-nag: a reviewer who ignores the one nudge is
+ * left alone, and the nominee's own non-response is logged against the barber's
+ * accountability record at cycle close (feeding the PBC) instead of a daily
+ * chase. This reverts the earlier aggressive daily re-chase.
  */
 export async function remindPendingReviewers(): Promise<number> {
-  const staleBefore = new Date(Date.now() - 20 * 60 * 60 * 1000) // ~20h ago
   const rows = await db
     .select({
       nomineeId: threeSixtyNominees.id,
@@ -303,10 +303,7 @@ export async function remindPendingReviewers(): Promise<number> {
         eq(threeSixtyCycles.status, "Open"),
         isNull(threeSixtyNominees.respondedAt),
         isNotNull(threeSixtyNominees.invitedAt),
-        or(
-          isNull(threeSixtyNominees.remindedAt),
-          lt(threeSixtyNominees.remindedAt, staleBefore),
-        ),
+        isNull(threeSixtyNominees.remindedAt),
       ),
     )
 
@@ -618,6 +615,15 @@ export async function escalateOverdueOneToOnes(now = new Date()): Promise<number
     try {
       await sendOneToOneOverdue({ barberId: o.barberId, period: o.period ?? "", dueOn: o.dueOn })
       await db.update(oneToOnes).set({ overdueEscalatedAt: new Date() }).where(eq(oneToOnes.id, o.id))
+      // Log the miss once, for the PBC. This is the single overdue escalation
+      // (guarded by overdueEscalatedAt) — no repeated nagging beyond this.
+      await logAccountabilityMiss({
+        kind: "1-2-1",
+        ref: `1-2-1:${o.id}`,
+        barberId: o.barberId,
+        period: o.period ?? null,
+        detail: `Monthly 1-2-1${o.dueOn ? ` (due ${o.dueOn})` : ""} went overdue after its reminder.`,
+      })
       escalated++
     } catch (e) {
       console.log("[v0] escalateOverdueOneToOnes failed for", o.id, (e as Error).message)

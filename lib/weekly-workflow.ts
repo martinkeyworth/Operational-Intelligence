@@ -1484,8 +1484,11 @@ export async function dryRunRaidAiAnalysis() {
 //        final AI wrap-around → consolidated board report to all @company.
 // ---------------------------------------------------------------------------
 
-const CADENCE_CHASE_INTERVAL_MS = 30 * 60 * 1000 // re-chase every 30 min
-const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // escalate to owners after 1h
+// Single-reminder policy: each stage sends ONE request, then never re-nags. A
+// single owner escalation fires once after this delay purely as a safety net
+// if the stage is still stuck; the state-machine gates (collection → COO → CEO
+// → board report) still hold the report until each stage is satisfied.
+const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // one owner escalation after 1h
 
 type CadencePhase = {
   requestedAt?: string
@@ -1505,9 +1508,10 @@ async function saveCadenceState(weekEnding: string, state: CadenceState) {
     .where(eq(weeklyReports.weekEnding, weekEnding))
 }
 
-// Run one chase cycle for a phase: the first tick fires the request; subsequent
-// ticks re-chase every 30 min; escalate to owners once after 1h. Mutates
-// `phase` in place and returns what it did this tick.
+// Run one chase cycle for a phase: the first tick fires the request ONCE; there
+// is no repeated re-chase (single-reminder policy). A single owner escalation
+// fires once after 1h if the stage is still stuck. Mutates `phase` in place and
+// returns what it did this tick.
 async function runChasePhase(
   phase: CadencePhase,
   now: Date,
@@ -1522,12 +1526,7 @@ async function runChasePhase(
     return ["requested"]
   }
   const did: string[] = []
-  const lastChase = Date.parse(phase.lastChaseAt ?? phase.requestedAt)
-  if (t - lastChase >= CADENCE_CHASE_INTERVAL_MS) {
-    await sendFn()
-    phase.lastChaseAt = now.toISOString()
-    did.push("chased")
-  }
+  // No repeated re-chase — we deliberately do not re-nag the responsible person.
   if (
     !phase.escalatedAt &&
     t - Date.parse(phase.requestedAt) >= CADENCE_ESCALATE_AFTER_MS

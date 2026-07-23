@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/schema"
 import { and, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
+import { setBarberNoShowsPaid } from "@/lib/daily-takings"
 import {
   requireDashboard,
   requireDataEntry,
@@ -509,6 +510,20 @@ export async function confirmSiteWeek(formData: FormData) {
       discrepancyState = null
     }
   }
+  // Manager's paid/not-paid call on each barber's unconfirmed no-shows for the
+  // week: { [barberId]: "paid" | "not_paid" }.
+  let noShowDecisions: Record<string, "paid" | "not_paid"> = {}
+  const rawNoShow = formData.get("noShowDecisions")
+  if (rawNoShow && String(rawNoShow).trim()) {
+    try {
+      noShowDecisions = JSON.parse(String(rawNoShow)) as Record<
+        string,
+        "paid" | "not_paid"
+      >
+    } catch {
+      noShowDecisions = {}
+    }
+  }
   if (!siteId || !weekEnding) throw new Error("Missing site or week")
 
   const existing = await db
@@ -555,6 +570,20 @@ export async function confirmSiteWeek(formData: FormData) {
   if (headcountConfirmed !== null) siteUpdate.headcount = headcountConfirmed
   if (Object.keys(siteUpdate).length > 0) {
     await db.update(sites).set(siteUpdate).where(eq(sites.id, siteId))
+  }
+
+  // Apply the manager's paid/not-paid call on each barber's no-shows for the
+  // week. Paid → the no-show fees become card revenue with normal split/RTB;
+  // not-paid → they stay logged at £0. Done BEFORE the capacity/RTB sync so the
+  // weekly rollup reflects any newly-confirmed revenue.
+  for (const [barberIdStr, decision] of Object.entries(noShowDecisions)) {
+    const barberId = Number(barberIdStr)
+    if (!Number.isFinite(barberId)) continue
+    await setBarberNoShowsPaid({
+      barberId,
+      weekEnding,
+      paid: decision === "paid",
+    })
   }
 
   // On weekly confirmation, sync the capacity (chair utilisation) and

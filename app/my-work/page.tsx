@@ -21,7 +21,11 @@ export default async function MyWorkPage() {
 
   return (
     <AppShell user={user}>
-      <MyWorkView userName={user.name} work={work} />
+      <MyWorkView
+        userName={user.name}
+        work={work}
+        showFullView={user.canViewDashboard}
+      />
     </AppShell>
   )
 }

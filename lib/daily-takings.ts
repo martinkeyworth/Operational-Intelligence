@@ -11,11 +11,15 @@ import { weekEndingFor, weekDates } from "@/lib/format"
 import { computeRtb } from "@/lib/rtb"
 
 export type TakingsMethod = "cash" | "card"
+export type TakingsKind = "cut" | "no_show" | "tip"
 
 export type TakingsLine = {
   id: number
   amount: number
   method: TakingsMethod
+  kind: TakingsKind
+  /** No-shows only: null = awaiting sign-off, true = paid, false = not paid. */
+  noShowPaid: boolean | null
   createdAt: string
 }
 
@@ -32,6 +36,8 @@ export type DailyRow = {
   date: string
   cash: number
   card: number
+  tips: number
+  unconfirmedNoShows: number
 }
 
 /**
@@ -44,12 +50,16 @@ export async function recordDailyTakings(args: {
   date: string
   cash: number
   card: number
+  tips?: number
+  unconfirmedNoShows?: number
   enteredByUserId?: string | null
   source?: string
 }) {
   const { barberId, siteId, date } = args
   const cash = Math.max(0, Number(args.cash) || 0)
   const card = Math.max(0, Number(args.card) || 0)
+  const tips = Math.max(0, Number(args.tips) || 0)
+  const unconfirmedNoShows = Math.max(0, Number(args.unconfirmedNoShows) || 0)
 
   await db
     .insert(dailyTakings)
@@ -59,6 +69,8 @@ export async function recordDailyTakings(args: {
       date,
       cash: String(cash),
       card: String(card),
+      tips: String(tips),
+      unconfirmedNoShows: String(unconfirmedNoShows),
       source: args.source ?? "entry-app",
       enteredByUserId: args.enteredByUserId ?? null,
     })
@@ -67,6 +79,8 @@ export async function recordDailyTakings(args: {
       set: {
         cash: String(cash),
         card: String(card),
+        tips: String(tips),
+        unconfirmedNoShows: String(unconfirmedNoShows),
         siteId,
         enteredByUserId: args.enteredByUserId ?? null,
         source: args.source ?? "entry-app",
@@ -76,7 +90,7 @@ export async function recordDailyTakings(args: {
 
   const weekEnding = weekEndingFor(date)
   const rollup = await recomputeWeeklyRollup(barberId, weekEnding)
-  return { date, cash, card, weekEnding, rollup }
+  return { date, cash, card, tips, unconfirmedNoShows, weekEnding, rollup }
 }
 
 /**
@@ -99,8 +113,15 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
       ),
     )
 
+  // Revenue = confirmed cash + card only (the RTB engine never sees tips or
+  // unconfirmed no-shows).
   const cash = rows.reduce((s, r) => s + Number(r.cash), 0)
   const card = rows.reduce((s, r) => s + Number(r.card), 0)
+  const tips = rows.reduce((s, r) => s + Number(r.tips ?? 0), 0)
+  const unconfirmedNoShows = rows.reduce(
+    (s, r) => s + Number(r.unconfirmedNoShows ?? 0),
+    0,
+  )
   const total = cash + card
 
   const rtb = computeRtb({
@@ -119,6 +140,8 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
       total: String(total),
       cash: String(cash),
       card: String(card),
+      tips: String(tips),
+      unconfirmedNoShows: String(unconfirmedNoShows),
       cashRent: String(rtb.cashRent),
       cardRent: String(rtb.cardRent),
       manager: barber.name,
@@ -130,12 +153,14 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
         total: String(total),
         cash: String(cash),
         card: String(card),
+        tips: String(tips),
+        unconfirmedNoShows: String(unconfirmedNoShows),
         cashRent: String(rtb.cashRent),
         cardRent: String(rtb.cardRent),
       },
     })
 
-  return { cash, card, total, ...rtb, days: rows.length }
+  return { cash, card, tips, unconfirmedNoShows, total, ...rtb, days: rows.length }
 }
 
 /** A barber's daily rows for a given week (Sun→Sat), for the entry app + review. */
@@ -158,6 +183,8 @@ export async function getBarberDailyWeek(
     date: String(r.date),
     cash: Number(r.cash),
     card: Number(r.card),
+    tips: Number(r.tips ?? 0),
+    unconfirmedNoShows: Number(r.unconfirmedNoShows ?? 0),
   }))
 }
 
@@ -165,6 +192,10 @@ export type WeekTakings = {
   cash: number
   card: number
   total: number
+  /** Tips this week (100% barber, not part of revenue/split/RTB). */
+  tips: number
+  /** No-shows logged but not yet confirmed paid (not revenue). */
+  unconfirmedNoShows: number
   /** Number of days with entries (0 when figures came from the weekly total). */
   daysEntered: number
   /** Where the figures came from — per-cut daily rows or the weekly entry. */
@@ -187,13 +218,19 @@ export async function getBarberWeekTakings(
   const days = await getBarberDailyWeek(barberId, weekEnding)
   const dailyCash = days.reduce((s, d) => s + d.cash, 0)
   const dailyCard = days.reduce((s, d) => s + d.card, 0)
-  const daysEntered = days.filter((d) => d.cash > 0 || d.card > 0).length
+  const dailyTips = days.reduce((s, d) => s + d.tips, 0)
+  const dailyNoShows = days.reduce((s, d) => s + d.unconfirmedNoShows, 0)
+  const daysEntered = days.filter(
+    (d) => d.cash > 0 || d.card > 0 || d.tips > 0 || d.unconfirmedNoShows > 0,
+  ).length
 
-  if (dailyCash + dailyCard > 0) {
+  if (dailyCash + dailyCard + dailyTips + dailyNoShows > 0) {
     return {
       cash: dailyCash,
       card: dailyCard,
       total: dailyCash + dailyCard,
+      tips: dailyTips,
+      unconfirmedNoShows: dailyNoShows,
       daysEntered,
       source: "daily",
     }
@@ -205,6 +242,8 @@ export async function getBarberWeekTakings(
       total: weeklyTakings.total,
       cash: weeklyTakings.cash,
       card: weeklyTakings.card,
+      tips: weeklyTakings.tips,
+      unconfirmedNoShows: weeklyTakings.unconfirmedNoShows,
     })
     .from(weeklyTakings)
     .where(
@@ -218,21 +257,33 @@ export async function getBarberWeekTakings(
     const total = Number(wk.total)
     let cash = Number(wk.cash)
     let card = Number(wk.card)
+    const tips = Number(wk.tips ?? 0)
+    const unconfirmedNoShows = Number(wk.unconfirmedNoShows ?? 0)
     // Older/weekly-only rows may store just the total with no split — treat the
     // whole amount as cash so RTB + flags still compute sensibly.
     if (cash + card === 0 && total > 0) cash = total
-    if (total > 0 || cash + card > 0) {
+    if (total > 0 || cash + card > 0 || tips > 0 || unconfirmedNoShows > 0) {
       return {
         cash,
         card,
         total: total > 0 ? total : cash + card,
+        tips,
+        unconfirmedNoShows,
         daysEntered: 0,
         source: "weekly",
       }
     }
   }
 
-  return { cash: 0, card: 0, total: 0, daysEntered: 0, source: "none" }
+  return {
+    cash: 0,
+    card: 0,
+    total: 0,
+    tips: 0,
+    unconfirmedNoShows: 0,
+    daysEntered: 0,
+    source: "none",
+  }
 }
 
 export type DailyBusinessTotal = {
@@ -294,12 +345,20 @@ export async function getBarberLinesForDate(
     id: r.id,
     amount: Number(r.amount),
     method: r.method === "card" ? "card" : "cash",
+    kind: (r.kind === "no_show" || r.kind === "tip" ? r.kind : "cut") as TakingsKind,
+    noShowPaid: r.noShowPaid ?? null,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
   }))
 }
 
-/** Re-sum a barber's line entries for a date (by method) into daily_takings,
- *  which recomputes the weekly rollup + RTB. */
+/**
+ * Re-sum a barber's line entries for a date into daily_takings, which
+ * recomputes the weekly rollup + RTB. Lines are bucketed by kind:
+ *  - cut            -> cash/card revenue (by method)
+ *  - no_show + paid -> card/cash revenue (auto-charged; counts as normal takings)
+ *  - no_show (else) -> unconfirmed no-shows (logged only, NOT revenue)
+ *  - tip            -> tips (100% barber, no split/RTB)
+ */
 export async function recomputeDailyFromLines(
   barberId: number,
   siteId: number,
@@ -307,7 +366,12 @@ export async function recomputeDailyFromLines(
   enteredByUserId?: string | null,
 ) {
   const rows = await db
-    .select({ amount: takingsLineEntries.amount, method: takingsLineEntries.method })
+    .select({
+      amount: takingsLineEntries.amount,
+      method: takingsLineEntries.method,
+      kind: takingsLineEntries.kind,
+      noShowPaid: takingsLineEntries.noShowPaid,
+    })
     .from(takingsLineEntries)
     .where(
       and(
@@ -315,12 +379,29 @@ export async function recomputeDailyFromLines(
         eq(takingsLineEntries.date, date),
       ),
     )
-  const cash = rows
-    .filter((r) => r.method !== "card")
-    .reduce((s, r) => s + Number(r.amount), 0)
-  const card = rows
-    .filter((r) => r.method === "card")
-    .reduce((s, r) => s + Number(r.amount), 0)
+
+  let cash = 0
+  let card = 0
+  let tips = 0
+  let unconfirmedNoShows = 0
+  for (const r of rows) {
+    const amount = Number(r.amount)
+    if (r.kind === "tip") {
+      tips += amount
+    } else if (r.kind === "no_show") {
+      if (r.noShowPaid === true) {
+        // Confirmed paid — auto-charge defaults to card.
+        if (r.method === "cash") cash += amount
+        else card += amount
+      } else {
+        unconfirmedNoShows += amount
+      }
+    } else {
+      // Normal cut.
+      if (r.method === "card") card += amount
+      else cash += amount
+    }
+  }
 
   return recordDailyTakings({
     barberId,
@@ -328,32 +409,91 @@ export async function recomputeDailyFromLines(
     date,
     cash,
     card,
+    tips,
+    unconfirmedNoShows,
     enteredByUserId: enteredByUserId ?? null,
     source: "line-entries",
   })
 }
 
-/** Add one cut and refresh the day + week rollup. */
+/**
+ * Add one line (cut, no-show or tip) and refresh the day + week rollup.
+ * No-shows default to CARD (auto-charge) and start unconfirmed (noShowPaid
+ * null) until the manager decides at weekly sign-off. Tips carry no method.
+ */
 export async function addTakingsLineEntry(args: {
   barberId: number
   siteId: number
   date: string
   amount: number
-  method: TakingsMethod
+  method?: TakingsMethod
+  kind?: TakingsKind
   enteredByUserId?: string | null
 }) {
   const amount = Math.max(0, Number(args.amount) || 0)
   if (amount <= 0) return null
+  const kind: TakingsKind =
+    args.kind === "no_show" || args.kind === "tip" ? args.kind : "cut"
+  // No-shows are auto-charged to card by default; cuts use the chosen method;
+  // tips are barber cash-in-hand (method is irrelevant but stored as cash).
+  const method: TakingsMethod =
+    kind === "no_show" ? (args.method === "cash" ? "cash" : "card") : args.method === "card" ? "card" : "cash"
   await db.insert(takingsLineEntries).values({
     barberId: args.barberId,
     siteId: args.siteId,
     date: args.date,
     amount: String(amount),
-    method: args.method === "card" ? "card" : "cash",
+    method,
+    kind,
+    noShowPaid: null,
     enteredByUserId: args.enteredByUserId ?? null,
   })
   await recomputeDailyFromLines(args.barberId, args.siteId, args.date, args.enteredByUserId)
   return { ok: true }
+}
+
+/**
+ * Manager's weekly sign-off decision on a barber's no-shows: mark ALL of that
+ * barber's no-show lines for the week paid (→ card revenue + normal split) or
+ * not paid (→ £0). Recomputes each affected day so the weekly rollup + RTB
+ * reflect the decision. Returns the number of no-show lines updated.
+ */
+export async function setBarberNoShowsPaid(args: {
+  barberId: number
+  weekEnding: string
+  paid: boolean
+}): Promise<number> {
+  const dates = weekDates(args.weekEnding)
+  const rows = await db
+    .select({ id: takingsLineEntries.id, date: takingsLineEntries.date, siteId: takingsLineEntries.siteId })
+    .from(takingsLineEntries)
+    .where(
+      and(
+        eq(takingsLineEntries.barberId, args.barberId),
+        eq(takingsLineEntries.kind, "no_show"),
+        gte(takingsLineEntries.date, dates[0]),
+        lte(takingsLineEntries.date, dates[6]),
+      ),
+    )
+  if (rows.length === 0) return 0
+  await db
+    .update(takingsLineEntries)
+    .set({ noShowPaid: args.paid })
+    .where(
+      and(
+        eq(takingsLineEntries.barberId, args.barberId),
+        eq(takingsLineEntries.kind, "no_show"),
+        gte(takingsLineEntries.date, dates[0]),
+        lte(takingsLineEntries.date, dates[6]),
+      ),
+    )
+  // Recompute each distinct affected day.
+  const days = Array.from(new Set(rows.map((r) => String(r.date))))
+  const siteId = rows[0].siteId
+  for (const d of days) {
+    await recomputeDailyFromLines(args.barberId, siteId, d)
+  }
+  return rows.length
 }
 
 /** Delete one of a barber's cuts (only their own) and refresh the rollup. */

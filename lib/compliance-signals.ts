@@ -10,6 +10,7 @@ import {
 import { and, eq, gte, inArray } from "drizzle-orm"
 import { computeAutoRag } from "@/lib/data"
 import { fmtWeek, isPastSubmissionDeadline } from "@/lib/format"
+import { getAccountabilityMisses } from "@/lib/accountability"
 
 // How far back the compliance signals look. The monthly 1-2-1 cadence means a
 // quarter of history gives useful context without drowning the review.
@@ -25,6 +26,8 @@ export type ComplianceSummary = {
   redRaid: number
   staleRaid: number
   overdueTasks: number
+  /** Accountability items missed after their single reminder (unresolved). */
+  accountabilityMisses: number
   /** True when nothing of concern was found. */
   clean: boolean
 }
@@ -88,6 +91,7 @@ export async function getComplianceSignals(
       redRaid: 0,
       staleRaid: 0,
       overdueTasks: 0,
+      accountabilityMisses: 0,
       clean: true,
       raidAttributable: false,
       aiText: "(no operational record found)",
@@ -184,6 +188,14 @@ export async function getComplianceSignals(
     }
   }
 
+  // --- 5. Missed accountability items (single-reminder-then-log) ----------
+  // Overdue 1-2-1s etc. that were reminded once and still not done. Only count
+  // those still unresolved (a late completion clears them).
+  const misses = await getAccountabilityMisses(barberId, cutoff)
+  const openMisses = misses.filter((m) => !m.resolvedAt)
+  const accountabilityMisses = openMisses.length
+  const missExamples = openMisses.slice(0, 3).map((m) => m.detail || m.kind)
+
   // --- Build human flags + AI evidence block ------------------------------
   const flags: string[] = []
   const aiLines: string[] = []
@@ -230,9 +242,18 @@ export async function getComplianceSignals(
     )
   }
 
+  if (accountabilityMisses > 0) {
+    flags.push(
+      `${accountabilityMisses} accountability item${accountabilityMisses === 1 ? "" : "s"} missed after a reminder${missExamples.length ? `: ${missExamples.join("; ")}` : ""}`,
+    )
+    aiLines.push(
+      `${accountabilityMisses} personal accountability item(s) (e.g. 1-2-1s) were reminded ONCE and still not completed by the deadline${missExamples.length ? `: ${missExamples.join("; ")}` : ""} — a pattern of not acting on the single reminder.`,
+    )
+  }
+
   const clean = flags.length === 0
   const aiText = clean
-    ? "No operational-compliance concerns in the last 12 weeks: weekly confirmations done on time, no excess or stale red RAID, no overdue required tasks."
+    ? "No operational-compliance concerns in the last 12 weeks: weekly confirmations done on time, no excess or stale red RAID, no overdue required tasks, and no missed accountability items."
     : `Operational-compliance signals from the app over the last 12 weeks (system-recorded facts, not opinion):\n- ${aiLines.join("\n- ")}`
 
   return {
@@ -242,6 +263,7 @@ export async function getComplianceSignals(
     redRaid,
     staleRaid,
     overdueTasks,
+    accountabilityMisses,
     clean,
     raidAttributable,
     aiText,

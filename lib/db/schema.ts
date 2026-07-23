@@ -155,6 +155,13 @@ export const weeklyTakings = pgTable(
     card: numeric("card").notNull().default("0"),
     cashRent: numeric("cash_rent").notNull().default("0"),
     cardRent: numeric("card_rent").notNull().default("0"),
+    // Tips: 100% the barber's, NO split/RTB taken. Rolled into the barber's
+    // weekly take-home total only, never into revenue or rent.
+    tips: numeric("tips").notNull().default("0"),
+    // No-shows logged this week but NOT yet confirmed paid by the manager at
+    // sign-off. Tracked for visibility; excluded from revenue/split/RTB until
+    // confirmed paid (then they move into card).
+    unconfirmedNoShows: numeric("unconfirmed_no_shows").notNull().default("0"),
     manager: text("manager").notNull().default(""),
     transferCompleted: boolean("transfer_completed").notNull().default(true),
     comments: text("comments"),
@@ -178,6 +185,11 @@ export const dailyTakings = pgTable(
     date: date("date").notNull(),
     cash: numeric("cash").notNull().default("0"),
     card: numeric("card").notNull().default("0"),
+    // Tips (100% barber, no split/RTB) + no-shows logged but not yet confirmed
+    // paid. Both derived from the day's line entries; kept out of cash/card so
+    // the RTB engine only ever sees confirmed revenue.
+    tips: numeric("tips").notNull().default("0"),
+    unconfirmedNoShows: numeric("unconfirmed_no_shows").notNull().default("0"),
     // Where the row came from (entry app, manual admin, import, ...).
     source: text("source").notNull().default("entry-app"),
     // The authenticated user who entered it (the barber, via the entry app).
@@ -200,6 +212,12 @@ export const takingsLineEntries = pgTable("takings_line_entries", {
   date: date("date").notNull(),
   amount: numeric("amount").notNull().default("0"),
   method: text("method").notNull().default("cash"), // 'cash' | 'card'
+  // What this line represents: a normal paid cut, a no-show fee, or a tip.
+  kind: text("kind").notNull().default("cut"), // 'cut' | 'no_show' | 'tip'
+  // For no-shows only: null = awaiting the manager's weekly sign-off decision;
+  // true = confirmed paid (auto-charged) → becomes card revenue + normal split;
+  // false = not paid → stays £0, no split, no RTB.
+  noShowPaid: boolean("no_show_paid"),
   enteredByUserId: text("entered_by_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
@@ -607,6 +625,24 @@ export const threeSixtyResponses = pgTable("three_sixty_responses", {
   strengths: text("strengths"),
   improvements: text("improvements"),
   submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+})
+
+// Durable log of missed accountability items. We send a SINGLE reminder for
+// things like an overdue 1-2-1 (no repeated nagging); if the deadline passes
+// unresolved we record the miss here so it survives even after the underlying
+// record changes, and feed the count into the PBC compliance signals. Unique on
+// (kind, ref, user, barber) so logging the same miss twice is a no-op.
+export const accountabilityEvents = pgTable("accountability_events", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id"),
+  barberId: integer("barber_id"),
+  kind: text("kind").notNull(), // '1-2-1' | '360-nomination' | 'action' | ...
+  ref: text("ref").notNull(), // stable identifier of the thing that was missed
+  period: text("period"),
+  detail: text("detail"),
+  remindedAt: timestamp("reminded_at").notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
 // --- Strategic roadmap -----------------------------------------------------

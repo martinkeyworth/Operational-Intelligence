@@ -1,10 +1,8 @@
 import Link from "next/link"
 import {
-  AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
   Clock,
-  Flame,
   PartyPopper,
   ClipboardEdit,
   UserX,
@@ -16,21 +14,28 @@ import type { MyWork, MyWorkItem, MyWorkReason } from "@/lib/my-work"
 
 const REASON_STYLES: Record<
   MyWorkReason,
-  { label: string; className: string; Icon: typeof Flame }
+  { label: string; className: string; Icon: typeof Clock }
 > = {
   Overdue: {
     label: "Overdue",
     className: "bg-rag-red/15 text-rag-red",
     Icon: Clock,
   },
-  Escalated: {
-    label: "Escalated",
-    className: "bg-rag-red/15 text-rag-red",
-    Icon: Flame,
+  "Due soon": {
+    label: "Due soon",
+    className: "bg-rag-amber/15 text-rag-amber",
+    Icon: Clock,
   },
-  Red: { label: "Red", className: "bg-rag-red/15 text-rag-red", Icon: AlertTriangle },
-  Amber: { label: "Amber", className: "bg-rag-amber/15 text-rag-amber", Icon: AlertTriangle },
-  Unassigned: { label: "Unassigned", className: "bg-muted text-muted-foreground", Icon: UserX },
+  "Needs an owner": {
+    label: "Needs an owner",
+    className: "bg-muted text-muted-foreground",
+    Icon: UserX,
+  },
+  Open: {
+    label: "To do",
+    className: "bg-muted text-muted-foreground",
+    Icon: ClipboardEdit,
+  },
 }
 
 function ReasonChip({ reason }: { reason: MyWorkReason }) {
@@ -48,19 +53,12 @@ function ReasonChip({ reason }: { reason: MyWorkReason }) {
   )
 }
 
-const ragBar: Record<string, string> = {
-  red: "bg-rag-red",
-  amber: "bg-rag-amber",
-  green: "bg-rag-green",
-}
-
 function WorkRow({ item }: { item: MyWorkItem }) {
   return (
     <Link
       href={`/governance?tab=actions&focus=${item.id}`}
       className="group flex items-stretch gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-accent/40 min-h-11"
     >
-      <span className={cn("w-1 shrink-0 rounded-full", ragBar[item.rag] ?? "bg-muted")} aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-medium text-foreground text-pretty">{item.title}</p>
@@ -120,9 +118,11 @@ function Section({
 export function MyWorkView({
   userName,
   work,
+  showFullView = false,
 }: {
   userName: string
   work: MyWork
+  showFullView?: boolean
 }) {
   const firstName = userName.split(" ")[0]
 
@@ -136,9 +136,9 @@ export function MyWorkView({
           Congratulations, {firstName} — nothing needs your attention right now.
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground text-pretty">
-          You&apos;re all caught up. No overdue, escalated, or at-risk items are assigned to
-          you, and your weekly inputs are in. New items will appear here the moment they need
-          you.
+          You&apos;re all caught up. Nothing is assigned to you that&apos;s still
+          open, and your weekly inputs are in. New items will appear here the
+          moment they need you.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Link
@@ -160,25 +160,36 @@ export function MyWorkView({
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-4 md:p-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold text-foreground">
-          What needs your attention, {firstName}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {work.totalCount} {work.totalCount === 1 ? "item" : "items"} to review
-          {work.weekLabel ? ` · week ending ${work.weekLabel}` : ""}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold text-foreground">
+            Your work, {firstName}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {work.totalCount} {work.totalCount === 1 ? "item" : "items"} to do
+            {work.weekLabel ? ` · week ending ${work.weekLabel}` : ""}
+          </p>
+        </div>
+        {showFullView && (
+          <Link
+            href="/"
+            className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Full leadership view
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        )}
       </header>
 
       <Section
         title="Assigned to you"
-        hint="Your open items needing action"
+        hint="Everything you own that's still open"
         items={work.assigned}
       />
 
       <Section
         title="In your areas"
-        hint="Unassigned or escalated"
+        hint="Not yet assigned to anyone"
         items={work.watch}
       />
 

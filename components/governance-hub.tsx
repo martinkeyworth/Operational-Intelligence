@@ -1,7 +1,8 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { ListChecks, Gavel, Activity as ActivityIcon, CalendarClock, Network } from "lucide-react"
+import { ListChecks, Gavel, Activity as ActivityIcon, CalendarClock, Network, Layers } from "lucide-react"
+import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ActionsRegister } from "@/components/actions-register"
 import { DecisionRegister } from "@/components/decision-register"
@@ -16,8 +17,15 @@ import type {
   SiteOption,
 } from "@/lib/registers-types"
 
+// Lead with the two things leaders act on every week; everything else is
+// reference material tucked behind "Advanced" so the surface isn't overwhelming.
 const TABS = [
   { value: "actions", label: "Actions & Risks", icon: ListChecks },
+  { value: "advanced", label: "Advanced", icon: Layers },
+] as const
+
+// Sub-sections inside Advanced (the old peer tabs).
+const ADVANCED = [
   { value: "decisions", label: "Decisions", icon: Gavel },
   { value: "activity", label: "Activity", icon: ActivityIcon },
   { value: "roles", label: "Roles", icon: Network },
@@ -50,12 +58,18 @@ export function GovernanceHub({
   const router = useRouter()
   const searchParams = useSearchParams()
   const tab = searchParams.get("tab") ?? "actions"
-  const value = TABS.some((t) => t.value === tab) ? tab : "actions"
+  // Deep links to an old peer tab (decisions/activity/roles/cadence) resolve to
+  // the Advanced section, opened on that sub-section.
+  const isAdvancedSub = ADVANCED.some((t) => t.value === tab)
+  const value = tab === "actions" ? "actions" : isAdvancedSub || tab === "advanced" ? "advanced" : "actions"
+  const [advancedSub, setAdvancedSub] = useState<string>(
+    isAdvancedSub ? tab : "decisions",
+  )
   const focusId = Number(searchParams.get("focus")) || null
 
   function onValueChange(next: string) {
     const params = new URLSearchParams(searchParams.toString())
-    params.set("tab", next)
+    params.set("tab", next === "advanced" ? advancedSub : next)
     router.replace(`/governance?${params.toString()}`, { scroll: false })
   }
 
@@ -85,20 +99,47 @@ export function GovernanceHub({
         />
       </TabsContent>
 
-      <TabsContent value="decisions" className="pt-2">
-        <DecisionRegister decisions={decisions} sites={sites} />
-      </TabsContent>
+      <TabsContent value="advanced" className="pt-2">
+        <p className="mb-3 text-xs text-muted-foreground">
+          Reference material — decisions log, activity, roles and the review
+          cadence. You don&apos;t need these day to day.
+        </p>
+        <Tabs
+          value={advancedSub}
+          onValueChange={(next) => {
+            setAdvancedSub(next)
+            const params = new URLSearchParams(searchParams.toString())
+            params.set("tab", next)
+            router.replace(`/governance?${params.toString()}`, { scroll: false })
+          }}
+        >
+          <div className="overflow-x-auto">
+            <TabsList className="h-9">
+              {ADVANCED.map((t) => {
+                const Icon = t.icon
+                return (
+                  <TabsTrigger key={t.value} value={t.value} className="gap-1.5 px-3">
+                    <Icon className="h-4 w-4" />
+                    {t.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </div>
 
-      <TabsContent value="activity" className="pt-2">
-        <ActivityTracker summary={activity} sites={sites} />
-      </TabsContent>
-
-      <TabsContent value="roles" className="pt-2">
-        <RolesResponsibilities roles={getRoles()} />
-      </TabsContent>
-
-      <TabsContent value="cadence" className="pt-2">
-        <CadencePanel cadence={cadence} />
+          <TabsContent value="decisions" className="pt-2">
+            <DecisionRegister decisions={decisions} sites={sites} />
+          </TabsContent>
+          <TabsContent value="activity" className="pt-2">
+            <ActivityTracker summary={activity} sites={sites} />
+          </TabsContent>
+          <TabsContent value="roles" className="pt-2">
+            <RolesResponsibilities roles={getRoles()} />
+          </TabsContent>
+          <TabsContent value="cadence" className="pt-2">
+            <CadencePanel cadence={cadence} />
+          </TabsContent>
+        </Tabs>
       </TabsContent>
     </Tabs>
   )

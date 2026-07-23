@@ -24,6 +24,8 @@ export type BarberRtbReview = {
   cardCap: number
   days: number
   flags: Discrepancy[]
+  /** No-shows logged this week that are still awaiting a paid/not-paid call. */
+  unconfirmedNoShows: number
 }
 
 export type SiteConfirmReview = {
@@ -73,6 +75,7 @@ export async function getSiteConfirmReview(
       cardCap: rtb.cardCap,
       days: wk.daysEntered,
       flags,
+      unconfirmedNoShows: wk.unconfirmedNoShows,
     })
   }
 

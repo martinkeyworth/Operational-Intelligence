@@ -65,6 +65,21 @@ export function ConfirmSiteDialog({
     () => (review?.savedDecisions ?? {}) as DiscrepancyState,
   )
 
+  // Manager's paid/not-paid call on each barber's unconfirmed no-shows.
+  // { [barberId]: "paid" | "not_paid" }. Must be decided before confirming.
+  const [noShowDecisions, setNoShowDecisions] = useState<
+    Record<number, "paid" | "not_paid">
+  >({})
+
+  const noShowBarbers = useMemo(
+    () => review?.barbers.filter((b) => b.unconfirmedNoShows > 0) ?? [],
+    [review],
+  )
+  const allNoShowsDecided = useMemo(
+    () => noShowBarbers.every((b) => noShowDecisions[b.barberId]),
+    [noShowBarbers, noShowDecisions],
+  )
+
   const totalFlags = useMemo(
     () => review?.barbers.reduce((s, b) => s + b.flags.length, 0) ?? 0,
     [review],
@@ -76,7 +91,8 @@ export function ConfirmSiteDialog({
       0,
     )
   }, [review, decisions])
-  const allResolved = totalFlags === 0 || decidedFlags === totalFlags
+  const flagsResolved = totalFlags === 0 || decidedFlags === totalFlags
+  const allResolved = flagsResolved && allNoShowsDecided
 
   // Flat list of every flag across all barbers, so they can be grouped together
   // at the top and resolved in one place — otherwise flags are scattered through
@@ -146,6 +162,11 @@ export function ConfirmSiteDialog({
             name="discrepancyState"
             value={JSON.stringify(decisions)}
           />
+          <input
+            type="hidden"
+            name="noShowDecisions"
+            value={JSON.stringify(noShowDecisions)}
+          />
           <DialogHeader>
             <DialogTitle>Confirm week &amp; takings</DialogTitle>
             <DialogDescription>
@@ -212,6 +233,76 @@ export function ConfirmSiteDialog({
                         onClick={() => setDecision(f.barberId, f.kind, "refused")}
                       >
                         Refuse
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {noShowBarbers.length > 0 && (
+            <div className="grid gap-2 border-b py-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">No-shows — payment taken?</h4>
+                <span
+                  className={`text-xs font-medium ${
+                    allNoShowsDecided ? "text-rag-green" : "text-rag-amber"
+                  }`}
+                >
+                  {noShowBarbers.filter((b) => noShowDecisions[b.barberId]).length}/
+                  {noShowBarbers.length} decided
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Mark &quot;Paid&quot; only if the no-show fee was actually taken —
+                it then counts as card revenue with the normal split. &quot;Not
+                paid&quot; logs it for the record but adds nothing.
+              </p>
+              {noShowBarbers.map((b) => {
+                const decided = noShowDecisions[b.barberId]
+                return (
+                  <div
+                    key={`ns-${b.barberId}`}
+                    className={`rounded border p-2 ${
+                      decided
+                        ? "border-rag-green/40 bg-rag-green/10"
+                        : "border-rag-amber/40 bg-rag-amber/10"
+                    }`}
+                  >
+                    <div className="text-xs">
+                      <span className="font-medium">{b.name}</span> —{" "}
+                      {fmtGBP(b.unconfirmedNoShows)} in no-shows
+                    </div>
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={decided === "paid" ? "default" : "outline"}
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() =>
+                          setNoShowDecisions((prev) => ({
+                            ...prev,
+                            [b.barberId]: "paid",
+                          }))
+                        }
+                      >
+                        Paid
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={
+                          decided === "not_paid" ? "destructive" : "outline"
+                        }
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() =>
+                          setNoShowDecisions((prev) => ({
+                            ...prev,
+                            [b.barberId]: "not_paid",
+                          }))
+                        }
+                      >
+                        Not paid
                       </Button>
                     </div>
                   </div>
@@ -354,11 +445,13 @@ export function ConfirmSiteDialog({
             <Button type="submit" disabled={pending || !allResolved}>
               {pending
                 ? "Saving…"
-                : !allResolved
+                : !flagsResolved
                   ? `Resolve ${totalFlags - decidedFlags} more flag${
                       totalFlags - decidedFlags === 1 ? "" : "s"
                     } to confirm`
-                  : "Confirm week"}
+                  : !allNoShowsDecided
+                    ? "Decide no-show payments to confirm"
+                    : "Confirm week"}
             </Button>
           </DialogFooter>
         </form>

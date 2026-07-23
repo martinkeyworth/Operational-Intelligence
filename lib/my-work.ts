@@ -20,7 +20,9 @@ import type { AccessUser } from "@/lib/access-types"
 // If all of the above is empty, the user is genuinely clear — and we say so.
 // ---------------------------------------------------------------------------
 
-export type MyWorkReason = "Overdue" | "Escalated" | "Red" | "Amber" | "Unassigned"
+// Plain, human reasons a leader can actually interpret — no RAG/escalation
+// jargon. "Open" is the default for anything simply still to do.
+export type MyWorkReason = "Overdue" | "Due soon" | "Needs an owner" | "Open"
 
 export type MyWorkItem = {
   id: number
@@ -103,42 +105,44 @@ export async function getMyWork(user: AccessUser): Promise<MyWork> {
 
   const seen = new Set<number>()
 
+  // Days until an item's due date (negative = overdue). Null when no due date.
+  const daysUntilDue = (dueDate: string | null): number | null => {
+    if (!dueDate) return null
+    const due = new Date(dueDate + "T00:00:00")
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    return Math.round((due.getTime() - now.getTime()) / 86_400_000)
+  }
+
+  // The single plain reason for an item, based purely on its due date.
+  const reasonFor = (a: ActionRow): MyWorkReason => {
+    if (a.overdue) return "Overdue"
+    const d = daysUntilDue(a.dueDate)
+    if (d !== null && d <= 7) return "Due soon"
+    return "Open"
+  }
+
   // ---- 1. Assigned to me -------------------------------------------------
+  // Everything open that I own — a genuine personal checklist, not just the
+  // red/amber ones. Ordered so overdue/soon float to the top.
   const assigned: MyWorkItem[] = []
   for (const a of open) {
     if (a.ownerUserId !== user.id) continue
-    const reasons: MyWorkReason[] = []
-    if (a.overdue) reasons.push("Overdue")
-    if (a.escalated) reasons.push("Escalated")
-    if (a.rag === "red") reasons.push("Red")
-    else if (a.rag === "amber") reasons.push("Amber")
-    if (reasons.length === 0) continue
-    assigned.push(toItem(a, reasons))
+    assigned.push(toItem(a, [reasonFor(a)]))
     seen.add(a.id)
   }
 
-  // ---- 2. Watch list (unassigned in my areas + owner escalations) --------
+  // ---- 2. In my areas (needs an owner) -----------------------------------
+  // Unassigned open items in the areas I lead, so nothing slips — surfaced as a
+  // plain "needs an owner" list rather than red/escalation flags.
   const watch: MyWorkItem[] = []
   for (const a of open) {
     if (seen.has(a.id)) continue
+    if (a.ownerUserId) continue
     const areaKey = canonicalAreaKey(a.functionArea)
-    const reasons: MyWorkReason[] = []
-
-    // Owners: every escalated item across the business.
-    if (user.isOwner && a.escalated) reasons.push("Escalated")
-
-    // Area leads / owners: unassigned red or overdue items in their areas.
     const inMyArea = user.isOwner || (isAreaLead && myAreas.includes(areaKey))
-    const unassigned = !a.ownerUserId
-    if (inMyArea && unassigned) {
-      if (a.overdue) reasons.push("Overdue")
-      if (a.rag === "red") reasons.push("Red")
-      if (reasons.includes("Red") || reasons.includes("Overdue"))
-        reasons.push("Unassigned")
-    }
-
-    if (reasons.length === 0) continue
-    watch.push(toItem(a, Array.from(new Set(reasons))))
+    if (!inMyArea) continue
+    watch.push(toItem(a, ["Needs an owner"]))
     seen.add(a.id)
   }
 
@@ -170,7 +174,7 @@ export async function getMyWork(user: AccessUser): Promise<MyWork> {
     }
   }
 
-  const rank: Record<string, number> = { Overdue: 0, Escalated: 1, Red: 2, Amber: 3, Unassigned: 4 }
+  const rank: Record<string, number> = { Overdue: 0, "Due soon": 1, "Needs an owner": 2, Open: 3 }
   const sortItems = (a: MyWorkItem, b: MyWorkItem) =>
     (rank[a.reasons[0]] ?? 9) - (rank[b.reasons[0]] ?? 9) ||
     b.daysOverdue - a.daysOverdue

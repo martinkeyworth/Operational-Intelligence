@@ -55,7 +55,11 @@ export default async function TodayPage() {
         lines={data.todayLines}
         todayCash={data.todayCash}
         todayCard={data.todayCard}
+        todayTips={data.todayTips}
+        todayNoShows={data.todayNoShows}
         weekTotal={data.weekTotal}
+        weekTips={data.weekTips}
+        weekNoShows={data.weekNoShows}
       />
 
       <section className="flex flex-col gap-3">

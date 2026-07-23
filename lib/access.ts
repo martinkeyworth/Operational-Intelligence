@@ -182,8 +182,13 @@ export function defaultLandingFor(user: AccessUser): string {
   if (onlyHr) return "/functions/HR"
   if (onlySocial) return "/functions/Marketing"
 
-  // Executives with a broad remit land on the group-wide overview.
-  return "/"
+  // Owners (Martin / Cosmin) keep the full group-wide overview as home.
+  if (user.isOwner) return "/"
+
+  // Every other dashboard leader lands on their focused "My Work" board — only
+  // what they own and can action — instead of the heavy group overview that was
+  // overwhelming them. The full dashboard stays one tap away in the nav.
+  return "/my-work"
 }
 
 /** Only company-domain dashboard users may administer people/capabilities. */

@@ -38,11 +38,16 @@ export type TodayData = {
   weekEnding: string
   todayCash: number
   todayCard: number
+  todayTips: number
+  todayNoShows: number
   todayLines: TakingsLine[]
   enteredToday: boolean
   weekCash: number
   weekCard: number
   weekTotal: number
+  weekTips: number
+  weekNoShows: number
+  /** Barber's take-home guide: revenue split + 100% of tips. */
   items: TodayItem[]
   outstandingCount: number
 }
@@ -60,16 +65,27 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
   const days = await getBarberDailyWeek(barber.id, weekEnding)
   const todayLines = await getBarberLinesForDate(barber.id, date)
 
-  const todayCash = todayLines
+  // Revenue = cut lines only (by method). Tips + no-shows are tracked apart:
+  // no-shows are unconfirmed until weekly sign-off, tips never split.
+  const cuts = todayLines.filter((l) => l.kind === "cut")
+  const todayCash = cuts
     .filter((l) => l.method === "cash")
     .reduce((s, l) => s + l.amount, 0)
-  const todayCard = todayLines
+  const todayCard = cuts
     .filter((l) => l.method === "card")
+    .reduce((s, l) => s + l.amount, 0)
+  const todayTips = todayLines
+    .filter((l) => l.kind === "tip")
+    .reduce((s, l) => s + l.amount, 0)
+  const todayNoShows = todayLines
+    .filter((l) => l.kind === "no_show")
     .reduce((s, l) => s + l.amount, 0)
   const enteredToday = todayLines.length > 0
 
   const weekCash = days.reduce((s, d) => s + d.cash, 0)
   const weekCard = days.reduce((s, d) => s + d.card, 0)
+  const weekTips = days.reduce((s, d) => s + d.tips, 0)
+  const weekNoShows = days.reduce((s, d) => s + d.unconfirmedNoShows, 0)
 
   const items: TodayItem[] = []
 
@@ -79,14 +95,14 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
       ? {
           kind: "takings-today",
           label: "Today's takings",
-          detail: `${todayLines.length} cut${todayLines.length === 1 ? "" : "s"} logged today. Add more above as you go.`,
+          detail: `${todayLines.length} entr${todayLines.length === 1 ? "y" : "ies"} logged today. Add cuts, no-shows and tips above as you go.`,
           rag: "green",
           href: "#today-input",
         }
       : {
           kind: "takings-today",
           label: "Log today's takings",
-          detail: "Add each cut above as it's paid.",
+          detail: "Add each cut, no-show and tip above as it happens.",
           rag: "amber",
           href: "#today-input",
         },
@@ -207,11 +223,15 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
     weekEnding,
     todayCash,
     todayCard,
+    todayTips,
+    todayNoShows,
     todayLines,
     enteredToday,
     weekCash,
     weekCard,
     weekTotal: weekCash + weekCard,
+    weekTips,
+    weekNoShows,
     items,
     outstandingCount,
   }
