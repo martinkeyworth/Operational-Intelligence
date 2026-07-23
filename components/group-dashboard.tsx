@@ -13,21 +13,7 @@ import type {
   BusinessScorecard,
 } from "@/lib/data"
 import type { SubmissionSummary } from "@/lib/submissions"
-import {
-  AlertTriangle,
-  ArrowRight,
-  CalendarClock,
-  CheckCircle2,
-  Clock,
-  UserRound,
-} from "lucide-react"
-
-/** Short due-date label, e.g. "31 Jul". */
-function fmtDue(iso: string) {
-  const d = new Date(iso + "T00:00:00")
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-}
+import { ArrowRight, CheckCircle2, Clock } from "lucide-react"
 
 function barFill(rag: "green" | "amber" | "red") {
   return rag === "green"
@@ -414,54 +400,17 @@ export function GroupDashboard({
                 No critical risks. All clear.
               </p>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {risks.map((r) => (
                   <Link
                     key={r.id}
                     href={`/governance?tab=actions&focus=${r.id}`}
-                    className="block rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/50"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/50"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">
-                        {r.title}
-                      </p>
-                      {r.overdue ? (
-                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
-                          <AlertTriangle className="h-3 w-3" />
-                          {r.daysOverdue}d overdue
-                        </span>
-                      ) : (
-                        r.escalated && (
-                          <span className="flex shrink-0 items-center gap-1 rounded-full bg-rag-red/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rag-red">
-                            <AlertTriangle className="h-3 w-3" />
-                            Escalated
-                          </span>
-                        )
-                      )}
-                    </div>
-                    {r.description && (
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                        {r.description}
-                      </p>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                      <span>
-                        {r.functionArea}
-                        {r.siteName ? ` · ${r.siteName}` : " · Group"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <UserRound className="h-3 w-3" />
-                        {r.ownerLabel}
-                      </span>
-                      <span
-                        className={`flex items-center gap-1 ${
-                          r.overdue ? "font-medium text-rag-red" : ""
-                        }`}
-                      >
-                        <CalendarClock className="h-3 w-3" />
-                        {r.dueDate ? fmtDue(r.dueDate) : "No due date"}
-                      </span>
-                    </div>
+                    <p className="text-sm font-medium text-foreground">
+                      {r.title}
+                    </p>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </Link>
                 ))}
               </div>
