@@ -3,6 +3,7 @@ import { ensureBarberForUser } from "@/lib/team"
 import {
   getBarberDailyWeek,
   getBarberLinesForDate,
+  isSiteWeekConfirmed,
   type TakingsLine,
 } from "@/lib/daily-takings"
 import { getCurrentOneToOne, getPlanForBarber } from "@/lib/learning"
@@ -11,6 +12,19 @@ import { getCycleForPeriod, getCycleProgress } from "@/lib/three-sixty"
 import { currentPeriod } from "@/lib/learning-types"
 import { weekEndingFor, weekDates, todayIso } from "@/lib/format"
 import type { AccessUser } from "@/lib/access-types"
+
+/** One selectable day in the current week (from week start up to today). */
+export type TodayWeekDay = {
+  date: string
+  /** Short weekday label, e.g. "Mon". */
+  weekday: string
+  /** Day of month, e.g. "21". */
+  dayNum: string
+  isToday: boolean
+  isSelected: boolean
+  /** Whether the barber has any lines logged on this day. */
+  hasEntries: boolean
+}
 
 // ---------------------------------------------------------------------------
 // The "Today" screen: what a barber sees on login if they pick Daily input.
@@ -34,14 +48,21 @@ export type TodayData = {
   barberId: number
   barberName: string
   siteId: number
-  date: string
+  /** Today's date (UK). */
+  today: string
+  /** The day currently being viewed/edited (defaults to today). */
+  selectedDate: string
   weekEnding: string
-  todayCash: number
-  todayCard: number
-  todayTips: number
-  todayNoShows: number
-  todayLines: TakingsLine[]
-  enteredToday: boolean
+  /** True once the manager has signed off this week — takings are then locked. */
+  weekConfirmed: boolean
+  /** The current week's days, up to today, for the day picker. */
+  weekDays: TodayWeekDay[]
+  /** Lines logged on the selected day. */
+  dayLines: TakingsLine[]
+  dayCash: number
+  dayCard: number
+  dayTips: number
+  dayNoShows: number
   weekCash: number
   weekCard: number
   weekTotal: number
@@ -52,32 +73,68 @@ export type TodayData = {
   outstandingCount: number
 }
 
-/** Assemble the Today screen for the signed-in user (barber-centric). */
-export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
+/** Assemble the Today screen for the signed-in user (barber-centric).
+ *  `selectedDateArg` (optional) lets the barber view/edit an earlier day of the
+ *  current week; it is clamped to a valid current-week day no later than today. */
+export async function getTodayForBarber(
+  user: AccessUser,
+  selectedDateArg?: string,
+): Promise<TodayData> {
   const barber = await ensureBarberForUser({
     id: user.id,
     name: user.name,
     email: user.email,
   })
 
-  const date = todayIso()
-  const weekEnding = weekEndingFor(date)
+  const today = todayIso()
+  const weekEnding = weekEndingFor(today)
+  const allWeekDates = weekDates(weekEnding) // Sun→Sat
+  // Only days up to today are selectable (no future days).
+  const selectableDates = allWeekDates.filter((d) => d <= today)
+
+  // Clamp the requested day to a valid current-week day, else default to today.
+  const selectedDate =
+    selectedDateArg && selectableDates.includes(selectedDateArg)
+      ? selectedDateArg
+      : today
+
   const days = await getBarberDailyWeek(barber.id, weekEnding)
-  const todayLines = await getBarberLinesForDate(barber.id, date)
+  const dayLines = await getBarberLinesForDate(barber.id, selectedDate)
+  const todayLines =
+    selectedDate === today
+      ? dayLines
+      : await getBarberLinesForDate(barber.id, today)
+  const weekConfirmed = await isSiteWeekConfirmed(barber.siteId, weekEnding)
+
+  // Which days already have entries (for the picker dots).
+  const daysWithEntries = new Set(
+    days.filter((d) => d.cash > 0 || d.card > 0 || d.tips > 0 || d.unconfirmedNoShows > 0).map((d) => d.date),
+  )
+  const weekDayItems: TodayWeekDay[] = selectableDates.map((d) => {
+    const dt = new Date(d + "T00:00:00")
+    return {
+      date: d,
+      weekday: dt.toLocaleDateString("en-GB", { weekday: "short" }),
+      dayNum: dt.toLocaleDateString("en-GB", { day: "numeric" }),
+      isToday: d === today,
+      isSelected: d === selectedDate,
+      hasEntries: daysWithEntries.has(d),
+    }
+  })
 
   // Revenue = cut lines only (by method). Tips + no-shows are tracked apart:
   // no-shows are unconfirmed until weekly sign-off, tips never split.
-  const cuts = todayLines.filter((l) => l.kind === "cut")
-  const todayCash = cuts
+  const cuts = dayLines.filter((l) => l.kind === "cut")
+  const dayCash = cuts
     .filter((l) => l.method === "cash")
     .reduce((s, l) => s + l.amount, 0)
-  const todayCard = cuts
+  const dayCard = cuts
     .filter((l) => l.method === "card")
     .reduce((s, l) => s + l.amount, 0)
-  const todayTips = todayLines
+  const dayTips = dayLines
     .filter((l) => l.kind === "tip")
     .reduce((s, l) => s + l.amount, 0)
-  const todayNoShows = todayLines
+  const dayNoShows = dayLines
     .filter((l) => l.kind === "no_show")
     .reduce((s, l) => s + l.amount, 0)
   const enteredToday = todayLines.length > 0
@@ -120,7 +177,7 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
     })
   } else if (oneToOne.status !== "Completed") {
     const overdue =
-      oneToOne.dueOn != null && String(oneToOne.dueOn) < date
+      oneToOne.dueOn != null && String(oneToOne.dueOn) < today
     // Barber's own prep still to do?
     const prepDone = oneToOne.selfPrep != null
     items.push({
@@ -142,7 +199,7 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
     const cycle = await getCycleForPeriod(barber.id, currentPeriod())
     if (cycle && cycle.status === "Open") {
       const { nominated } = await getCycleProgress(cycle.id)
-      const overdue = cycle.dueOn != null && String(cycle.dueOn) < date
+      const overdue = cycle.dueOn != null && String(cycle.dueOn) < today
       if (nominated === 0) {
         items.push({
           kind: "three-sixty",
@@ -219,14 +276,16 @@ export async function getTodayForBarber(user: AccessUser): Promise<TodayData> {
     barberId: barber.id,
     barberName: barber.name,
     siteId: barber.siteId,
-    date,
+    today,
+    selectedDate,
     weekEnding,
-    todayCash,
-    todayCard,
-    todayTips,
-    todayNoShows,
-    todayLines,
-    enteredToday,
+    weekConfirmed,
+    weekDays: weekDayItems,
+    dayLines,
+    dayCash,
+    dayCard,
+    dayTips,
+    dayNoShows,
     weekCash,
     weekCard,
     weekTotal: weekCash + weekCard,

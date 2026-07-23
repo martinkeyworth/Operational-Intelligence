@@ -5,6 +5,7 @@ import {
   weeklyTakings,
   barbers,
   takingsLineEntries,
+  siteConfirmations,
 } from "@/lib/db/schema"
 import { and, eq, gte, lte, sql, desc } from "drizzle-orm"
 import { weekEndingFor, weekDates } from "@/lib/format"
@@ -325,6 +326,27 @@ export async function getDailyBusinessTotals(
 // method) into the daily_takings row via recordDailyTakings, which recomputes
 // the weekly rollup + RTB. So line entries are the capture layer; the daily +
 // weekly + RTB chain below is unchanged.
+
+/**
+ * Has the manager confirmed (signed off) this site's week? Once true, that
+ * week's takings lock — barbers can no longer add or edit cuts for any day in
+ * the week. Returns false when no confirmation row exists yet.
+ */
+export async function isSiteWeekConfirmed(
+  siteId: number,
+  weekEnding: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ confirmed: siteConfirmations.confirmed })
+    .from(siteConfirmations)
+    .where(
+      and(
+        eq(siteConfirmations.siteId, siteId),
+        eq(siteConfirmations.weekEnding, weekEnding),
+      ),
+    )
+  return row?.confirmed === true
+}
 
 /** All of a barber's line entries for one date, newest first. */
 export async function getBarberLinesForDate(

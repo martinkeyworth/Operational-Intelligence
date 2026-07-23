@@ -17,9 +17,14 @@ const ragDot: Record<string, string> = {
   green: "bg-rag-green",
 }
 
-export default async function TodayPage() {
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>
+}) {
   const user = await requireUser()
-  const data = await getTodayForBarber(user)
+  const { day } = await searchParams
+  const data = await getTodayForBarber(user, day)
 
   const firstName = data.barberName.trim().split(/\s+/)[0] || "there"
   const outstanding = data.items.filter((i) => i.rag !== "green")
@@ -51,12 +56,16 @@ export default async function TodayPage() {
       </header>
 
       <TodayInputCard
-        dateLabel={fmtDate(data.date)}
-        lines={data.todayLines}
-        todayCash={data.todayCash}
-        todayCard={data.todayCard}
-        todayTips={data.todayTips}
-        todayNoShows={data.todayNoShows}
+        selectedDate={data.selectedDate}
+        today={data.today}
+        dateLabel={fmtDate(data.selectedDate)}
+        weekDays={data.weekDays}
+        weekConfirmed={data.weekConfirmed}
+        lines={data.dayLines}
+        dayCash={data.dayCash}
+        dayCard={data.dayCard}
+        dayTips={data.dayTips}
+        dayNoShows={data.dayNoShows}
         weekTotal={data.weekTotal}
         weekTips={data.weekTips}
         weekNoShows={data.weekNoShows}
