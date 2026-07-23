@@ -243,7 +243,7 @@ export function TodayInputCard({
           </p>
         )}
 
-        {/* Totals */}
+        {/* Today so far */}
         <div className="flex flex-col gap-1.5 rounded-lg bg-muted px-4 py-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Cash / Card today</span>
@@ -251,38 +251,41 @@ export function TodayInputCard({
               {fmtGBP(todayCash)} / {fmtGBP(todayCard)}
             </span>
           </div>
-          {todayTips > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Tips today (100% yours)</span>
-              <span className="font-medium">{fmtGBP(todayTips)}</span>
-            </div>
-          )}
-          {todayNoShows > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                No-shows today (awaiting sign-off)
-              </span>
-              <span className="font-medium">{fmtGBP(todayNoShows)}</span>
-            </div>
-          )}
-          <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
-            <span className="text-muted-foreground">Revenue this week</span>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Tips today (100% yours)</span>
+            <span className="font-medium">{fmtGBP(todayTips)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              No-shows today (awaiting sign-off)
+            </span>
+            <span className="font-medium">{fmtGBP(todayNoShows)}</span>
+          </div>
+        </div>
+
+        {/* This week — running totals so the barber always knows what's theirs */}
+        <div className="flex flex-col gap-1.5 rounded-lg border border-border px-4 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            This week so far
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Revenue (split with the business)</span>
             <span className="font-semibold">{fmtGBP(weekTotal)}</span>
           </div>
-          {weekTips > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Tips this week</span>
-              <span className="font-medium">{fmtGBP(weekTips)}</span>
-            </div>
-          )}
-          {weekNoShows > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                Unconfirmed no-shows this week
-              </span>
-              <span className="font-medium">{fmtGBP(weekNoShows)}</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Tips — 100% yours</span>
+            <span className="font-semibold text-rag-green">{fmtGBP(weekTips)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              No-shows (awaiting sign-off)
+            </span>
+            <span className="font-medium">{fmtGBP(weekNoShows)}</span>
+          </div>
+          <p className="mt-1 border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
+            You keep 100% of your tips on top of your share of revenue. No-shows
+            only count once your manager confirms payment at weekly sign-off.
+          </p>
         </div>
       </div>
     </Card>
