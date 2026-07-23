@@ -269,10 +269,10 @@ export function GroupDashboard({
         <Card className="p-5">
           <div className="mb-4">
             <h2 className="text-sm font-semibold text-foreground">
-              Group Weekly Takings
+              Group Revenue Tracker
             </h2>
             <p className="text-xs text-muted-foreground">
-              Actual takings vs target
+              Actual revenue vs target
             </p>
           </div>
           <RevenueTrendChart data={trend} />
