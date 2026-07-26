@@ -129,7 +129,11 @@ export async function sendLeaveNotification(args: {
   noticeDays?: number
   /** True when notice is under one month. Holiday only. */
   isException?: boolean
-}): Promise<void> {
+  /** Set when a holiday request was auto-declined for exceeding the site's
+   *  concurrent time-off cap; carries the reason to show leadership. */
+  autoDeclined?: boolean
+  autoDeclineReason?: string | null
+  }): Promise<void> {
   // --- Sickness: unchanged informational note to leadership ----------------
   if (args.kind === "sickness") {
     const subject = `Sickness logged: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
@@ -152,6 +156,31 @@ export async function sendLeaveNotification(args: {
   // --- Holiday: route the approval to the barber's manager -----------------
   const people = await resolveOneToOnePeople(args.barberId)
   const managerEmail = people?.managerEmail ?? null
+
+  // Auto-declined for over-capacity: no approval needed, just an FYI to the
+  // manager + leadership (they can still override in the Team Area).
+  if (args.autoDeclined) {
+    const subject = `Holiday auto-declined: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
+    const html = wrap(
+      subject,
+      `<p style="font-size:14px;line-height:1.6">
+         <strong>${args.barberName}</strong> requested holiday, but it was automatically declined.</p>
+       <ul style="font-size:14px;line-height:1.7">
+         <li>Dates: ${args.start} → ${args.end}</li>
+         <li>Days: ${args.days}</li>
+         ${args.reason ? `<li>Note: ${args.reason}</li>` : ""}
+         ${args.autoDeclineReason ? `<li>Reason: ${args.autoDeclineReason}</li>` : ""}
+       </ul>
+       <p style="font-size:14px;line-height:1.6">No action needed — the request was declined because the site was already at its holiday capacity for those dates. You can still override this in the Team Area if you want to allow it.</p>
+       <p>${emailButton(`/approvals`, "Open Team Area")}</p>`,
+    )
+    await sendDeduped([
+      { emails: [managerEmail], subject, html, kind: "team-holiday" },
+      { emails: leadershipRecipients(), subject, html, kind: "team-holiday" },
+    ])
+    return
+  }
+
   const exception = Boolean(args.isException)
   const subject = exception
     ? `Holiday request — SHORT NOTICE: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`

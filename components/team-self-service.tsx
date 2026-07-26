@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RagDot } from "@/components/rag"
-import { CalendarDays, Plane, Thermometer, Users, CheckCircle2 } from "lucide-react"
+import { CalendarDays, Plane, Thermometer, Users, CheckCircle2, XCircle } from "lucide-react"
 import { requestHoliday, logSickness, submitThreeSixtyNominees } from "@/app/team/actions"
 import type { SelfView } from "@/lib/team"
 
@@ -40,6 +40,7 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
+  const [declined, setDeclined] = useState<string | null>(null)
 
   return (
     <Card className="p-5">
@@ -67,8 +68,13 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
         <form
           action={(fd) =>
             start(async () => {
+              setDone(false)
+              setDeclined(null)
               const res = await requestHoliday(fd)
-              if (res?.ok) {
+              if (res?.autoDeclined) {
+                setDeclined(res.error ?? "That request was automatically declined.")
+                setOpen(false)
+              } else if (res?.ok) {
                 setDone(true)
                 setOpen(false)
               }
@@ -101,6 +107,12 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
         <p className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600">
           <CheckCircle2 className="h-3.5 w-3.5" /> Request sent to leadership
         </p>
+      )}
+      {declined && (
+        <div className="mt-3 flex items-start gap-1.5 rounded-md border border-rag-red/30 bg-rag-red/10 p-2.5 text-xs text-rag-red">
+          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{declined}</span>
+        </div>
       )}
     </Card>
   )

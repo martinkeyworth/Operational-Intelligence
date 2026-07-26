@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { RagDot } from "@/components/rag"
+import { XCircle } from "lucide-react"
 import { BarberRtbChart } from "@/components/barber-rtb-chart"
 import {
   linkBarberUser,
@@ -55,11 +56,21 @@ export function TeamMemberManager({
   const router = useRouter()
   const [pending, start] = useTransition()
   const [cycleMsg, setCycleMsg] = useState<string | null>(null)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
   const openCycle = self.openCycle
   const run = (fn: () => Promise<unknown>) => start(async () => {
     await fn()
     router.refresh()
   })
+  // Approvals can be blocked by the site's concurrent time-off cap; capture the
+  // reason so the manager sees why an approve didn't go through.
+  const decideAndReport = (fd: FormData) =>
+    start(async () => {
+      setLeaveError(null)
+      const res = (await decideLeave(fd)) as { ok: boolean; error?: string }
+      if (res && res.ok === false && res.error) setLeaveError(res.error)
+      router.refresh()
+    })
 
   const pendingLeave = detail.recentLeave.filter(
     (l) => l.kind === "holiday" && l.status === "Pending",
@@ -199,6 +210,18 @@ export function TeamMemberManager({
       {pendingLeave.length > 0 && (
         <Card className="space-y-3 p-5">
           <h3 className="text-sm font-semibold text-foreground">Holiday requests to review</h3>
+          <p className="text-xs text-muted-foreground">
+            Limit: {self.holiday.siteHolidayCap === 1
+              ? "1 person off at a time at this shop"
+              : `${self.holiday.siteHolidayCap} people off at a time at this shop`}
+            . Approvals that would exceed it are blocked.
+          </p>
+          {leaveError && (
+            <div className="flex items-start gap-1.5 rounded-md border border-rag-red/30 bg-rag-red/10 p-2.5 text-xs text-rag-red">
+              <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{leaveError}</span>
+            </div>
+          )}
           {pendingLeave.map((l) => (
             <div
               key={l.id}
@@ -220,7 +243,7 @@ export function TeamMemberManager({
                 )}
               </span>
               <div className="flex gap-2">
-                <form action={(fd) => run(() => decideLeave(fd))}>
+                <form action={decideAndReport}>
                   <input type="hidden" name="id" value={l.id} />
                   <input type="hidden" name="decision" value="approve" />
                   <Button type="submit" size="sm" disabled={pending}>Approve</Button>

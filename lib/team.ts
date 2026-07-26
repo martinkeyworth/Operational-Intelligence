@@ -10,7 +10,7 @@ import {
   threeSixtyNominees,
   user as userTable,
 } from "@/lib/db/schema"
-import { and, asc, desc, eq, isNull } from "drizzle-orm"
+import { and, asc, desc, eq, gte, isNull, lte, ne } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { getCurrentOperatingWeek } from "@/lib/data"
@@ -101,6 +101,78 @@ export async function getPendingHolidayApprovals(
       isException: noticeDays < HOLIDAY_NOTICE_DAYS,
     }
   })
+}
+
+// --- Holiday capacity (concurrent time-off cap per site) -------------------
+
+/** How many barbers may be on approved holiday at the SAME time at this site.
+ *  Soresby = 2, everyone else = 1. Reads the site's holidayCap (default 1). */
+export async function getSiteHolidayCap(siteId: number): Promise<number> {
+  const [row] = await db
+    .select({ cap: sites.holidayCap })
+    .from(sites)
+    .where(eq(sites.id, siteId))
+  return row?.cap ?? 1
+}
+
+/**
+ * Would a new holiday request for [start,end] break the site's concurrent
+ * time-off cap on ANY overlapping day? Only APPROVED holiday for OTHER barbers
+ * at the site counts toward the cap — pending requests don't hold a slot.
+ * Returns the cap and the peak number of people already off on the busiest
+ * overlapping day; `overCapacity` is true when those slots are already full.
+ */
+export async function getHolidayCapacityConflict({
+  siteId,
+  excludeBarberId,
+  start,
+  end,
+}: {
+  siteId: number
+  excludeBarberId: number
+  start: string
+  end: string
+}): Promise<{ overCapacity: boolean; cap: number; peakConcurrent: number }> {
+  const cap = await getSiteHolidayCap(siteId)
+
+  // Approved holiday for OTHER barbers at this site that overlaps the range.
+  const rows = await db
+    .select({
+      barberId: leaveRequests.barberId,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(leaveRequests.barberId, barbers.id))
+    .where(
+      and(
+        eq(barbers.siteId, siteId),
+        ne(leaveRequests.barberId, excludeBarberId),
+        eq(leaveRequests.kind, "holiday"),
+        eq(leaveRequests.status, "Approved"),
+        lte(leaveRequests.startDate, end),
+        gte(leaveRequests.endDate, start),
+      ),
+    )
+
+  // Per-day concurrency across the requested range: the busiest day wins.
+  // Iterate in UTC so the ISO day label never drifts with the server timezone.
+  let peakConcurrent = 0
+  const from = new Date(start + "T00:00:00Z")
+  const to = new Date(end + "T00:00:00Z")
+  for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10)
+    const offThatDay = new Set(
+      rows
+        .filter((r) => String(r.startDate) <= iso && String(r.endDate) >= iso)
+        .map((r) => r.barberId),
+    )
+    if (offThatDay.size > peakConcurrent) peakConcurrent = offThatDay.size
+  }
+
+  // Adding this barber would make it peakConcurrent + 1; that breaches the cap
+  // when the cap's slots are already taken on some overlapping day.
+  return { overCapacity: peakConcurrent >= cap, cap, peakConcurrent }
 }
 
 /** Holiday: counts DOWN from the 28-day allowance. Plenty left = green,
@@ -211,7 +283,14 @@ export type SelfView = {
   }
   submission: { weekEnding: string; submitted: boolean; total: number }
   takings: TakingsPoint[]
-  holiday: { allowance: number; taken: number; remaining: number; rag: Rag }
+  holiday: {
+    allowance: number
+    taken: number
+    remaining: number
+    rag: Rag
+    /** Max barbers allowed off at once at this site (Soresby 2, others 1). */
+    siteHolidayCap: number
+  }
   sickness: { days: number; rag: Rag }
   nextOneToOne: { id: number; scheduledFor: Date; status: string } | null
   openCycle: {
@@ -362,6 +441,7 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
       taken: holidayTaken,
       remaining,
       rag: ragForHoliday(remaining, barber.holidayAllowance),
+      siteHolidayCap: site?.holidayCap ?? 1,
     },
     sickness: { days: sicknessDays, rag: ragForSickness(sicknessDays) },
     nextOneToOne: next

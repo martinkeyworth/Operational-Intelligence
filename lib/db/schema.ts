@@ -100,6 +100,10 @@ export const sites = pgTable("sites", {
   // Training capacity: weekly private learners and apprentices.
   learnerCapacity: integer("learner_capacity").notNull().default(0),
   apprenticeCapacity: integer("apprentice_capacity").notNull().default(0),
+  // Max barbers allowed on approved holiday at the SAME time. Any request that
+  // would exceed this for overlapping dates is auto-declined. Soresby = 2,
+  // Cavendish / Woodseats / Academy = 1.
+  holidayCap: integer("holiday_cap").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 

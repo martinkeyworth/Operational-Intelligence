@@ -5,7 +5,7 @@ import { barbers, leaveRequests, oneToOnes, threeSixtyCycles } from "@/lib/db/sc
 import { and, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
-import { getBarberForUser } from "@/lib/team"
+import { getBarberForUser, getHolidayCapacityConflict } from "@/lib/team"
 import { scheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles, syncOneToOneRsvps } from "@/lib/team-schedule"
 
 function revalidateTeam(barberId?: number) {
@@ -57,12 +57,45 @@ export async function updateBarberProfile(formData: FormData) {
   return { ok: true }
 }
 
-/** Approve or decline a holiday request. */
+/** Approve or decline a holiday request. Approving is blocked if it would push
+ *  the site over its concurrent time-off cap (e.g. two pending requests that
+ *  each looked fine on their own but can't both be approved). */
 export async function decideLeave(formData: FormData) {
   const admin = await requireTeamAdmin()
   const id = Number(formData.get("id"))
   const decision = String(formData.get("decision"))
   const status = decision === "approve" ? "Approved" : "Declined"
+
+  if (status === "Approved") {
+    const [req] = await db
+      .select()
+      .from(leaveRequests)
+      .where(eq(leaveRequests.id, id))
+    if (!req) return { ok: false, error: "Request not found" }
+
+    const [barber] = await db
+      .select({ siteId: barbers.siteId })
+      .from(barbers)
+      .where(eq(barbers.id, req.barberId))
+    if (barber) {
+      const capacity = await getHolidayCapacityConflict({
+        siteId: barber.siteId,
+        excludeBarberId: req.barberId,
+        start: String(req.startDate),
+        end: String(req.endDate),
+      })
+      if (capacity.overCapacity) {
+        return {
+          ok: false,
+          error:
+            capacity.cap === 1
+              ? "Can't approve — someone at that shop is already off for these dates (limit 1 at a time)."
+              : `Can't approve — that shop already has ${capacity.cap} people off for these dates (the maximum).`,
+        }
+      }
+    }
+  }
+
   await db
     .update(leaveRequests)
     .set({ status, decidedByUserId: admin.id, decidedAt: new Date() })

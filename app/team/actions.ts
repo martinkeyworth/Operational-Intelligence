@@ -10,12 +10,27 @@ import {
   threeSixtyNominees,
 } from "@/lib/db/schema"
 import { requireUser } from "@/lib/access"
-import { getBarberForUser, currentLeaveYear } from "@/lib/team"
+import {
+  getBarberForUser,
+  currentLeaveYear,
+  getHolidayCapacityConflict,
+} from "@/lib/team"
 import {
   sendLeaveNotification,
   sendThreeSixtyInvites,
   sendSicknessAckToIndividual,
 } from "@/lib/team-notify"
+
+/** Human-readable date for messages, e.g. "3 Aug 2026". */
+function fmtDay(iso: string): string {
+  const d = new Date(iso + "T00:00:00")
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+}
 
 /** Count inclusive days between two ISO dates (min 1). */
 function daysBetween(start: string, end: string): number {
@@ -55,6 +70,52 @@ export async function requestHoliday(formData: FormData) {
   const days = daysBetween(start, end)
   const noticeDays = noticeDaysUntil(start)
   const isException = noticeDays < HOLIDAY_NOTICE_DAYS
+
+  // Concurrent time-off cap: if the site is already at capacity on any day in
+  // the requested range (Cavendish/Woodseats/Academy = 1 person off, Soresby =
+  // 2), the request is auto-declined at submission. Only approved holiday for
+  // other barbers counts toward the cap.
+  const capacity = await getHolidayCapacityConflict({
+    siteId: barber.siteId,
+    excludeBarberId: barber.id,
+    start,
+    end,
+  })
+
+  if (capacity.overCapacity) {
+    const declineReason =
+      capacity.cap === 1
+        ? `Someone at your shop is already booked off between ${fmtDay(start)} and ${fmtDay(end)}. Only 1 person can be off at a time, so this was automatically declined.`
+        : `Your shop already has ${capacity.cap} people booked off between ${fmtDay(start)} and ${fmtDay(end)}, which is the maximum. This was automatically declined.`
+
+    await db.insert(leaveRequests).values({
+      barberId: barber.id,
+      kind: "holiday",
+      startDate: start,
+      endDate: end,
+      days,
+      status: "Declined",
+      reason: reason ? `${reason} — ${declineReason}` : declineReason,
+      leaveYear: currentLeaveYear(),
+      requestedByUserId: user.id,
+    })
+
+    await sendLeaveNotification({
+      kind: "holiday",
+      barberId: barber.id,
+      barberName: barber.name,
+      start,
+      end,
+      days,
+      reason,
+      autoDeclined: true,
+      autoDeclineReason: declineReason,
+    })
+
+    revalidatePath("/team")
+    return { ok: true, autoDeclined: true, error: declineReason }
+  }
+
   await db.insert(leaveRequests).values({
     barberId: barber.id,
     kind: "holiday",
@@ -145,6 +206,10 @@ export async function decideLeaveScoped(formData: FormData) {
   const [row] = await db
     .select({
       id: leaveRequests.id,
+      barberId: leaveRequests.barberId,
+      siteId: barbers.siteId,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
       managerUserId: barbers.managerUserId,
     })
     .from(leaveRequests)
@@ -155,6 +220,25 @@ export async function decideLeaveScoped(formData: FormData) {
   const isTeamAdmin = user.isCompany && user.canViewDashboard
   if (!isTeamAdmin && row.managerUserId !== user.id) {
     return { ok: false, error: "You are not the manager for this request" }
+  }
+
+  // Approving can't push the site over its concurrent time-off cap.
+  if (status === "Approved") {
+    const capacity = await getHolidayCapacityConflict({
+      siteId: row.siteId,
+      excludeBarberId: row.barberId,
+      start: String(row.startDate),
+      end: String(row.endDate),
+    })
+    if (capacity.overCapacity) {
+      return {
+        ok: false,
+        error:
+          capacity.cap === 1
+            ? "Can't approve — someone at that shop is already off for these dates (limit 1 at a time)."
+            : `Can't approve — that shop already has ${capacity.cap} people off for these dates (the maximum).`,
+      }
+    }
   }
 
   await db
