@@ -19,7 +19,11 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { fmtGBP } from "@/lib/format"
 import { addTakingsLine, deleteTakingsLine } from "@/app/today/actions"
-import type { TakingsLine, TakingsKind } from "@/lib/daily-takings"
+import type {
+  TakingsLine,
+  TakingsKind,
+  TakingsBreakdown,
+} from "@/lib/daily-takings"
 import type { TodayWeekDay } from "@/lib/today"
 
 type Method = "cash" | "card"
@@ -44,6 +48,7 @@ export function TodayInputCard({
   weekTotal,
   weekTips,
   weekNoShows,
+  weekBreakdown,
 }: {
   selectedDate: string
   today: string
@@ -58,6 +63,7 @@ export function TodayInputCard({
   weekTotal: number
   weekTips: number
   weekNoShows: number
+  weekBreakdown: TakingsBreakdown
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -72,6 +78,13 @@ export function TodayInputCard({
   // Revenue = cuts only. No-shows are auto-charged to card (awaiting sign-off);
   // tips are 100% the barber's.
   const dayRevenue = dayCash + dayCard
+  // Tip cash/card split for the selected day (from its own lines).
+  const dayTipCash = lines
+    .filter((l) => l.kind === "tip" && l.method === "cash")
+    .reduce((s, l) => s + l.amount, 0)
+  const dayTipCard = lines
+    .filter((l) => l.kind === "tip" && l.method === "card")
+    .reduce((s, l) => s + l.amount, 0)
 
   function addLine() {
     const value = Number(amount)
@@ -107,7 +120,9 @@ export function TodayInputCard({
     })
   }
 
-  const showMethod = kind === "cut"
+  // Cuts and tips both offer a cash/card choice; no-shows always auto-charge
+  // to card.
+  const showMethod = kind !== "no_show"
 
   return (
     <Card id="today-input" className="scroll-mt-24 p-5">
@@ -206,7 +221,7 @@ export function TodayInputCard({
                 ? "A normal paid haircut — counts towards your revenue and split."
                 : kind === "no_show"
                   ? "No-show fee, auto-charged to card. Your manager confirms at weekly sign-off whether payment came through before it counts as revenue."
-                  : "A tip — 100% yours, no split taken. Added to your weekly take-home."}
+                  : "A tip — 100% yours, no split taken. Pick how it was paid (cash or card); it's added to your weekly take-home."}
             </p>
 
             {/* Amount + add */}
@@ -335,11 +350,18 @@ export function TodayInputCard({
             <span className="text-muted-foreground">
               Tips {isToday ? "today" : "this day"} (100% yours)
             </span>
-            <span className="font-medium">{fmtGBP(dayTips)}</span>
+            <span className="font-medium">
+              {fmtGBP(dayTips)}
+              {dayTips > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({fmtGBP(dayTipCash)} cash / {fmtGBP(dayTipCard)} card)
+                </span>
+              )}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">
-              No-shows {isToday ? "today" : "this day"} (awaiting sign-off)
+              No-shows {isToday ? "today" : "this day"} (card, awaiting sign-off)
             </span>
             <span className="font-medium">{fmtGBP(dayNoShows)}</span>
           </div>
@@ -350,27 +372,74 @@ export function TodayInputCard({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             This week so far
           </p>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Revenue (split with the business)</span>
-            <span className="font-semibold">{fmtGBP(weekTotal)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Tips — 100% yours</span>
-            <span className="font-semibold text-rag-green">{fmtGBP(weekTips)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">
-              No-shows (awaiting sign-off)
-            </span>
-            <span className="font-medium">{fmtGBP(weekNoShows)}</span>
-          </div>
+
+          {/* Cuts — the revenue that's split with the business, cash vs card. */}
+          <WeekRow
+            label="Cuts (split with the business)"
+            total={weekTotal}
+            cash={weekBreakdown.cuts.cash}
+            card={weekBreakdown.cuts.card}
+            bold
+          />
+          {/* Tips — 100% the barber's, cash vs card. */}
+          <WeekRow
+            label="Tips — 100% yours"
+            total={weekTips}
+            cash={weekBreakdown.tips.cash}
+            card={weekBreakdown.tips.card}
+            accent
+          />
+          {/* No-shows — auto-charged to card, awaiting weekly sign-off. */}
+          <WeekRow
+            label="No-shows (awaiting sign-off)"
+            total={weekNoShows}
+            cash={weekBreakdown.noShows.cash}
+            card={weekBreakdown.noShows.card}
+          />
+
           <p className="mt-1 border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
             You keep 100% of your tips on top of your share of revenue. No-shows
-            only count once your manager confirms payment at weekly sign-off.
+            default to card and only count once your manager confirms payment at
+            weekly sign-off.
           </p>
         </div>
       </div>
     </Card>
+  )
+}
+
+/** One running-total row: a label, the total, and its cash/card split. */
+function WeekRow({
+  label,
+  total,
+  cash,
+  card,
+  bold,
+  accent,
+}: {
+  label: string
+  total: number
+  cash: number
+  card: number
+  bold?: boolean
+  accent?: boolean
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right">
+        <span
+          className={`${bold ? "font-semibold" : "font-medium"} ${accent ? "text-rag-green" : ""}`}
+        >
+          {fmtGBP(total)}
+        </span>
+        {total > 0 && (
+          <span className="ml-1 block text-xs text-muted-foreground sm:ml-2 sm:inline">
+            {fmtGBP(cash)} cash / {fmtGBP(card)} card
+          </span>
+        )}
+      </span>
+    </div>
   )
 }
 
@@ -387,7 +456,7 @@ function LineIcon({ line }: { line: TakingsLine }) {
 }
 
 function lineLabel(line: TakingsLine): string {
-  if (line.kind === "tip") return "Tip"
+  if (line.kind === "tip") return `Tip · ${line.method === "card" ? "card" : "cash"}`
   if (line.kind === "no_show") {
     if (line.noShowPaid === true) return "No-show · paid"
     if (line.noShowPaid === false) return "No-show · not paid"

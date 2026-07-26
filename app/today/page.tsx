@@ -69,6 +69,7 @@ export default async function TodayPage({
         weekTotal={data.weekTotal}
         weekTips={data.weekTips}
         weekNoShows={data.weekNoShows}
+        weekBreakdown={data.weekBreakdown}
       />
 
       <section className="flex flex-col gap-3">

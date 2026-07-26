@@ -180,6 +180,22 @@ export async function editSite(formData: FormData) {
   revalidatePath("/")
 }
 
+/** If the week's collection is now complete, push the weekly cadence forward
+ *  (analysis → COO request → CEO request → board report). Dynamically imported
+ *  to avoid pulling the heavy workflow module into this action's load path, and
+ *  wrapped so a failure never blocks the confirmation. */
+async function advanceCadenceIfComplete(weekEnding: string) {
+  try {
+    const { getSubmissionStatus } = await import("@/lib/submissions")
+    const status = await getSubmissionStatus(weekEnding)
+    if (!status.complete) return
+    const { advanceWeeklyCadence } = await import("@/lib/weekly-workflow")
+    await advanceWeeklyCadence(weekEnding)
+  } catch (err) {
+    console.log("[v0] advanceWeeklyCadence after site confirm failed:", err)
+  }
+}
+
 // Mario's weekly sign-off that all social/marketing activity across every site
 // + HR + Training has been reviewed. Site managers/leads ENTER their figures;
 // this separate confirm step is what clears Marketing on the submissions board.
@@ -593,6 +609,13 @@ export async function confirmSiteWeek(formData: FormData) {
   revalidatePath("/sites")
   revalidatePath(`/sites/${siteId}`)
   revalidatePath("/")
+
+  // Event-driven cadence: the moment this confirmation completes the weekly
+  // collection (every site + submission in), advance the cadence NOW so the COO
+  // narrative request is generated immediately — no waiting for the next cron
+  // tick. Best-effort and gated on completeness so it never fires premature
+  // chase emails from a single confirmation.
+  await advanceCadenceIfComplete(weekEnding)
 }
 
 /** Recompute chair-utilisation and RTB red actions for a site + week. */

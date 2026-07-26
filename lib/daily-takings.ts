@@ -287,6 +287,73 @@ export async function getBarberWeekTakings(
   }
 }
 
+export type MethodSplit = { cash: number; card: number; total: number }
+
+/** A barber's week broken down by kind and payment method, from the per-cut
+ *  line entries. Used for the "running totals" the barber sees on /today.
+ *  - cuts    = normal cuts + no-shows the manager confirmed PAID (these fold
+ *              into revenue, so cuts.total matches the weekly revenue rollup).
+ *  - tips    = tips, split by the cash/card option chosen when logged.
+ *  - noShows = no-shows still awaiting sign-off (NOT yet revenue). */
+export type TakingsBreakdown = {
+  cuts: MethodSplit
+  tips: MethodSplit
+  noShows: MethodSplit
+}
+
+function emptySplit(): MethodSplit {
+  return { cash: 0, card: 0, total: 0 }
+}
+
+function addToSplit(s: MethodSplit, method: TakingsMethod, amount: number) {
+  if (method === "card") s.card += amount
+  else s.cash += amount
+  s.total += amount
+}
+
+/** Sum a barber's per-cut line entries for the week into cash/card running
+ *  totals per kind (cuts, tips, no-shows). */
+export async function getBarberWeekBreakdown(
+  barberId: number,
+  weekEnding: string,
+): Promise<TakingsBreakdown> {
+  const dates = weekDates(weekEnding)
+  const rows = await db
+    .select({
+      amount: takingsLineEntries.amount,
+      method: takingsLineEntries.method,
+      kind: takingsLineEntries.kind,
+      noShowPaid: takingsLineEntries.noShowPaid,
+    })
+    .from(takingsLineEntries)
+    .where(
+      and(
+        eq(takingsLineEntries.barberId, barberId),
+        gte(takingsLineEntries.date, dates[0]),
+        lte(takingsLineEntries.date, dates[6]),
+      ),
+    )
+
+  const cuts = emptySplit()
+  const tips = emptySplit()
+  const noShows = emptySplit()
+  for (const r of rows) {
+    const amount = Number(r.amount)
+    const method: TakingsMethod = r.method === "card" ? "card" : "cash"
+    if (r.kind === "tip") {
+      addToSplit(tips, method, amount)
+    } else if (r.kind === "no_show") {
+      // Confirmed-paid no-shows become revenue (fold into cuts); otherwise they
+      // sit under no-shows awaiting sign-off.
+      if (r.noShowPaid === true) addToSplit(cuts, method, amount)
+      else addToSplit(noShows, method, amount)
+    } else {
+      addToSplit(cuts, method, amount)
+    }
+  }
+  return { cuts, tips, noShows }
+}
+
 export type DailyBusinessTotal = {
   date: string
   cash: number

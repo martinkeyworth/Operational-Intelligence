@@ -3,7 +3,9 @@ import { ensureBarberForUser } from "@/lib/team"
 import {
   getBarberDailyWeek,
   getBarberLinesForDate,
+  getBarberWeekBreakdown,
   isSiteWeekConfirmed,
+  type TakingsBreakdown,
   type TakingsLine,
 } from "@/lib/daily-takings"
 import { getCurrentOneToOne, getPlanForBarber } from "@/lib/learning"
@@ -68,6 +70,8 @@ export type TodayData = {
   weekTotal: number
   weekTips: number
   weekNoShows: number
+  /** Week running totals split by cash/card for cuts, tips and no-shows. */
+  weekBreakdown: TakingsBreakdown
   /** Barber's take-home guide: revenue split + 100% of tips. */
   items: TodayItem[]
   outstandingCount: number
@@ -105,6 +109,7 @@ export async function getTodayForBarber(
       ? dayLines
       : await getBarberLinesForDate(barber.id, today)
   const weekConfirmed = await isSiteWeekConfirmed(barber.siteId, weekEnding)
+  const weekBreakdown = await getBarberWeekBreakdown(barber.id, weekEnding)
 
   // Which days already have entries (for the picker dots).
   const daysWithEntries = new Set(
@@ -291,6 +296,7 @@ export async function getTodayForBarber(
     weekTotal: weekCash + weekCard,
     weekTips,
     weekNoShows,
+    weekBreakdown,
     items,
     outstandingCount,
   }
