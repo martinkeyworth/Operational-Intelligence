@@ -3,7 +3,10 @@ import { db } from "@/lib/db"
 import { barbers, siteConfirmations } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
 import { computeRtb } from "@/lib/rtb"
-import { getBarberWeekTakings } from "@/lib/daily-takings"
+import {
+  getBarberWeekTakings,
+  RETAIL_COMMISSION_PER_ITEM,
+} from "@/lib/daily-takings"
 import {
   getBarberDiscrepancies,
   type Discrepancy,
@@ -26,6 +29,12 @@ export type BarberRtbReview = {
   flags: Discrepancy[]
   /** No-shows logged this week that are still awaiting a paid/not-paid call. */
   unconfirmedNoShows: number
+  /** Retail selling-price total this week (100% to the business, not split). */
+  retailSales: number
+  /** Number of retail items sold. */
+  retailItems: number
+  /** The barber's retail commission (items × £2.50). */
+  retailCommission: number
 }
 
 export type SiteConfirmReview = {
@@ -76,6 +85,9 @@ export async function getSiteConfirmReview(
       days: wk.daysEntered,
       flags,
       unconfirmedNoShows: wk.unconfirmedNoShows,
+      retailSales: wk.retailSales,
+      retailItems: wk.retailItems,
+      retailCommission: wk.retailItems * RETAIL_COMMISSION_PER_ITEM,
     })
   }
 

@@ -64,7 +64,10 @@ export async function addTakingsLine(formData: FormData) {
   const amount = Math.max(0, Number(formData.get("amount")) || 0)
   const method = String(formData.get("method") ?? "cash") === "card" ? "card" : "cash"
   const rawKind = String(formData.get("kind") ?? "cut")
-  const kind = rawKind === "no_show" || rawKind === "tip" ? rawKind : "cut"
+  const kind =
+    rawKind === "no_show" || rawKind === "tip" || rawKind === "retail"
+      ? rawKind
+      : "cut"
   if (amount <= 0) return { ok: false as const, error: "Enter an amount." }
 
   await addTakingsLineEntry({

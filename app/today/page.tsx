@@ -66,9 +66,15 @@ export default async function TodayPage({
         dayCard={data.dayCard}
         dayTips={data.dayTips}
         dayNoShows={data.dayNoShows}
+        dayRetailSales={data.dayRetailSales}
+        dayRetailItems={data.dayRetailItems}
+        dayRetailCommission={data.dayRetailCommission}
         weekTotal={data.weekTotal}
         weekTips={data.weekTips}
         weekNoShows={data.weekNoShows}
+        weekRetailSales={data.weekRetailSales}
+        weekRetailItems={data.weekRetailItems}
+        weekRetailCommission={data.weekRetailCommission}
         weekBreakdown={data.weekBreakdown}
       />
 

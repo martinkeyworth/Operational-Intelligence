@@ -166,6 +166,12 @@ export const weeklyTakings = pgTable(
     // sign-off. Tracked for visibility; excluded from revenue/split/RTB until
     // confirmed paid (then they move into card).
     unconfirmedNoShows: numeric("unconfirmed_no_shows").notNull().default("0"),
+    // Retail: total selling price of products sold (100% to the business, NOT
+    // part of the RTB split) + the number of items sold. The barber earns a
+    // flat £2.50 commission per item (see RETAIL_COMMISSION_PER_ITEM), tracked
+    // apart from revenue like tips.
+    retailSales: numeric("retail_sales").notNull().default("0"),
+    retailItems: integer("retail_items").notNull().default(0),
     manager: text("manager").notNull().default(""),
     transferCompleted: boolean("transfer_completed").notNull().default(true),
     comments: text("comments"),
@@ -194,6 +200,10 @@ export const dailyTakings = pgTable(
     // the RTB engine only ever sees confirmed revenue.
     tips: numeric("tips").notNull().default("0"),
     unconfirmedNoShows: numeric("unconfirmed_no_shows").notNull().default("0"),
+    // Retail product sales (selling price total → business, NOT split) + item
+    // count. Barber earns a flat £2.50/item commission, tracked apart like tips.
+    retailSales: numeric("retail_sales").notNull().default("0"),
+    retailItems: integer("retail_items").notNull().default(0),
     // Where the row came from (entry app, manual admin, import, ...).
     source: text("source").notNull().default("entry-app"),
     // The authenticated user who entered it (the barber, via the entry app).
@@ -216,8 +226,9 @@ export const takingsLineEntries = pgTable("takings_line_entries", {
   date: date("date").notNull(),
   amount: numeric("amount").notNull().default("0"),
   method: text("method").notNull().default("cash"), // 'cash' | 'card'
-  // What this line represents: a normal paid cut, a no-show fee, or a tip.
-  kind: text("kind").notNull().default("cut"), // 'cut' | 'no_show' | 'tip'
+  // What this line represents: a normal paid cut, a no-show fee, a tip, or a
+  // retail product sale.
+  kind: text("kind").notNull().default("cut"), // 'cut' | 'no_show' | 'tip' | 'retail'
   // For no-shows only: null = awaiting the manager's weekly sign-off decision;
   // true = confirmed paid (auto-charged) → becomes card revenue + normal split;
   // false = not paid → stays £0, no split, no RTB.

@@ -5,6 +5,7 @@ import {
   getBarberLinesForDate,
   getBarberWeekBreakdown,
   isSiteWeekConfirmed,
+  RETAIL_COMMISSION_PER_ITEM,
   type TakingsBreakdown,
   type TakingsLine,
 } from "@/lib/daily-takings"
@@ -65,12 +66,22 @@ export type TodayData = {
   dayCard: number
   dayTips: number
   dayNoShows: number
+  /** Retail selling-price total for the selected day + items sold + the
+   *  barber's £2.50-per-item commission for the day. */
+  dayRetailSales: number
+  dayRetailItems: number
+  dayRetailCommission: number
   weekCash: number
   weekCard: number
   weekTotal: number
   weekTips: number
   weekNoShows: number
-  /** Week running totals split by cash/card for cuts, tips and no-shows. */
+  /** Retail running totals for the week: selling-price total, item count and
+   *  the barber's commission (items × £2.50). */
+  weekRetailSales: number
+  weekRetailItems: number
+  weekRetailCommission: number
+  /** Week running totals split by cash/card for cuts, tips, no-shows, retail. */
   weekBreakdown: TakingsBreakdown
   /** Barber's take-home guide: revenue split + 100% of tips. */
   items: TodayItem[]
@@ -113,7 +124,16 @@ export async function getTodayForBarber(
 
   // Which days already have entries (for the picker dots).
   const daysWithEntries = new Set(
-    days.filter((d) => d.cash > 0 || d.card > 0 || d.tips > 0 || d.unconfirmedNoShows > 0).map((d) => d.date),
+    days
+      .filter(
+        (d) =>
+          d.cash > 0 ||
+          d.card > 0 ||
+          d.tips > 0 ||
+          d.unconfirmedNoShows > 0 ||
+          d.retailItems > 0,
+      )
+      .map((d) => d.date),
   )
   const weekDayItems: TodayWeekDay[] = selectableDates.map((d) => {
     const dt = new Date(d + "T00:00:00")
@@ -142,12 +162,19 @@ export async function getTodayForBarber(
   const dayNoShows = dayLines
     .filter((l) => l.kind === "no_show")
     .reduce((s, l) => s + l.amount, 0)
+  const dayRetailLines = dayLines.filter((l) => l.kind === "retail")
+  const dayRetailSales = dayRetailLines.reduce((s, l) => s + l.amount, 0)
+  const dayRetailItems = dayRetailLines.length
+  const dayRetailCommission = dayRetailItems * RETAIL_COMMISSION_PER_ITEM
   const enteredToday = todayLines.length > 0
 
   const weekCash = days.reduce((s, d) => s + d.cash, 0)
   const weekCard = days.reduce((s, d) => s + d.card, 0)
   const weekTips = days.reduce((s, d) => s + d.tips, 0)
   const weekNoShows = days.reduce((s, d) => s + d.unconfirmedNoShows, 0)
+  const weekRetailSales = days.reduce((s, d) => s + d.retailSales, 0)
+  const weekRetailItems = days.reduce((s, d) => s + d.retailItems, 0)
+  const weekRetailCommission = weekRetailItems * RETAIL_COMMISSION_PER_ITEM
 
   const items: TodayItem[] = []
 
@@ -291,11 +318,17 @@ export async function getTodayForBarber(
     dayCard,
     dayTips,
     dayNoShows,
+    dayRetailSales,
+    dayRetailItems,
+    dayRetailCommission,
     weekCash,
     weekCard,
     weekTotal: weekCash + weekCard,
     weekTips,
     weekNoShows,
+    weekRetailSales,
+    weekRetailItems,
+    weekRetailCommission,
     weekBreakdown,
     items,
     outstandingCount,

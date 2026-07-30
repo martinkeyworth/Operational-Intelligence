@@ -12,7 +12,11 @@ import { weekEndingFor, weekDates } from "@/lib/format"
 import { computeRtb } from "@/lib/rtb"
 
 export type TakingsMethod = "cash" | "card"
-export type TakingsKind = "cut" | "no_show" | "tip"
+export type TakingsKind = "cut" | "no_show" | "tip" | "retail"
+
+/** Flat commission a barber earns per retail item sold. The selling price goes
+ *  100% to the business; the barber only ever earns this fixed amount per item. */
+export const RETAIL_COMMISSION_PER_ITEM = 2.5
 
 export type TakingsLine = {
   id: number
@@ -39,6 +43,9 @@ export type DailyRow = {
   card: number
   tips: number
   unconfirmedNoShows: number
+  /** Retail selling-price total (to the business) + number of items sold. */
+  retailSales: number
+  retailItems: number
 }
 
 /**
@@ -53,6 +60,8 @@ export async function recordDailyTakings(args: {
   card: number
   tips?: number
   unconfirmedNoShows?: number
+  retailSales?: number
+  retailItems?: number
   enteredByUserId?: string | null
   source?: string
 }) {
@@ -61,6 +70,8 @@ export async function recordDailyTakings(args: {
   const card = Math.max(0, Number(args.card) || 0)
   const tips = Math.max(0, Number(args.tips) || 0)
   const unconfirmedNoShows = Math.max(0, Number(args.unconfirmedNoShows) || 0)
+  const retailSales = Math.max(0, Number(args.retailSales) || 0)
+  const retailItems = Math.max(0, Math.round(Number(args.retailItems) || 0))
 
   await db
     .insert(dailyTakings)
@@ -72,6 +83,8 @@ export async function recordDailyTakings(args: {
       card: String(card),
       tips: String(tips),
       unconfirmedNoShows: String(unconfirmedNoShows),
+      retailSales: String(retailSales),
+      retailItems,
       source: args.source ?? "entry-app",
       enteredByUserId: args.enteredByUserId ?? null,
     })
@@ -82,6 +95,8 @@ export async function recordDailyTakings(args: {
         card: String(card),
         tips: String(tips),
         unconfirmedNoShows: String(unconfirmedNoShows),
+        retailSales: String(retailSales),
+        retailItems,
         siteId,
         enteredByUserId: args.enteredByUserId ?? null,
         source: args.source ?? "entry-app",
@@ -91,7 +106,7 @@ export async function recordDailyTakings(args: {
 
   const weekEnding = weekEndingFor(date)
   const rollup = await recomputeWeeklyRollup(barberId, weekEnding)
-  return { date, cash, card, tips, unconfirmedNoShows, weekEnding, rollup }
+  return { date, cash, card, tips, unconfirmedNoShows, retailSales, retailItems, weekEnding, rollup }
 }
 
 /**
@@ -123,6 +138,8 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
     (s, r) => s + Number(r.unconfirmedNoShows ?? 0),
     0,
   )
+  const retailSales = rows.reduce((s, r) => s + Number(r.retailSales ?? 0), 0)
+  const retailItems = rows.reduce((s, r) => s + Number(r.retailItems ?? 0), 0)
   const total = cash + card
 
   const rtb = computeRtb({
@@ -143,6 +160,8 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
       card: String(card),
       tips: String(tips),
       unconfirmedNoShows: String(unconfirmedNoShows),
+      retailSales: String(retailSales),
+      retailItems,
       cashRent: String(rtb.cashRent),
       cardRent: String(rtb.cardRent),
       manager: barber.name,
@@ -156,12 +175,14 @@ export async function recomputeWeeklyRollup(barberId: number, weekEnding: string
         card: String(card),
         tips: String(tips),
         unconfirmedNoShows: String(unconfirmedNoShows),
+        retailSales: String(retailSales),
+        retailItems,
         cashRent: String(rtb.cashRent),
         cardRent: String(rtb.cardRent),
       },
     })
 
-  return { cash, card, tips, unconfirmedNoShows, total, ...rtb, days: rows.length }
+  return { cash, card, tips, unconfirmedNoShows, retailSales, retailItems, total, ...rtb, days: rows.length }
 }
 
 /** A barber's daily rows for a given week (Sun→Sat), for the entry app + review. */
@@ -186,6 +207,8 @@ export async function getBarberDailyWeek(
     card: Number(r.card),
     tips: Number(r.tips ?? 0),
     unconfirmedNoShows: Number(r.unconfirmedNoShows ?? 0),
+    retailSales: Number(r.retailSales ?? 0),
+    retailItems: Number(r.retailItems ?? 0),
   }))
 }
 
@@ -197,6 +220,10 @@ export type WeekTakings = {
   tips: number
   /** No-shows logged but not yet confirmed paid (not revenue). */
   unconfirmedNoShows: number
+  /** Retail selling-price total (100% to the business, not part of the split). */
+  retailSales: number
+  /** Number of retail items sold this week (× £2.50 = barber commission). */
+  retailItems: number
   /** Number of days with entries (0 when figures came from the weekly total). */
   daysEntered: number
   /** Where the figures came from — per-cut daily rows or the weekly entry. */
@@ -221,17 +248,26 @@ export async function getBarberWeekTakings(
   const dailyCard = days.reduce((s, d) => s + d.card, 0)
   const dailyTips = days.reduce((s, d) => s + d.tips, 0)
   const dailyNoShows = days.reduce((s, d) => s + d.unconfirmedNoShows, 0)
+  const dailyRetailSales = days.reduce((s, d) => s + d.retailSales, 0)
+  const dailyRetailItems = days.reduce((s, d) => s + d.retailItems, 0)
   const daysEntered = days.filter(
-    (d) => d.cash > 0 || d.card > 0 || d.tips > 0 || d.unconfirmedNoShows > 0,
+    (d) =>
+      d.cash > 0 ||
+      d.card > 0 ||
+      d.tips > 0 ||
+      d.unconfirmedNoShows > 0 ||
+      d.retailItems > 0,
   ).length
 
-  if (dailyCash + dailyCard + dailyTips + dailyNoShows > 0) {
+  if (dailyCash + dailyCard + dailyTips + dailyNoShows + dailyRetailItems > 0) {
     return {
       cash: dailyCash,
       card: dailyCard,
       total: dailyCash + dailyCard,
       tips: dailyTips,
       unconfirmedNoShows: dailyNoShows,
+      retailSales: dailyRetailSales,
+      retailItems: dailyRetailItems,
       daysEntered,
       source: "daily",
     }
@@ -245,6 +281,8 @@ export async function getBarberWeekTakings(
       card: weeklyTakings.card,
       tips: weeklyTakings.tips,
       unconfirmedNoShows: weeklyTakings.unconfirmedNoShows,
+      retailSales: weeklyTakings.retailSales,
+      retailItems: weeklyTakings.retailItems,
     })
     .from(weeklyTakings)
     .where(
@@ -260,16 +298,20 @@ export async function getBarberWeekTakings(
     let card = Number(wk.card)
     const tips = Number(wk.tips ?? 0)
     const unconfirmedNoShows = Number(wk.unconfirmedNoShows ?? 0)
+    const retailSales = Number(wk.retailSales ?? 0)
+    const retailItems = Number(wk.retailItems ?? 0)
     // Older/weekly-only rows may store just the total with no split — treat the
     // whole amount as cash so RTB + flags still compute sensibly.
     if (cash + card === 0 && total > 0) cash = total
-    if (total > 0 || cash + card > 0 || tips > 0 || unconfirmedNoShows > 0) {
+    if (total > 0 || cash + card > 0 || tips > 0 || unconfirmedNoShows > 0 || retailItems > 0) {
       return {
         cash,
         card,
         total: total > 0 ? total : cash + card,
         tips,
         unconfirmedNoShows,
+        retailSales,
+        retailItems,
         daysEntered: 0,
         source: "weekly",
       }
@@ -282,6 +324,8 @@ export async function getBarberWeekTakings(
     total: 0,
     tips: 0,
     unconfirmedNoShows: 0,
+    retailSales: 0,
+    retailItems: 0,
     daysEntered: 0,
     source: "none",
   }
@@ -299,6 +343,10 @@ export type TakingsBreakdown = {
   cuts: MethodSplit
   tips: MethodSplit
   noShows: MethodSplit
+  /** Retail selling prices split by how the customer paid (money to business). */
+  retail: MethodSplit
+  /** Number of retail items sold (× £2.50 = the barber's commission). */
+  retailItems: number
 }
 
 function emptySplit(): MethodSplit {
@@ -337,11 +385,17 @@ export async function getBarberWeekBreakdown(
   const cuts = emptySplit()
   const tips = emptySplit()
   const noShows = emptySplit()
+  const retail = emptySplit()
+  let retailItems = 0
   for (const r of rows) {
     const amount = Number(r.amount)
     const method: TakingsMethod = r.method === "card" ? "card" : "cash"
     if (r.kind === "tip") {
       addToSplit(tips, method, amount)
+    } else if (r.kind === "retail") {
+      // Retail selling price → business; one line = one item sold.
+      addToSplit(retail, method, amount)
+      retailItems += 1
     } else if (r.kind === "no_show") {
       // Confirmed-paid no-shows become revenue (fold into cuts); otherwise they
       // sit under no-shows awaiting sign-off.
@@ -351,7 +405,7 @@ export async function getBarberWeekBreakdown(
       addToSplit(cuts, method, amount)
     }
   }
-  return { cuts, tips, noShows }
+  return { cuts, tips, noShows, retail, retailItems }
 }
 
 export type DailyBusinessTotal = {
@@ -434,7 +488,9 @@ export async function getBarberLinesForDate(
     id: r.id,
     amount: Number(r.amount),
     method: r.method === "card" ? "card" : "cash",
-    kind: (r.kind === "no_show" || r.kind === "tip" ? r.kind : "cut") as TakingsKind,
+    kind: (r.kind === "no_show" || r.kind === "tip" || r.kind === "retail"
+      ? r.kind
+      : "cut") as TakingsKind,
     noShowPaid: r.noShowPaid ?? null,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
   }))
@@ -473,10 +529,17 @@ export async function recomputeDailyFromLines(
   let card = 0
   let tips = 0
   let unconfirmedNoShows = 0
+  let retailSales = 0
+  let retailItems = 0
   for (const r of rows) {
     const amount = Number(r.amount)
     if (r.kind === "tip") {
       tips += amount
+    } else if (r.kind === "retail") {
+      // Retail selling price goes 100% to the business (never into the RTB
+      // split); each line is one item (× £2.50 = barber commission).
+      retailSales += amount
+      retailItems += 1
     } else if (r.kind === "no_show") {
       if (r.noShowPaid === true) {
         // Confirmed paid — auto-charge defaults to card.
@@ -500,6 +563,8 @@ export async function recomputeDailyFromLines(
     card,
     tips,
     unconfirmedNoShows,
+    retailSales,
+    retailItems,
     enteredByUserId: enteredByUserId ?? null,
     source: "line-entries",
   })
@@ -522,9 +587,11 @@ export async function addTakingsLineEntry(args: {
   const amount = Math.max(0, Number(args.amount) || 0)
   if (amount <= 0) return null
   const kind: TakingsKind =
-    args.kind === "no_show" || args.kind === "tip" ? args.kind : "cut"
-  // No-shows are auto-charged to card by default; cuts use the chosen method;
-  // tips are barber cash-in-hand (method is irrelevant but stored as cash).
+    args.kind === "no_show" || args.kind === "tip" || args.kind === "retail"
+      ? args.kind
+      : "cut"
+  // No-shows are auto-charged to card by default; cuts, tips and retail use the
+  // chosen method (how the customer paid).
   const method: TakingsMethod =
     kind === "no_show" ? (args.method === "cash" ? "cash" : "card") : args.method === "card" ? "card" : "cash"
   await db.insert(takingsLineEntries).values({

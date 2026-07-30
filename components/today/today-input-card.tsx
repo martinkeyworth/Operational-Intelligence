@@ -12,6 +12,7 @@ import {
   UserX,
   Coins,
   Scissors,
+  ShoppingBag,
   Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,10 +29,16 @@ import type { TodayWeekDay } from "@/lib/today"
 
 type Method = "cash" | "card"
 
+/** Barber commission per retail item. Mirrors RETAIL_COMMISSION_PER_ITEM in
+ *  lib/daily-takings — kept as a local literal so this client component never
+ *  pulls the server-only db module into the browser bundle. */
+const RETAIL_COMMISSION_PER_ITEM = 2.5
+
 const KINDS: { key: TakingsKind; label: string; icon: typeof Scissors }[] = [
   { key: "cut", label: "Cut", icon: Scissors },
   { key: "no_show", label: "No-show", icon: UserX },
   { key: "tip", label: "Tip", icon: Coins },
+  { key: "retail", label: "Retail", icon: ShoppingBag },
 ]
 
 export function TodayInputCard({
@@ -45,9 +52,15 @@ export function TodayInputCard({
   dayCard,
   dayTips,
   dayNoShows,
+  dayRetailSales,
+  dayRetailItems,
+  dayRetailCommission,
   weekTotal,
   weekTips,
   weekNoShows,
+  weekRetailSales,
+  weekRetailItems,
+  weekRetailCommission,
   weekBreakdown,
 }: {
   selectedDate: string
@@ -60,9 +73,15 @@ export function TodayInputCard({
   dayCard: number
   dayTips: number
   dayNoShows: number
+  dayRetailSales: number
+  dayRetailItems: number
+  dayRetailCommission: number
   weekTotal: number
   weekTips: number
   weekNoShows: number
+  weekRetailSales: number
+  weekRetailItems: number
+  weekRetailCommission: number
   weekBreakdown: TakingsBreakdown
 }) {
   const router = useRouter()
@@ -197,7 +216,7 @@ export function TodayInputCard({
             )}
 
             {/* What am I logging? */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {KINDS.map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -221,7 +240,9 @@ export function TodayInputCard({
                 ? "A normal paid haircut — counts towards your revenue and split."
                 : kind === "no_show"
                   ? "No-show fee, auto-charged to card. Your manager confirms at weekly sign-off whether payment came through before it counts as revenue."
-                  : "A tip — 100% yours, no split taken. Pick how it was paid (cash or card); it's added to your weekly take-home."}
+                  : kind === "retail"
+                    ? `A retail product sale — enter the selling price. The full amount goes to the business (not your split), and you earn ${fmtGBP(RETAIL_COMMISSION_PER_ITEM)} commission per item. Pick how it was paid.`
+                    : "A tip — 100% yours, no split taken. Pick how it was paid (cash or card); it's added to your weekly take-home."}
             </p>
 
             {/* Amount + add */}
@@ -365,6 +386,20 @@ export function TodayInputCard({
             </span>
             <span className="font-medium">{fmtGBP(dayNoShows)}</span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              Retail {isToday ? "today" : "this day"} ({dayRetailItems} item
+              {dayRetailItems === 1 ? "" : "s"})
+            </span>
+            <span className="font-medium">
+              {fmtGBP(dayRetailSales)}
+              {dayRetailItems > 0 && (
+                <span className="ml-1 text-xs text-rag-green">
+                  ({fmtGBP(dayRetailCommission)} yours)
+                </span>
+              )}
+            </span>
+          </div>
         </div>
 
         {/* This week — running totals so the barber always knows what's theirs */}
@@ -396,11 +431,28 @@ export function TodayInputCard({
             cash={weekBreakdown.noShows.cash}
             card={weekBreakdown.noShows.card}
           />
+          {/* Retail — selling price to the business, cash vs card. */}
+          <WeekRow
+            label={`Retail sales — ${weekRetailItems} item${weekRetailItems === 1 ? "" : "s"} (to business)`}
+            total={weekRetailSales}
+            cash={weekBreakdown.retail.cash}
+            card={weekBreakdown.retail.card}
+          />
+          {/* Retail commission — the barber's flat £2.50/item, 100% theirs. */}
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-muted-foreground">
+              Retail commission — {fmtGBP(RETAIL_COMMISSION_PER_ITEM)}/item
+            </span>
+            <span className="font-medium text-rag-green">
+              {fmtGBP(weekRetailCommission)}
+            </span>
+          </div>
 
           <p className="mt-1 border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
             You keep 100% of your tips on top of your share of revenue. No-shows
             default to card and only count once your manager confirms payment at
-            weekly sign-off.
+            weekly sign-off. Retail sales go to the business — you earn{" "}
+            {fmtGBP(RETAIL_COMMISSION_PER_ITEM)} for every item you sell.
           </p>
         </div>
       </div>
@@ -448,6 +500,8 @@ function LineIcon({ line }: { line: TakingsLine }) {
     return <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
   if (line.kind === "no_show")
     return <UserX className="h-4 w-4 shrink-0 text-muted-foreground" />
+  if (line.kind === "retail")
+    return <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
   return line.method === "card" ? (
     <CreditCard className="h-4 w-4 shrink-0 text-muted-foreground" />
   ) : (
@@ -457,6 +511,8 @@ function LineIcon({ line }: { line: TakingsLine }) {
 
 function lineLabel(line: TakingsLine): string {
   if (line.kind === "tip") return `Tip · ${line.method === "card" ? "card" : "cash"}`
+  if (line.kind === "retail")
+    return `Retail · ${line.method === "card" ? "card" : "cash"}`
   if (line.kind === "no_show") {
     if (line.noShowPaid === true) return "No-show · paid"
     if (line.noShowPaid === false) return "No-show · not paid"

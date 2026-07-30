@@ -334,6 +334,13 @@ export function ConfirmSiteDialog({
                       Cash {fmtGBP(b.cash)} (RTB {fmtGBP(b.cashRent)}) · Card{" "}
                       {fmtGBP(b.card)} (RTB {fmtGBP(b.cardRent)})
                     </div>
+                    {b.retailItems > 0 && (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Retail {fmtGBP(b.retailSales)} · {b.retailItems} item
+                        {b.retailItems === 1 ? "" : "s"} to business ·{" "}
+                        {fmtGBP(b.retailCommission)} commission (not in RTB)
+                      </div>
+                    )}
                     {b.flags.map((f) => {
                       const decided = decisions[b.barberId]?.[f.kind]
                       return (
