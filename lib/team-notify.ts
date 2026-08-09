@@ -235,6 +235,90 @@ export async function sendLeaveNotification(args: {
   ])
 }
 
+export type HolidayLookaheadRow = {
+  barberName: string
+  siteName: string
+  start: string
+  end: string
+  days: number
+}
+
+/** Friendly UTC date label, e.g. "Sat 5 Sep". */
+function fmtHolidayDate(iso: string): string {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  })
+}
+
+/**
+ * Email a "who's off" holiday lookahead to the given recipients as a simple
+ * table (who / shop / dates / days). Used for BOTH the monthly last-Saturday
+ * digest to Cosmin (the coming month) and the one-off rest-of-year schedule to
+ * leadership. De-dupes recipients; a caller passing no rows still sends a
+ * clear "nobody's off" note so leadership knows the check ran.
+ */
+export async function sendHolidayLookaheadEmail(args: {
+  recipients: (string | null | undefined)[]
+  subject: string
+  title: string
+  intro: string
+  rangeLabel: string
+  rows: HolidayLookaheadRow[]
+  kind: string
+}): Promise<number> {
+  const clean = Array.from(
+    new Set(args.recipients.map((e) => e?.trim().toLowerCase()).filter(Boolean) as string[]),
+  )
+  if (clean.length === 0) return 0
+
+  const table = args.rows.length
+    ? `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px">
+         <thead>
+           <tr style="text-align:left;border-bottom:2px solid #e5e7eb">
+             <th style="padding:6px 8px">Who</th>
+             <th style="padding:6px 8px">Shop</th>
+             <th style="padding:6px 8px">Dates</th>
+             <th style="padding:6px 8px;text-align:right">Days</th>
+           </tr>
+         </thead>
+         <tbody>
+           ${args.rows
+             .map(
+               (r) => `<tr style="border-bottom:1px solid #f0f0f0">
+                 <td style="padding:6px 8px"><strong>${r.barberName}</strong></td>
+                 <td style="padding:6px 8px;color:#555">${r.siteName}</td>
+                 <td style="padding:6px 8px">${fmtHolidayDate(r.start)}${
+                   r.start === r.end ? "" : ` → ${fmtHolidayDate(r.end)}`
+                 }</td>
+                 <td style="padding:6px 8px;text-align:right">${r.days}</td>
+               </tr>`,
+             )
+             .join("")}
+         </tbody>
+       </table>`
+    : `<p style="font-size:14px;line-height:1.6;color:#555">No approved holiday booked for ${args.rangeLabel}.</p>`
+
+  const html = wrap(
+    args.title,
+    `<p style="font-size:14px;line-height:1.6">${args.intro}</p>
+     <p style="font-size:13px;color:#666;margin:0 0 4px">${args.rangeLabel} · ${args.rows.length} booking${
+       args.rows.length === 1 ? "" : "s"
+     }</p>
+     ${table}
+     <p>${emailButton(`/team`, "Open the Team Area")}</p>`,
+  )
+
+  let sent = 0
+  for (const to of clean) {
+    await sendEmail({ to, subject: args.subject, html, kind: args.kind })
+    sent++
+  }
+  return sent
+}
+
 /** Email the 5 nominated reviewers their 360 review request. */
 export async function sendThreeSixtyInvites(args: {
   barberName: string

@@ -175,6 +175,57 @@ export async function getHolidayCapacityConflict({
   return { overCapacity: peakConcurrent >= cap, cap, peakConcurrent }
 }
 
+export type HolidayInRange = {
+  barberId: number
+  barberName: string
+  siteName: string
+  start: string
+  end: string
+  days: number
+}
+
+/**
+ * Every APPROVED holiday booking that overlaps [start, end], across ALL sites,
+ * ordered by start date. Powers the "who's off" lookahead emails (the monthly
+ * last-Saturday digest for the coming month, and the rest-of-year schedule for
+ * leadership). Pending/declined requests are excluded — approved = confirmed.
+ */
+export async function getApprovedHolidaysInRange(
+  start: string,
+  end: string,
+): Promise<HolidayInRange[]> {
+  const rows = await db
+    .select({
+      barberId: leaveRequests.barberId,
+      barberName: barbers.name,
+      siteName: sites.name,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+      days: leaveRequests.days,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(leaveRequests.barberId, barbers.id))
+    .leftJoin(sites, eq(barbers.siteId, sites.id))
+    .where(
+      and(
+        eq(leaveRequests.kind, "holiday"),
+        eq(leaveRequests.status, "Approved"),
+        lte(leaveRequests.startDate, end),
+        gte(leaveRequests.endDate, start),
+      ),
+    )
+    .orderBy(leaveRequests.startDate)
+
+  return rows.map((r) => ({
+    barberId: r.barberId,
+    barberName: r.barberName,
+    siteName: r.siteName ?? "—",
+    start: String(r.startDate),
+    end: String(r.endDate),
+    days: r.days,
+  }))
+}
+
 /** Holiday: counts DOWN from the 28-day allowance. Plenty left = green,
  *  running low = amber, none left (or over) = red. */
 export function ragForHoliday(remaining: number, allowance: number): Rag {
