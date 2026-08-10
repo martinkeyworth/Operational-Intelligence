@@ -1,7 +1,7 @@
 import Link from "next/link"
 import type { Metadata } from "next"
 import { requireUser } from "@/lib/access"
-import { getPendingHolidayApprovals } from "@/lib/team"
+import { getPendingHolidayApprovals, getUpcomingApprovedHolidays } from "@/lib/team"
 import { SignOutButton } from "@/components/sign-out-button"
 import { ApprovalsList } from "./approvals-list"
 
@@ -14,7 +14,10 @@ export default async function ApprovalsPage() {
   // Team admins (company + dashboard) can decide any request; everyone else
   // only sees their own direct reports' pending holiday.
   const isTeamAdmin = user.isCompany && user.canViewDashboard
-  const pending = await getPendingHolidayApprovals(user.id, isTeamAdmin)
+  const [pending, approved] = await Promise.all([
+    getPendingHolidayApprovals(user.id, isTeamAdmin),
+    getUpcomingApprovedHolidays(user.id, isTeamAdmin),
+  ])
 
   return (
     <main className="min-h-svh bg-background">
@@ -58,7 +61,7 @@ export default async function ApprovalsPage() {
       </header>
 
       <div className="mx-auto max-w-2xl px-5 py-6">
-        <ApprovalsList items={pending} />
+        <ApprovalsList items={pending} approved={approved} />
       </div>
     </main>
   )

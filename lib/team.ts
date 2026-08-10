@@ -103,6 +103,58 @@ export async function getPendingHolidayApprovals(
   })
 }
 
+export type ApprovedHoliday = {
+  id: number
+  barberId: number
+  barberName: string
+  startDate: string
+  endDate: string
+  days: number
+}
+
+/**
+ * Upcoming APPROVED holiday this user is responsible for (endDate today or
+ * later), scoped exactly like getPendingHolidayApprovals: a manager sees their
+ * direct reports; a team admin sees everyone. Lets leadership cancel or change
+ * an already-approved booking from the approvals hub, not just the member page.
+ */
+export async function getUpcomingApprovedHolidays(
+  userId: string,
+  seeAll = false,
+): Promise<ApprovedHoliday[]> {
+  const today = new Date().toISOString().slice(0, 10)
+  const rows = await db
+    .select({
+      id: leaveRequests.id,
+      barberId: leaveRequests.barberId,
+      barberName: barbers.name,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+      days: leaveRequests.days,
+      managerUserId: barbers.managerUserId,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(barbers.id, leaveRequests.barberId))
+    .where(
+      and(
+        eq(leaveRequests.kind, "holiday"),
+        eq(leaveRequests.status, "Approved"),
+        gte(leaveRequests.endDate, today),
+      ),
+    )
+    .orderBy(asc(leaveRequests.startDate))
+
+  const mine = seeAll ? rows : rows.filter((r) => r.managerUserId === userId)
+  return mine.map((r) => ({
+    id: r.id,
+    barberId: r.barberId,
+    barberName: r.barberName,
+    startDate: r.startDate,
+    endDate: r.endDate,
+    days: r.days,
+  }))
+}
+
 // --- Holiday capacity (concurrent time-off cap per site) -------------------
 
 /** How many barbers may be on approved holiday at the SAME time at this site.

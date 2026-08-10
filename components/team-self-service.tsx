@@ -67,11 +67,19 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
       <p className="text-xs text-muted-foreground">{self.holiday.taken} days taken this year</p>
 
       {self.holiday.bookings.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
-          {self.holiday.bookings.map((b) => (
-            <HolidayBookingRow key={b.id} booking={b} readOnly={readOnly} />
-          ))}
-        </ul>
+        <div className="mt-4 border-t border-border pt-4">
+          {!readOnly && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              Your holiday bookings — tap Change to move the dates or Cancel to
+              free them up. You don&apos;t need to ask anyone.
+            </p>
+          )}
+          <ul className="flex flex-col gap-2">
+            {self.holiday.bookings.map((b) => (
+              <HolidayBookingRow key={b.id} booking={b} readOnly={readOnly} />
+            ))}
+          </ul>
+        </div>
       )}
 
       {readOnly ? null : !open ? (
