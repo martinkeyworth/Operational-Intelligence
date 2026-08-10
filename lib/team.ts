@@ -13,6 +13,7 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
 import { LEADERSHIP_HOLIDAY_EMAILS } from "@/lib/access-types"
+import { normalizeSiteName } from "@/lib/brands"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { getCurrentOperatingWeek } from "@/lib/data"
 import { currentPeriod } from "@/lib/learning-types"
@@ -317,7 +318,7 @@ export async function getApprovedHolidaysInRange(
   return rows.map((r) => ({
     barberId: r.barberId,
     barberName: r.barberName,
-    siteName: r.siteName ?? "—",
+    siteName: normalizeSiteName(r.siteName) ?? "—",
     start: String(r.startDate),
     end: String(r.endDate),
     days: r.days,
@@ -604,7 +605,7 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
       id: barber.id,
       name: barber.name,
       role: barber.role,
-      siteName: site?.name ?? "—",
+      siteName: normalizeSiteName(site?.name) ?? "—",
       isApprentice: barber.isApprentice,
       startDate: barber.startDate,
     },
@@ -661,7 +662,8 @@ export async function getTeamRoster(): Promise<TeamRosterMember[]> {
   const userRows = await db.select().from(userTable)
   const leaveYear = currentLeaveYear()
 
-  const siteName = (id: number) => siteRows.find((s) => s.id === id)?.name ?? "—"
+  const siteName = (id: number) =>
+    normalizeSiteName(siteRows.find((s) => s.id === id)?.name) ?? "—"
   const userName = (id: string | null) =>
     id ? (userRows.find((u) => u.id === id)?.name ?? null) : null
 

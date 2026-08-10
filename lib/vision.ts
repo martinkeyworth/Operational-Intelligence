@@ -2,6 +2,7 @@ import { db } from "@/lib/db"
 import { sites as sitesTable, weeklyTakings, barbers as barbersTable } from "@/lib/db/schema"
 import { eq, desc, sql } from "drizzle-orm"
 import { ragFromAttainment, type Rag } from "@/lib/format"
+import { normalizeSiteName } from "@/lib/brands"
 import {
   PLAN_MILESTONES,
   PLAN_BASE_YEAR,
@@ -334,7 +335,7 @@ export async function getVisionGlidePath(): Promise<VisionGlidePath> {
     const rtbTarget = Math.round(salesTarget * VISION.rtbRatio)
     return {
       siteId: b.id,
-      name: b.name,
+      name: normalizeSiteName(b.name),
       chairs,
       headcountTarget,
       salesTarget,

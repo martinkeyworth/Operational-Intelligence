@@ -13,6 +13,7 @@ import {
 import { and, eq, gte, lte, sql } from "drizzle-orm"
 import { fmtWeekLong, isPastSubmissionDeadline } from "@/lib/format"
 import { CEO_EMAIL } from "@/lib/access-types"
+import { normalizeSiteName } from "@/lib/brands"
 import {
   getManualKpiResults,
   getMarketingResultsBySite,
@@ -111,7 +112,12 @@ export async function getSubmissionStatus(
     activeBarberRows,
     holidayRows,
   ] = await Promise.all([
-    db.select().from(sites),
+    db
+      .select()
+      .from(sites)
+      .then((rows) =>
+        rows.map((r) => ({ ...r, name: normalizeSiteName(r.name) })),
+      ),
     db
       .select({
         siteId: weeklyTakings.siteId,
@@ -505,7 +511,7 @@ export async function getSiteManagerContacts(): Promise<
 
     result.set(s.id, {
       siteId: s.id,
-      siteName: s.name,
+      siteName: normalizeSiteName(s.name),
       managerName: s.managerName,
       emails: [...new Set(matched.map((m) => m.email.toLowerCase()))],
     })

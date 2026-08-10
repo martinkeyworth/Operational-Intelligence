@@ -5,6 +5,7 @@ import { and, desc, eq, sql } from "drizzle-orm"
 import { getRecruitmentPlan, type RoleBucket } from "@/lib/hr"
 import { tierForBrand } from "@/lib/plan"
 import { formatJobAdvert as formatAdvert } from "@/lib/jobs-format"
+import { normalizeSiteName } from "@/lib/brands"
 
 // ---------------------------------------------------------------------------
 // Jobs board
@@ -307,7 +308,7 @@ function mapPosting(
     id: job.id,
     title: job.title,
     siteId: job.siteId ?? null,
-    siteName: siteName ?? null,
+    siteName: normalizeSiteName(siteName) ?? null,
     location: job.location ?? null,
     brand: job.brand ?? null,
     role: job.role ?? null,

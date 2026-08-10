@@ -64,6 +64,39 @@ export function normalizeBrand(
 }
 
 /**
+ * Legacy site *names* still stored in sites.name (e.g. the row
+ * "Velvet Ash Woodseats"). Unlike sites.brand these are free-text names shown
+ * verbatim across the app, so we rewrite them on read. This makes the rebrand
+ * correct regardless of whether the prod DB has been migrated.
+ *
+ * Order matters: the most specific full-name match is applied first so
+ * "Velvet Ash Woodseats" collapses straight to "LTZ Woodseats" instead of the
+ * naive substring result "LTZ Woodseats Woodseats". Run this on prod to make
+ * the stored values match:
+ *   UPDATE sites SET name = 'LTZ Woodseats', brand = 'LTZ Woodseats'
+ *   WHERE name ILIKE '%Velvet Ash%' OR brand = 'Velvet Ash';
+ */
+const SITE_NAME_ALIASES: Array<[RegExp, string]> = [
+  [/Velvet Ash Woodseats/gi, "LTZ Woodseats"],
+  [/Velvet Ash/gi, "LTZ Woodseats"],
+]
+
+/**
+ * Normalise a stored site name for display, rewriting any legacy brand
+ * fragments to their current name. Safe to call on any name string.
+ */
+export function normalizeSiteName<T extends string | null | undefined>(
+  name: T,
+): T {
+  if (!name) return name
+  let out = name as string
+  for (const [pattern, replacement] of SITE_NAME_ALIASES) {
+    out = out.replace(pattern, replacement)
+  }
+  return out as T
+}
+
+/**
  * Resolve a full brand record. Training-academy sites use the LTZ Training
  * Academy mark regardless of their stored brand; barbershops resolve by brand
  * and fall back to the group brand.

@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { computeAutoRag } from "@/lib/data"
+import { normalizeSiteName } from "@/lib/brands"
 import {
   ACTIVITY_TYPES,
   RECRUITMENT_STAGES,
@@ -52,7 +53,7 @@ export async function getSiteOptions(): Promise<SiteOption[]> {
     .select({ id: sites.id, name: sites.name })
     .from(sites)
     .orderBy(sites.name)
-  return rows
+  return rows.map((r) => ({ ...r, name: normalizeSiteName(r.name) }))
 }
 
 /**
@@ -119,7 +120,7 @@ export async function sweepAutoEscalations(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function getDecisions(): Promise<DecisionRow[]> {
-  const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
+  const siteRows = (await db.select({ id: sites.id, name: sites.name }).from(sites)).map((s) => ({ id: s.id, name: normalizeSiteName(s.name) }))
   const rows = await db.select().from(decisions).orderBy(desc(decisions.decidedOn))
   return rows.map((d) => ({
     id: d.id,
@@ -128,7 +129,7 @@ export async function getDecisions(): Promise<DecisionRow[]> {
     decision: d.decision,
     rationale: d.rationale,
     functionArea: d.functionArea,
-    siteName: d.siteId ? (siteRows.find((s) => s.id === d.siteId)?.name ?? null) : null,
+    siteName: d.siteId ? (normalizeSiteName(siteRows.find((s) => s.id === d.siteId)?.name) ?? null) : null,
     decidedBy: d.decidedBy,
     status: d.status,
     reviewDate: d.reviewDate ? String(d.reviewDate) : null,
@@ -146,7 +147,7 @@ function reachedStageIndex(stage: string, stages: readonly string[]): number {
 }
 
 export async function getRecruitmentFunnel(): Promise<RecruitmentFunnel> {
-  const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
+  const siteRows = (await db.select({ id: sites.id, name: sites.name }).from(sites)).map((s) => ({ id: s.id, name: normalizeSiteName(s.name) }))
   const userRows = await db
     .select({ id: userTable.id, name: userTable.name })
     .from(userTable)
@@ -159,7 +160,7 @@ export async function getRecruitmentFunnel(): Promise<RecruitmentFunnel> {
     id: c.id,
     name: c.name,
     role: c.role,
-    siteName: c.siteId ? (siteRows.find((s) => s.id === c.siteId)?.name ?? null) : null,
+    siteName: c.siteId ? (normalizeSiteName(siteRows.find((s) => s.id === c.siteId)?.name) ?? null) : null,
     source: c.source,
     stage: c.stage,
     status: c.status,
@@ -225,7 +226,7 @@ export async function getRecruitmentFunnel(): Promise<RecruitmentFunnel> {
 // ---------------------------------------------------------------------------
 
 export async function getTrainingFunnel(): Promise<TrainingFunnel> {
-  const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
+  const siteRows = (await db.select({ id: sites.id, name: sites.name }).from(sites)).map((s) => ({ id: s.id, name: normalizeSiteName(s.name) }))
   const userRows = await db
     .select({ id: userTable.id, name: userTable.name })
     .from(userTable)
@@ -238,7 +239,7 @@ export async function getTrainingFunnel(): Promise<TrainingFunnel> {
     id: l.id,
     name: l.name,
     program: l.program,
-    siteName: l.siteId ? (siteRows.find((s) => s.id === l.siteId)?.name ?? null) : null,
+    siteName: l.siteId ? (normalizeSiteName(siteRows.find((s) => s.id === l.siteId)?.name) ?? null) : null,
     stage: l.stage,
     status: l.status,
     ownerName: l.ownerUserId
@@ -287,7 +288,7 @@ export async function getTrainingFunnel(): Promise<TrainingFunnel> {
 // ---------------------------------------------------------------------------
 
 export async function getActivitySummary(): Promise<ActivitySummary> {
-  const siteRows = await db.select({ id: sites.id, name: sites.name }).from(sites)
+  const siteRows = (await db.select({ id: sites.id, name: sites.name }).from(sites)).map((s) => ({ id: s.id, name: normalizeSiteName(s.name) }))
   const rows = await db
     .select()
     .from(activityLog)
@@ -301,7 +302,7 @@ export async function getActivitySummary(): Promise<ActivitySummary> {
     functionArea: r.functionArea,
     activityType: r.activityType,
     label: labelFor(r.functionArea, r.activityType),
-    siteName: r.siteId ? (siteRows.find((s) => s.id === r.siteId)?.name ?? null) : null,
+    siteName: r.siteId ? (normalizeSiteName(siteRows.find((s) => s.id === r.siteId)?.name) ?? null) : null,
     weekEnding: String(r.weekEnding),
     count: r.count,
     notes: r.notes,

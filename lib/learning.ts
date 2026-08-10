@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/schema"
 import { and, asc, desc, eq, inArray } from "drizzle-orm"
 import { ROLES } from "@/lib/roles"
+import { normalizeSiteName } from "@/lib/brands"
 import {
   ONE_TO_ONE_TEMPLATE_VERSION,
   currentPeriod,
@@ -577,7 +578,8 @@ export async function getLearningRoster(managerUserId?: string | null): Promise<
     : await base
   const siteRows = await db.select().from(sites)
   const period = currentPeriod()
-  const siteName = (id: number) => siteRows.find((s) => s.id === id)?.name ?? "—"
+  const siteName = (id: number) =>
+    normalizeSiteName(siteRows.find((s) => s.id === id)?.name) ?? "—"
 
   const out: LearningRosterRow[] = []
   for (const b of barberRows) {
@@ -618,7 +620,7 @@ export async function getBarberBasics(barberId: number) {
     id: b.id,
     name: b.name,
     role: b.role,
-    siteName: site?.name ?? "—",
+    siteName: normalizeSiteName(site?.name) ?? "—",
     userId: b.userId,
     managerUserId: b.managerUserId,
   }

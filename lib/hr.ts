@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { sites, barbers, openingRoleOverrides } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
 import { tierForBrand, OPENING_SCHEDULE } from "@/lib/plan"
+import { normalizeSiteName } from "@/lib/brands"
 
 // ---------------------------------------------------------------------------
 // HR / recruitment model
@@ -233,7 +234,7 @@ export async function getRecruitmentPlan(): Promise<RecruitmentPlan> {
 
     return {
       siteId: s.id,
-      siteName: s.name,
+      siteName: normalizeSiteName(s.name),
       brand: s.brand,
       cuttingRole: brandCuttingRole,
       chairCapacity,

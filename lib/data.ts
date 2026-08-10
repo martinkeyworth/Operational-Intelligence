@@ -21,6 +21,7 @@ import {
 } from "@/lib/format"
 import { ragForSublet, SUBLET_WEEKLY_TARGET } from "@/lib/subletting-config"
 import { VISION } from "@/lib/vision"
+import { normalizeSiteName } from "@/lib/brands"
 import { perBarberWeeklyRevenue, tierForBrand, RTB_PER_BARBER_WEEKLY } from "@/lib/plan"
 import {
   ragForUtilisation,
@@ -493,7 +494,7 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
 
     return {
       id: s.id,
-      name: s.name,
+      name: normalizeSiteName(s.name),
       location: s.location,
       brand: s.brand,
       region: s.region,
@@ -521,7 +522,8 @@ export async function getSiteWeek(week: string): Promise<SiteWeekRow[]> {
 
 export async function getSite(id: number) {
   const [s] = await db.select().from(sites).where(eq(sites.id, id))
-  return s ?? null
+  if (!s) return null
+  return { ...s, name: normalizeSiteName(s.name) }
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +692,9 @@ export async function getBarberWeek(
         id: b.id,
         name: b.name,
         role: b.role,
-        siteName: siteRows.find((s) => s.id === b.siteId)?.name ?? "—",
+        siteName:
+          normalizeSiteName(siteRows.find((s) => s.id === b.siteId)?.name) ??
+          "—",
         targetWeekly: target,
         revenue,
         prevRevenue: p ? Number(p.total) : 0,
@@ -914,7 +918,8 @@ export async function getActions(): Promise<ActionRow[]> {
         description: a.description,
         functionArea: a.functionArea,
         siteName: a.siteId
-          ? (siteRows.find((s) => s.id === a.siteId)?.name ?? null)
+          ? (normalizeSiteName(siteRows.find((s) => s.id === a.siteId)?.name) ??
+            null)
           : null,
         owner: a.owner,
         ownerUserId: a.ownerUserId ?? null,
@@ -1204,7 +1209,7 @@ export async function getMarketingResultsBySite(
     })
     return {
       siteId: s.id,
-      siteName: s.name,
+      siteName: normalizeSiteName(s.name),
       brand: s.brand,
       siteType: s.siteType,
       kpis,
@@ -1539,7 +1544,7 @@ export async function getDataEntrySites(
 
   return scopedSiteRows.map((s) => ({
     id: s.id,
-    name: s.name,
+    name: normalizeSiteName(s.name),
     location: s.location,
     barbers: barberRows
       .filter((b) => b.siteId === s.id)
@@ -1570,7 +1575,7 @@ export async function getSiteOptions(): Promise<SiteOption[]> {
     .select({ id: sites.id, name: sites.name })
     .from(sites)
     .orderBy(sites.name)
-  return rows
+  return rows.map((r) => ({ ...r, name: normalizeSiteName(r.name) }))
 }
 
 /**
@@ -1633,7 +1638,7 @@ export async function getSubletForSiteWeek(
   const amount = row ? Number(row.amount) : 0
   return {
     siteId,
-    siteName: site.name,
+    siteName: normalizeSiteName(site.name),
     week,
     amount,
     target,
@@ -1845,7 +1850,7 @@ export async function getTrainingSitesForWeek(
       )
     out.push({
       id: r.id,
-      name: r.name,
+      name: normalizeSiteName(r.name),
       kpis,
       entered: Boolean(tw),
       confirmed: Boolean(tw?.confirmed),
@@ -1976,7 +1981,8 @@ export async function getBarberSplits(week: string): Promise<BarberSplitRow[]> {
       name: b.name,
       role: b.role,
       siteId: b.siteId,
-      siteName: siteRows.find((s) => s.id === b.siteId)?.name ?? "—",
+      siteName:
+        normalizeSiteName(siteRows.find((s) => s.id === b.siteId)?.name) ?? "—",
       barberPct: pct,
       effectiveBarberPct: eff,
       businessPct: 100 - eff,
@@ -2033,7 +2039,7 @@ export async function getActiveBarbersBySite(): Promise<BarberSiteGroup[]> {
 
   return siteRows.map((s) => ({
     siteId: s.id,
-    siteName: s.name,
+    siteName: normalizeSiteName(s.name),
     siteType: s.siteType,
     barbers: barberRows
       .filter((b) => b.siteId === s.id)
