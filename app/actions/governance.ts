@@ -15,6 +15,7 @@ import {
 import { and, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { setBarberNoShowsPaid } from "@/lib/daily-takings"
+import { normalizeSiteName } from "@/lib/brands"
 import {
   requireDashboard,
   requireDataEntry,
@@ -626,6 +627,7 @@ async function syncCapacityActions(
 ) {
   const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
   if (!site) return
+  const siteName = normalizeSiteName(site.name)
 
   const [barberAgg] = await db
     .select({ c: sql<number>`count(*)` })
@@ -639,11 +641,11 @@ async function syncCapacityActions(
     const vacant = Math.max(0, capacity - activeBarbers)
     await syncKpiAction({
       open: capacity > 0 && activeBarbers < capacity,
-      title: `Chair capacity underutilised — ${site.name}`,
+      title: `Chair capacity underutilised — ${siteName}`,
       functionArea: "Capacity",
       siteId,
       owner,
-      description: `${site.name} is running ${activeBarbers} of ${capacity} chairs (${vacant} vacant). Underutilised — recruit or reallocate to fill capacity.`,
+      description: `${siteName} is running ${activeBarbers} of ${capacity} chairs (${vacant} vacant). Underutilised — recruit or reallocate to fill capacity.`,
     })
 
     // Revenue To Business — expected = barbers x £/barber, vs rent returned.
@@ -663,7 +665,7 @@ async function syncCapacityActions(
     const expected = activeBarbers * perBarber
     await syncKpiAction({
       open: expected > 0 && rtbActual < expected,
-      title: `Revenue-To-Business below target — ${site.name}`,
+      title: `Revenue-To-Business below target — ${siteName}`,
       functionArea: "RTB",
       siteId,
       owner,
@@ -786,7 +788,7 @@ export async function saveTrainingWeek(formData: FormData) {
 
   await syncKpiAction({
     open: below,
-    title: `Training below capacity — ${site.name}`,
+    title: `Training below capacity — ${normalizeSiteName(site.name)}`,
     functionArea: "Training",
     siteId,
     owner: recordedBy,
