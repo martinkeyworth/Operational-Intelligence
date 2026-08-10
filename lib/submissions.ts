@@ -188,6 +188,9 @@ export async function getSubmissionStatus(
   const activeBySite = new Map<number, number>()
   const holidayBySite = new Map<number, number>()
   for (const b of activeBarberRows) {
+    // The CEO (Martin) is not a submitting barber — never expect takings from
+    // him, even if he holds a barber record for the leadership holiday logic.
+    if (b.email && b.email.toLowerCase() === CEO_EMAIL) continue
     if (onHoliday.has(b.id)) {
       holidayBySite.set(b.siteId, (holidayBySite.get(b.siteId) ?? 0) + 1)
     } else {

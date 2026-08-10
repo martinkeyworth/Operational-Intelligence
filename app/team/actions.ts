@@ -14,7 +14,9 @@ import {
   getBarberForUser,
   currentLeaveYear,
   getHolidayCapacityConflict,
+  getLeadershipHolidayConflict,
 } from "@/lib/team"
+import { isCeoEmail, isLeadershipHolidayEmail } from "@/lib/access-types"
 import {
   sendLeaveNotification,
   sendThreeSixtyInvites,
@@ -72,6 +74,95 @@ export async function requestHoliday(formData: FormData) {
   const days = daysBetween(start, end)
   const noticeDays = noticeDaysUntil(start)
   const isException = noticeDays < HOLIDAY_NOTICE_DAYS
+
+  // Senior-leadership time-off rule (Martin/Cosmin/Mario), applied BEFORE the
+  // per-site cap because it spans all sites: at most one of the trio may be off
+  // at a time. Martin (CEO) always auto-APPROVES regardless — his holiday goes
+  // straight onto the shared calendar with no approval step. Cosmin/Mario are
+  // auto-DECLINED when another trio member already has approved holiday then.
+  const email = (user.email ?? "").toLowerCase()
+  if (isLeadershipHolidayEmail(email)) {
+    const isCeo = isCeoEmail(email)
+    const lead = await getLeadershipHolidayConflict({
+      excludeBarberId: barber.id,
+      start,
+      end,
+    })
+
+    if (isCeo) {
+      // Always approve. Note in the reason when it overlaps another leader.
+      const note = lead.conflict
+        ? ` (overlaps ${lead.withName ?? "another leader"} — approved as CEO)`
+        : ""
+      const [row] = await db
+        .insert(leaveRequests)
+        .values({
+          barberId: barber.id,
+          kind: "holiday",
+          startDate: start,
+          endDate: end,
+          days,
+          status: "Approved",
+          reason: reason ? `${reason}${note}` : note || null,
+          leaveYear: currentLeaveYear(),
+          requestedByUserId: user.id,
+          decidedByUserId: user.id,
+          decidedAt: new Date(),
+        })
+        .returning({ id: leaveRequests.id })
+
+      // Push straight to the shared company calendar (approved).
+      await syncLeaveToCalendar(row.id)
+
+      await sendLeaveNotification({
+        kind: "holiday",
+        barberId: barber.id,
+        barberName: barber.name,
+        start,
+        end,
+        days,
+        reason,
+        noticeDays,
+        isException,
+      })
+
+      revalidatePath("/team")
+      revalidatePath("/approvals")
+      return { ok: true, autoApproved: true }
+    }
+
+    if (lead.conflict) {
+      const declineReason = `${lead.withName ?? "Another member of the leadership team"} is already booked off between ${fmtDay(start)} and ${fmtDay(end)}. Only one of the senior leadership team can be off at a time, so this was automatically declined — ask for approval if it needs to overlap.`
+
+      await db.insert(leaveRequests).values({
+        barberId: barber.id,
+        kind: "holiday",
+        startDate: start,
+        endDate: end,
+        days,
+        status: "Declined",
+        reason: reason ? `${reason} — ${declineReason}` : declineReason,
+        leaveYear: currentLeaveYear(),
+        requestedByUserId: user.id,
+      })
+
+      await sendLeaveNotification({
+        kind: "holiday",
+        barberId: barber.id,
+        barberName: barber.name,
+        start,
+        end,
+        days,
+        reason,
+        autoDeclined: true,
+        autoDeclineReason: declineReason,
+      })
+
+      revalidatePath("/team")
+      return { ok: true, autoDeclined: true, error: declineReason }
+    }
+    // No leadership clash → fall through to the normal site-cap + Pending flow.
+  }
 
   // Concurrent time-off cap: if the site is already at capacity on any day in
   // the requested range (Cavendish/Woodseats/Academy = 1 person off, Soresby =

@@ -10,8 +10,9 @@ import {
   threeSixtyNominees,
   user as userTable,
 } from "@/lib/db/schema"
-import { and, asc, desc, eq, gte, isNull, lte, ne } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
+import { LEADERSHIP_HOLIDAY_EMAILS } from "@/lib/access-types"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { getCurrentOperatingWeek } from "@/lib/data"
 import { currentPeriod } from "@/lib/learning-types"
@@ -225,6 +226,51 @@ export async function getHolidayCapacityConflict({
   // Adding this barber would make it peakConcurrent + 1; that breaches the cap
   // when the cap's slots are already taken on some overlapping day.
   return { overCapacity: peakConcurrent >= cap, cap, peakConcurrent }
+}
+
+/**
+ * Senior-leadership concurrent time-off rule: at most ONE of the leadership
+ * trio (Martin/Cosmin/Mario, identified by their linked login email) may be on
+ * approved holiday at a time, ACROSS ALL SITES. Returns whether any OTHER trio
+ * member already has approved holiday overlapping [start,end], plus that
+ * person's name for the message. Only APPROVED holiday counts (pending doesn't
+ * hold a slot). `excludeBarberId` is the requester, so their own bookings never
+ * block themselves.
+ */
+export async function getLeadershipHolidayConflict({
+  excludeBarberId,
+  start,
+  end,
+}: {
+  excludeBarberId: number
+  start: string
+  end: string
+}): Promise<{ conflict: boolean; withName: string | null }> {
+  const rows = await db
+    .select({
+      barberId: leaveRequests.barberId,
+      barberName: barbers.name,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+      email: userTable.email,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(leaveRequests.barberId, barbers.id))
+    .innerJoin(userTable, eq(barbers.userId, userTable.id))
+    .where(
+      and(
+        ne(leaveRequests.barberId, excludeBarberId),
+        eq(leaveRequests.kind, "holiday"),
+        eq(leaveRequests.status, "Approved"),
+        lte(leaveRequests.startDate, end),
+        gte(leaveRequests.endDate, start),
+        inArray(userTable.email, LEADERSHIP_HOLIDAY_EMAILS),
+      ),
+    )
+    .orderBy(asc(leaveRequests.startDate))
+
+  const hit = rows[0]
+  return { conflict: Boolean(hit), withName: hit?.barberName ?? null }
 }
 
 export type HolidayInRange = {
