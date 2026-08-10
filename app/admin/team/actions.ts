@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
 import { getBarberForUser, getHolidayCapacityConflict } from "@/lib/team"
 import { scheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles, syncOneToOneRsvps } from "@/lib/team-schedule"
+import { syncLeaveToCalendar } from "@/lib/leave-calendar"
 
 function revalidateTeam(barberId?: number) {
   revalidatePath("/admin/team")
@@ -100,6 +101,12 @@ export async function decideLeave(formData: FormData) {
     .update(leaveRequests)
     .set({ status, decidedByUserId: admin.id, decidedAt: new Date() })
     .where(eq(leaveRequests.id, id))
+
+  // Reflect the decision on the shared company Google Calendar: approval adds
+  // the all-day holiday event (barber invited); decline removes any event a
+  // prior approval created. No-op if calendar isn't configured.
+  await syncLeaveToCalendar(id)
+
   revalidateTeam()
   return { ok: true }
 }

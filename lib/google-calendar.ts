@@ -78,6 +78,12 @@ export type UpsertEventArgs = {
   attendees: CalendarAttendee[]
   /** All-day events (used for 360 cycle due dates) — date only, no time. */
   allDay?: boolean
+  /**
+   * For multi-day all-day events (e.g. a holiday spanning several days), the
+   * INCLUSIVE last day. Google's all-day `end.date` is exclusive, so we add one
+   * day internally. Ignored unless `allDay` is set; defaults to a single day.
+   */
+  allDayEndDate?: Date
 }
 
 export type CalendarEventResult = {
@@ -109,9 +115,12 @@ export async function upsertCalendarEvent(
   }
   if (args.allDay) {
     const day = args.start.toISOString().slice(0, 10)
-    const nextDay = new Date(args.start.getTime() + 864e5).toISOString().slice(0, 10)
+    // Google's all-day end.date is EXCLUSIVE. For a single day that's start+1;
+    // for a multi-day span it's the inclusive last day + 1.
+    const lastDay = args.allDayEndDate ?? args.start
+    const endExclusive = new Date(lastDay.getTime() + 864e5).toISOString().slice(0, 10)
     requestBody.start = { date: day }
-    requestBody.end = { date: nextDay }
+    requestBody.end = { date: endExclusive }
   } else {
     requestBody.start = { dateTime: args.start.toISOString(), timeZone: "Europe/London" }
     requestBody.end = { dateTime: end.toISOString(), timeZone: "Europe/London" }

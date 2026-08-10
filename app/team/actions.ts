@@ -20,6 +20,7 @@ import {
   sendThreeSixtyInvites,
   sendSicknessAckToIndividual,
 } from "@/lib/team-notify"
+import { syncLeaveToCalendar } from "@/lib/leave-calendar"
 
 /** Human-readable date for messages, e.g. "3 Aug 2026". */
 function fmtDay(iso: string): string {
@@ -152,17 +153,24 @@ export async function logSickness(formData: FormData) {
   if (!start) return { ok: false, error: "Date required" }
 
   const days = daysBetween(start, end)
-  await db.insert(leaveRequests).values({
-    barberId: barber.id,
-    kind: "sickness",
-    startDate: start,
-    endDate: end,
-    days,
-    status: "Recorded",
-    reason,
-    leaveYear: currentLeaveYear(),
-    requestedByUserId: user.id,
-  })
+  const [sick] = await db
+    .insert(leaveRequests)
+    .values({
+      barberId: barber.id,
+      kind: "sickness",
+      startDate: start,
+      endDate: end,
+      days,
+      status: "Recorded",
+      reason,
+      leaveYear: currentLeaveYear(),
+      requestedByUserId: user.id,
+    })
+    .returning({ id: leaveRequests.id })
+
+  // Mirror the sickness onto the shared company Google Calendar (barber invited
+  // as attendee). No-op if Google Calendar isn't configured.
+  await syncLeaveToCalendar(sick.id)
 
   await sendLeaveNotification({
     kind: "sickness",
@@ -245,6 +253,11 @@ export async function decideLeaveScoped(formData: FormData) {
     .update(leaveRequests)
     .set({ status, decidedByUserId: user.id, decidedAt: new Date() })
     .where(eq(leaveRequests.id, id))
+
+  // Reflect the decision on the shared company Google Calendar: an approval
+  // adds the all-day holiday event (barber invited); a decline removes any
+  // event that a prior approval created. No-op if calendar isn't configured.
+  await syncLeaveToCalendar(id)
 
   revalidatePath("/approvals")
   revalidatePath("/admin/team")

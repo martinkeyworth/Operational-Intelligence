@@ -542,6 +542,11 @@ export const leaveRequests = pgTable("leave_requests", {
   decidedByUserId: text("decided_by_user_id"),
   decidedAt: timestamp("decided_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Shared company Google Calendar sync. Approved holiday + recorded sickness
+  // are mirrored as all-day events on the LTZ calendar (barber invited as an
+  // attendee). Null until synced; cleared if a holiday is later declined.
+  googleEventId: text("google_event_id"),
+  calendarSyncedAt: timestamp("calendar_synced_at"),
 })
 
 // Monthly 1-2-1 between a barber and their assigned manager. Auto-scheduled
