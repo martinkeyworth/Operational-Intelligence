@@ -19,6 +19,11 @@ export type AccessUser = {
   // Site ids a non-dashboard user manages (own workplace + named manager).
   // Only populated for non-dashboard users; dashboard users manage all sites.
   managedSiteIds?: number[]
+  // Whether this user has a linked barber record. Drives access to the personal
+  // Team Area (holiday / sickness / 1-2-1 / 360 self-service), independent of
+  // the `isBarber` capability flag — leadership (e.g. the CEO) can be linked for
+  // holidays without being a "barber" who submits weekly takings.
+  hasBarberRecord?: boolean
 } & Capabilities
 
 // All functional areas that can have a designated lead + RAID log.

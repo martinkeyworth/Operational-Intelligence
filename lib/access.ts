@@ -61,6 +61,17 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     base.managedSiteIds = await getManagedSiteIds(base)
   }
 
+  // Does this user have a linked barber record? This — not the `isBarber`
+  // capability flag — gates the personal Team Area (holiday self-service), so
+  // leadership who are linked for holidays but aren't "barbers" (e.g. the CEO)
+  // still see and can manage their own bookings.
+  const [linkedBarber] = await db
+    .select({ id: barbers.id })
+    .from(barbers)
+    .where(eq(barbers.userId, row.id))
+    .limit(1)
+  base.hasBarberRecord = Boolean(linkedBarber)
+
   return base
 }
 

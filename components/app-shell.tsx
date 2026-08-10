@@ -44,6 +44,7 @@ type ShellUser = {
   isOwner?: boolean
   canViewDashboard?: boolean
   isBarber?: boolean
+  hasBarberRecord?: boolean
   managedSiteIds?: number[]
 }
 
@@ -82,7 +83,11 @@ export function AppShell({
         // barbers rather than listed here, so it's never buried in a collapsed
         // section.
         { href: "/openings", label: "Open Roles", icon: Megaphone },
-        ...(user.isBarber
+        // Team Area (personal holiday / sickness / 1-2-1 / 360) is available to
+        // anyone with a linked barber record — including leadership who book
+        // holidays but aren't flagged as a weekly-takings "barber" (e.g. the
+        // CEO). Gating on isBarber alone hid it from them entirely.
+        ...(user.isBarber || user.hasBarberRecord
           ? [{ href: "/team", label: "Team Area", icon: UserRound }]
           : []),
         ...(managerSiteId
