@@ -341,6 +341,16 @@ export type SelfView = {
     rag: Rag
     /** Max barbers allowed off at once at this site (Soresby 2, others 1). */
     siteHolidayCap: number
+    /** This barber's live holiday bookings (Pending/Approved) for the leave
+     *  year, so they can cancel or change them. Soonest-first. */
+    bookings: {
+      id: number
+      startDate: string
+      endDate: string
+      days: number
+      status: string
+      reason: string | null
+    }[]
   }
   sickness: { days: number; rag: Rag }
   nextOneToOne: { id: number; scheduledFor: Date; status: string } | null
@@ -433,12 +443,27 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
     .from(leaveRequests)
     .where(and(eq(leaveRequests.barberId, barberId), eq(leaveRequests.leaveYear, leaveYear)))
   const holidayTaken = leaveRows
-    .filter((r) => r.kind === "holiday" && r.status !== "Declined")
+    .filter((r) => r.kind === "holiday" && r.status !== "Declined" && r.status !== "Cancelled")
     .reduce((s, r) => s + r.days, 0)
   const sicknessDays = leaveRows
-    .filter((r) => r.kind === "sickness")
+    .filter((r) => r.kind === "sickness" && r.status !== "Cancelled")
     .reduce((s, r) => s + r.days, 0)
   const remaining = barber.holidayAllowance - holidayTaken
+
+  // The barber's own holiday bookings for this leave year, so they can see and
+  // cancel/change them. Declined + Cancelled are hidden (they no longer hold a
+  // slot). Sorted soonest-first.
+  const holidayBookings = leaveRows
+    .filter((r) => r.kind === "holiday" && (r.status === "Pending" || r.status === "Approved"))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .map((r) => ({
+      id: r.id,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      days: r.days,
+      status: r.status,
+      reason: r.reason,
+    }))
 
   // Current-period 1-2-1 — matches the learning roster so the barber sees the
   // same status here as leadership sees in Learning Plans.
@@ -493,6 +518,7 @@ export async function getBarberSelfView(barberId: number): Promise<SelfView | nu
       remaining,
       rag: ragForHoliday(remaining, barber.holidayAllowance),
       siteHolidayCap: site?.holidayCap ?? 1,
+      bookings: holidayBookings,
     },
     sickness: { days: sicknessDays, rag: ragForSickness(sicknessDays) },
     nextOneToOne: next
@@ -547,9 +573,9 @@ export async function getTeamRoster(): Promise<TeamRosterMember[]> {
       .select()
       .from(leaveRequests)
       .where(and(eq(leaveRequests.barberId, b.id), eq(leaveRequests.leaveYear, leaveYear)))
-    const holidayTaken = leaveRows
-      .filter((r) => r.kind === "holiday" && r.status !== "Declined")
-      .reduce((s, r) => s + r.days, 0)
+  const holidayTaken = leaveRows
+    .filter((r) => r.kind === "holiday" && r.status !== "Declined" && r.status !== "Cancelled")
+    .reduce((s, r) => s + r.days, 0)
     const sicknessDays = leaveRows
       .filter((r) => r.kind === "sickness")
       .reduce((s, r) => s + r.days, 0)

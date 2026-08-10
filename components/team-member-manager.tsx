@@ -20,6 +20,7 @@ import {
   completeOneToOne,
   openThreeSixtyCycle,
 } from "@/app/admin/team/actions"
+import { cancelLeave } from "@/app/team/actions"
 import type { getTeamMemberDetail } from "@/lib/team"
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getTeamMemberDetail>>>
@@ -75,6 +76,19 @@ export function TeamMemberManager({
   const pendingLeave = detail.recentLeave.filter(
     (l) => l.kind === "holiday" && l.status === "Pending",
   )
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const approvedLeave = detail.recentLeave.filter(
+    (l) => l.kind === "holiday" && l.status === "Approved" && l.endDate >= todayIso,
+  )
+  const cancelApproved = (id: number) =>
+    start(async () => {
+      setLeaveError(null)
+      const fd = new FormData()
+      fd.set("id", String(id))
+      const res = (await cancelLeave(fd)) as { ok: boolean; error?: string }
+      if (res && res.ok === false && res.error) setLeaveError(res.error)
+      router.refresh()
+    })
 
   return (
     <div className="space-y-4">
@@ -256,6 +270,44 @@ export function TeamMemberManager({
                   </Button>
                 </form>
               </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Upcoming approved holiday — cancellable by the manager */}
+      {approvedLeave.length > 0 && (
+        <Card className="space-y-3 p-5">
+          <h3 className="text-sm font-semibold text-foreground">Upcoming approved holiday</h3>
+          <p className="text-xs text-muted-foreground">
+            Cancelling frees the day allowance and the shop&apos;s cover slot, and removes the
+            shared-calendar entry.
+          </p>
+          {leaveError && pendingLeave.length === 0 && (
+            <div className="flex items-start gap-1.5 rounded-md border border-rag-red/30 bg-rag-red/10 p-2.5 text-xs text-rag-red">
+              <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{leaveError}</span>
+            </div>
+          )}
+          {approvedLeave.map((l) => (
+            <div
+              key={l.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+            >
+              <span className="text-sm text-foreground">
+                {fmtDate(l.startDate)} → {fmtDate(l.endDate)}{" "}
+                <span className="text-muted-foreground">({l.days}d)</span>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-rag-red hover:text-rag-red"
+                disabled={pending}
+                onClick={() => cancelApproved(l.id)}
+              >
+                Cancel holiday
+              </Button>
             </div>
           ))}
         </Card>

@@ -19,6 +19,7 @@ import {
   sendLeaveNotification,
   sendThreeSixtyInvites,
   sendSicknessAckToIndividual,
+  sendHolidayCancellationNotice,
 } from "@/lib/team-notify"
 import { syncLeaveToCalendar } from "@/lib/leave-calendar"
 
@@ -263,6 +264,204 @@ export async function decideLeaveScoped(formData: FormData) {
   revalidatePath("/admin/team")
   revalidatePath("/team")
   return { ok: true }
+}
+
+/**
+ * Load a leave request together with its barber, and authorise the caller to
+ * modify it. Allowed: the barber themselves, the barber's assigned manager, or
+ * a team admin (company + dashboard). Returns the row or an error.
+ */
+async function loadLeaveForCaller(id: number) {
+  const user = await requireUser()
+  const [row] = await db
+    .select({
+      id: leaveRequests.id,
+      barberId: leaveRequests.barberId,
+      kind: leaveRequests.kind,
+      status: leaveRequests.status,
+      startDate: leaveRequests.startDate,
+      endDate: leaveRequests.endDate,
+      reason: leaveRequests.reason,
+      siteId: barbers.siteId,
+      managerUserId: barbers.managerUserId,
+      barberName: barbers.name,
+    })
+    .from(leaveRequests)
+    .innerJoin(barbers, eq(barbers.id, leaveRequests.barberId))
+    .where(eq(leaveRequests.id, id))
+  if (!row) return { error: "Request not found" as const }
+
+  const isTeamAdmin = user.isCompany && user.canViewDashboard
+  const callerBarber = await getBarberForUser(user.id)
+  const isOwner = callerBarber?.id === row.barberId
+  const isManager = row.managerUserId === user.id
+  if (!isTeamAdmin && !isOwner && !isManager) {
+    return { error: "You can't change this request" as const }
+  }
+  return { user, row, isOwner, callerName: user.name ?? callerBarber?.name ?? null }
+}
+
+/**
+ * Cancel a holiday booking. Works for a still-Pending request (withdraws it) or
+ * an already-Approved one (frees the day allowance + the shop's cover slot and
+ * removes the shared-calendar entry immediately). Leadership + the manager get
+ * an FYI when an approved booking is cancelled.
+ */
+export async function cancelLeave(formData: FormData) {
+  const id = Number(formData.get("id"))
+  const loaded = await loadLeaveForCaller(id)
+  if ("error" in loaded) return { ok: false, error: loaded.error }
+  const { row, callerName } = loaded
+
+  if (row.kind !== "holiday") {
+    return { ok: false, error: "Only holiday can be cancelled here" }
+  }
+  if (row.status !== "Pending" && row.status !== "Approved") {
+    return { ok: false, error: "This request can no longer be cancelled" }
+  }
+
+  const wasApproved = row.status === "Approved"
+
+  await db
+    .update(leaveRequests)
+    .set({ status: "Cancelled", decidedAt: new Date() })
+    .where(eq(leaveRequests.id, id))
+
+  // Remove any shared-calendar entry (a prior approval created one). No-op if
+  // the calendar isn't configured or nothing was synced.
+  await syncLeaveToCalendar(id)
+
+  // FYI to leadership + manager only when an approved booking is pulled — a
+  // withdrawn Pending request never reached the calendar or cover plan.
+  if (wasApproved) {
+    await sendHolidayCancellationNotice({
+      barberId: row.barberId,
+      barberName: row.barberName,
+      start: String(row.startDate),
+      end: String(row.endDate),
+      days: row.endDate ? daysBetween(String(row.startDate), String(row.endDate)) : 1,
+      wasApproved,
+      byName: callerName,
+    })
+  }
+
+  revalidatePath("/team")
+  revalidatePath("/approvals")
+  revalidatePath("/admin/team")
+  return { ok: true, wasApproved }
+}
+
+/**
+ * Change the dates of a holiday. A still-Pending request is edited in place and
+ * re-checked against the shop's cap. An already-Approved booking is REBOOKED:
+ * the old booking is cancelled (allowance/cover freed, calendar entry removed)
+ * and the new dates are submitted as a fresh Pending request that re-runs the
+ * cap check and goes back through approval.
+ */
+export async function changeHoliday(formData: FormData) {
+  const id = Number(formData.get("id"))
+  const newStart = String(formData.get("startDate") ?? "")
+  const newEnd = String(formData.get("endDate") ?? newStart)
+  if (!newStart) return { ok: false, error: "Start date required" }
+
+  const loaded = await loadLeaveForCaller(id)
+  if ("error" in loaded) return { ok: false, error: loaded.error }
+  const { row, callerName } = loaded
+
+  if (row.kind !== "holiday") {
+    return { ok: false, error: "Only holiday dates can be changed here" }
+  }
+  if (row.status !== "Pending" && row.status !== "Approved") {
+    return { ok: false, error: "This request can no longer be changed" }
+  }
+
+  const newDays = daysBetween(newStart, newEnd)
+  const noticeDays = noticeDaysUntil(newStart)
+  const isException = noticeDays < HOLIDAY_NOTICE_DAYS
+
+  // The shop's concurrent time-off cap must allow the new dates. Own bookings
+  // are excluded from the count, so the old approved row (still present here)
+  // never blocks its own replacement.
+  const capacity = await getHolidayCapacityConflict({
+    siteId: row.siteId,
+    excludeBarberId: row.barberId,
+    start: newStart,
+    end: newEnd,
+  })
+  if (capacity.overCapacity) {
+    return {
+      ok: false,
+      error:
+        capacity.cap === 1
+          ? `Can't move to those dates — someone at your shop is already off between ${fmtDay(newStart)} and ${fmtDay(newEnd)} (limit 1 at a time).`
+          : `Can't move to those dates — your shop already has ${capacity.cap} people off then (the maximum).`,
+    }
+  }
+
+  // Pending → edit in place, stays Pending. No calendar entry exists yet.
+  if (row.status === "Pending") {
+    await db
+      .update(leaveRequests)
+      .set({ startDate: newStart, endDate: newEnd, days: newDays, leaveYear: currentLeaveYear() })
+      .where(eq(leaveRequests.id, id))
+
+    await sendLeaveNotification({
+      kind: "holiday",
+      barberId: row.barberId,
+      barberName: row.barberName,
+      start: newStart,
+      end: newEnd,
+      days: newDays,
+      reason: row.reason,
+      noticeDays,
+      isException,
+    })
+
+    revalidatePath("/team")
+    revalidatePath("/approvals")
+    revalidatePath("/admin/team")
+    return { ok: true, rebooked: false }
+  }
+
+  // Approved → rebook: cancel the old booking (frees allowance/cover + removes
+  // its calendar entry), then create a fresh Pending request for the new dates.
+  const oldStart = String(row.startDate)
+  const oldEnd = String(row.endDate)
+  const oldDays = daysBetween(oldStart, oldEnd)
+
+  await db
+    .update(leaveRequests)
+    .set({ status: "Cancelled", decidedAt: new Date() })
+    .where(eq(leaveRequests.id, id))
+  await syncLeaveToCalendar(id)
+
+  await db.insert(leaveRequests).values({
+    barberId: row.barberId,
+    kind: "holiday",
+    startDate: newStart,
+    endDate: newEnd,
+    days: newDays,
+    status: "Pending",
+    reason: row.reason,
+    leaveYear: currentLeaveYear(),
+    requestedByUserId: loaded.user.id,
+  })
+
+  await sendHolidayCancellationNotice({
+    barberId: row.barberId,
+    barberName: row.barberName,
+    start: oldStart,
+    end: oldEnd,
+    days: oldDays,
+    wasApproved: true,
+    byName: callerName,
+    rebookedTo: { start: newStart, end: newEnd, days: newDays },
+  })
+
+  revalidatePath("/team")
+  revalidatePath("/approvals")
+  revalidatePath("/admin/team")
+  return { ok: true, rebooked: true }
 }
 
 /** Submit the 5 nominees for the open 360 cycle and fire their invites. */

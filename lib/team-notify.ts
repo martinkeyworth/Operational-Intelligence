@@ -235,6 +235,57 @@ export async function sendLeaveNotification(args: {
   ])
 }
 
+/**
+ * FYI to leadership (+ the barber's manager) that a holiday was cancelled or
+ * its dates changed. Used when a barber cancels their own booking or rebooks
+ * new dates, and when a manager cancels on their behalf. Best-effort; never
+ * blocks the action.
+ */
+export async function sendHolidayCancellationNotice(args: {
+  barberId: number
+  barberName: string
+  start: string
+  end: string
+  days: number
+  /** True when the cancelled booking had already been approved. */
+  wasApproved: boolean
+  /** Who performed the action, for the message ("cancelled by …"). */
+  byName?: string | null
+  /** When rebooking, the new dates that were submitted for approval. */
+  rebookedTo?: { start: string; end: string; days: number } | null
+}): Promise<void> {
+  const people = await resolveOneToOnePeople(args.barberId)
+  const managerEmail = people?.managerEmail ?? null
+  const rebooked = args.rebookedTo ?? null
+
+  const subject = rebooked
+    ? `Holiday changed: ${args.barberName}`
+    : `Holiday cancelled: ${args.barberName} (${args.days} day${args.days === 1 ? "" : "s"})`
+
+  const by = args.byName ? ` by ${args.byName}` : ""
+  const lead = rebooked
+    ? `<strong>${args.barberName}</strong>'s holiday has been changed${by}.`
+    : `<strong>${args.barberName}</strong>'s ${args.wasApproved ? "approved " : ""}holiday has been cancelled${by}.`
+
+  const html = wrap(
+    subject,
+    `<p style="font-size:14px;line-height:1.6">${lead}</p>
+     <ul style="font-size:14px;line-height:1.7">
+       <li>${rebooked ? "Was" : "Cancelled"}: ${args.start} → ${args.end} (${args.days} day${args.days === 1 ? "" : "s"})</li>
+       ${rebooked ? `<li>New request: ${rebooked.start} → ${rebooked.end} (${rebooked.days} day${rebooked.days === 1 ? "" : "s"}) — awaiting approval</li>` : ""}
+     </ul>
+     <p style="font-size:14px;line-height:1.6">The holiday allowance and shop cover have been updated automatically${
+       rebooked ? ", and the new dates need approving" : ""
+     }.</p>
+     <p>${emailButton(`/approvals`, "Open Team Area")}</p>`,
+  )
+
+  await sendDeduped([
+    { emails: [managerEmail], subject, html, kind: "team-holiday" },
+    { emails: leadershipRecipients(), subject, html, kind: "team-holiday" },
+  ])
+}
+
 export type HolidayLookaheadRow = {
   barberName: string
   siteName: string

@@ -7,8 +7,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RagDot } from "@/components/rag"
-import { CalendarDays, Plane, Thermometer, Users, CheckCircle2, XCircle } from "lucide-react"
-import { requestHoliday, logSickness, submitThreeSixtyNominees } from "@/app/team/actions"
+import { CalendarDays, Plane, Thermometer, Users, CheckCircle2, XCircle, Pencil, Trash2 } from "lucide-react"
+import {
+  requestHoliday,
+  logSickness,
+  submitThreeSixtyNominees,
+  cancelLeave,
+  changeHoliday,
+} from "@/app/team/actions"
 import type { SelfView } from "@/lib/team"
 
 function fmtDate(iso: string) {
@@ -59,6 +65,14 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
         </span>
       </p>
       <p className="text-xs text-muted-foreground">{self.holiday.taken} days taken this year</p>
+
+      {self.holiday.bookings.length > 0 && (
+        <ul className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
+          {self.holiday.bookings.map((b) => (
+            <HolidayBookingRow key={b.id} booking={b} readOnly={readOnly} />
+          ))}
+        </ul>
+      )}
 
       {readOnly ? null : !open ? (
         <Button variant="outline" size="sm" className="mt-4" onClick={() => setOpen(true)}>
@@ -115,6 +129,152 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
         </div>
       )}
     </Card>
+  )
+}
+
+type HolidayBooking = SelfView["holiday"]["bookings"][number]
+
+function HolidayBookingRow({
+  booking,
+  readOnly,
+}: {
+  booking: HolidayBooking
+  readOnly: boolean
+}) {
+  const [pending, start] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const approved = booking.status === "Approved"
+
+  return (
+    <li className="rounded-md border border-border px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm text-foreground">
+          {fmtDate(booking.startDate)}
+          {booking.startDate !== booking.endDate && ` → ${fmtDate(booking.endDate)}`}{" "}
+          <span className="text-muted-foreground">({booking.days}d)</span>
+          <span
+            className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              approved
+                ? "bg-rag-green/15 text-rag-green"
+                : "bg-rag-amber/15 text-rag-amber"
+            }`}
+          >
+            {approved ? "Approved" : "Pending"}
+          </span>
+        </div>
+        {!readOnly && (
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs"
+              onClick={() => {
+                setEditing((v) => !v)
+                setError(null)
+                setConfirming(false)
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" /> Change
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs text-rag-red hover:text-rag-red"
+              disabled={pending}
+              onClick={() => {
+                if (!confirming) {
+                  setConfirming(true)
+                  setEditing(false)
+                  return
+                }
+                start(async () => {
+                  setError(null)
+                  const fd = new FormData()
+                  fd.set("id", String(booking.id))
+                  const res = await cancelLeave(fd)
+                  if (!res?.ok) setError(res?.error ?? "Could not cancel")
+                })
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> {confirming ? "Confirm cancel" : "Cancel"}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {confirming && !editing && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {approved
+            ? "This will free your days and let someone else book that cover. Tap “Confirm cancel” again to remove it."
+            : "Tap “Confirm cancel” again to withdraw this request."}
+        </p>
+      )}
+
+      {editing && (
+        <form
+          action={(fd) =>
+            start(async () => {
+              setError(null)
+              fd.set("id", String(booking.id))
+              const res = await changeHoliday(fd)
+              if (res?.ok) {
+                setEditing(false)
+              } else {
+                setError(res?.error ?? "Could not change these dates")
+              }
+            })
+          }
+          className="mt-3 flex flex-col gap-3"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor={`c-start-${booking.id}`} className="text-xs">New from</Label>
+              <Input
+                id={`c-start-${booking.id}`}
+                name="startDate"
+                type="date"
+                defaultValue={booking.startDate}
+                required
+                className="text-base"
+              />
+            </div>
+            <div>
+              <Label htmlFor={`c-end-${booking.id}`} className="text-xs">New to</Label>
+              <Input
+                id={`c-end-${booking.id}`}
+                name="endDate"
+                type="date"
+                defaultValue={booking.endDate}
+                className="text-base"
+              />
+            </div>
+          </div>
+          {approved && (
+            <p className="text-xs text-muted-foreground">
+              Changing an approved holiday cancels it and sends the new dates for approval.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? "Saving…" : "Save new dates"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Keep as is
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {error && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-rag-red">
+          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {error}
+        </p>
+      )}
+    </li>
   )
 }
 
