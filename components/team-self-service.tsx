@@ -16,6 +16,7 @@ import {
   changeHoliday,
 } from "@/app/team/actions"
 import type { SelfView } from "@/lib/team"
+import { isHolidayLocked } from "@/lib/format"
 
 function fmtDate(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-GB", {
@@ -154,6 +155,8 @@ function HolidayBookingRow({
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const approved = booking.status === "Approved"
+  // Editable only up to the day it starts; once begun it's fixed.
+  const locked = isHolidayLocked(booking.startDate)
 
   return (
     <li className="rounded-md border border-border px-3 py-2">
@@ -172,7 +175,11 @@ function HolidayBookingRow({
             {approved ? "Approved" : "Pending"}
           </span>
         </div>
-        {!readOnly && (
+        {locked ? (
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Started — fixed
+          </span>
+        ) : !readOnly && (
           <div className="flex gap-1">
             <Button
               type="button"

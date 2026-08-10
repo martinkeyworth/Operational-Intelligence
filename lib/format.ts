@@ -20,6 +20,22 @@ export function ragFromAttainment(pct: number): Rag {
   return "red"
 }
 
+/**
+ * A holiday booking is editable (change or cancel) only UP TO the day it
+ * starts. Once the start date has arrived (today or earlier), the booking is
+ * FIXED and can no longer be changed or cancelled — by the individual OR their
+ * manager. Cover is arranged by then, so the dates lock. Used both server-side
+ * (as the real guard in the team actions) and client-side (to hide the
+ * Change/Cancel controls) so the two always agree.
+ */
+export function isHolidayLocked(startISO: string): boolean {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const start = new Date(startISO + "T00:00:00")
+  if (Number.isNaN(start.getTime())) return false
+  return start.getTime() <= today.getTime()
+}
+
 export function fmtGBP(n: number, opts: { decimals?: boolean } = {}): string {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",

@@ -18,6 +18,7 @@ import {
   getLeadershipHolidayConflict,
 } from "@/lib/team"
 import { isCeoEmail, isLeadershipHolidayEmail } from "@/lib/access-types"
+import { isHolidayLocked } from "@/lib/format"
 import {
   sendLeaveNotification,
   sendThreeSixtyInvites,
@@ -418,6 +419,14 @@ export async function cancelLeave(formData: FormData) {
   if (row.status !== "Pending" && row.status !== "Approved") {
     return { ok: false, error: "This request can no longer be cancelled" }
   }
+  // Holiday is editable only up to the day it starts. Once it has begun (or is
+  // in the past) it is fixed — neither the individual nor a manager can cancel.
+  if (isHolidayLocked(String(row.startDate))) {
+    return {
+      ok: false,
+      error: "This holiday has already started, so it can no longer be cancelled.",
+    }
+  }
 
   const wasApproved = row.status === "Approved"
 
@@ -472,6 +481,22 @@ export async function changeHoliday(formData: FormData) {
   }
   if (row.status !== "Pending" && row.status !== "Approved") {
     return { ok: false, error: "This request can no longer be changed" }
+  }
+  // Fixed once it has started — neither the individual nor a manager can move
+  // the dates of a holiday that has already begun (or is in the past).
+  if (isHolidayLocked(String(row.startDate))) {
+    return {
+      ok: false,
+      error: "This holiday has already started, so its dates can no longer be changed.",
+    }
+  }
+  // The new start must also be in the future — you can't move a holiday into
+  // today or the past.
+  if (isHolidayLocked(newStart)) {
+    return {
+      ok: false,
+      error: "Pick a start date in the future — holiday can't be moved to today or a past date.",
+    }
   }
 
   const newDays = daysBetween(newStart, newEnd)

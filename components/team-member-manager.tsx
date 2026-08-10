@@ -21,6 +21,7 @@ import {
   openThreeSixtyCycle,
 } from "@/app/admin/team/actions"
 import { cancelLeave } from "@/app/team/actions"
+import { isHolidayLocked } from "@/lib/format"
 import type { getTeamMemberDetail } from "@/lib/team"
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getTeamMemberDetail>>>
@@ -298,16 +299,22 @@ export function TeamMemberManager({
                 {fmtDate(l.startDate)} → {fmtDate(l.endDate)}{" "}
                 <span className="text-muted-foreground">({l.days}d)</span>
               </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="text-rag-red hover:text-rag-red"
-                disabled={pending}
-                onClick={() => cancelApproved(l.id)}
-              >
-                Cancel holiday
-              </Button>
+              {isHolidayLocked(l.startDate) ? (
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Started — fixed
+                </span>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-rag-red hover:text-rag-red"
+                  disabled={pending}
+                  onClick={() => cancelApproved(l.id)}
+                >
+                  Cancel holiday
+                </Button>
+              )}
             </div>
           ))}
         </Card>

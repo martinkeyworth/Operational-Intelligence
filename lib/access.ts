@@ -10,6 +10,7 @@ import {
   COMPANY_DOMAIN,
   isCompanyEmail,
   isOwnerEmail,
+  isCeoEmail,
   CAPABILITY_LABELS,
   type Capabilities,
   type AccessUser,
@@ -48,7 +49,11 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     isOwner: isOwnerEmail(row.email),
     leadAreas: parseLeadAreas(row.leadAreas),
     canViewDashboard: row.canViewDashboard,
-    isBarber: row.isBarber,
+    // The CEO (Martin) is not a submitting barber — he runs the board narrative,
+    // not weekly takings. Force the Barber capability OFF for him regardless of
+    // the stored flag so he is never shown the daily-input entry or counted as
+    // an expected submitter. He keeps the Team Area via hasBarberRecord below.
+    isBarber: isCeoEmail(row.email) ? false : row.isBarber,
     isTrainingLead: row.isTrainingLead,
     isHrLead: row.isHrLead,
     isSocialMedia: row.isSocialMedia,
@@ -321,7 +326,9 @@ export async function getAllUsers(): Promise<AccessUser[]> {
     isOwner: isOwnerEmail(row.email),
     leadAreas: parseLeadAreas(row.leadAreas),
     canViewDashboard: row.canViewDashboard,
-    isBarber: row.isBarber,
+    // Keep the admin People view consistent with runtime: the CEO is never a
+    // submitting barber (see getAccessUser).
+    isBarber: isCeoEmail(row.email) ? false : row.isBarber,
     isTrainingLead: row.isTrainingLead,
     isHrLead: row.isHrLead,
     isSocialMedia: row.isSocialMedia,

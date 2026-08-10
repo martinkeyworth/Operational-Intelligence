@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CalendarDays, CheckCircle2, AlertTriangle, Pencil, Trash2, XCircle } from "lucide-react"
 import { decideLeaveScoped, cancelLeave, changeHoliday } from "@/app/team/actions"
+import { isHolidayLocked } from "@/lib/format"
 
 export type ApprovalItem = {
   id: number
@@ -189,6 +190,8 @@ function ApprovedHolidayRow({
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Editable only up to the day it starts; once begun it's fixed.
+  const locked = isHolidayLocked(item.startDate)
 
   return (
     <Card className="p-4">
@@ -201,6 +204,11 @@ function ApprovedHolidayRow({
             {item.days === 1 ? "" : "s"}
           </p>
         </div>
+        {locked ? (
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Started — fixed
+          </span>
+        ) : (
         <div className="flex gap-1">
           <Button
             type="button"
@@ -240,6 +248,7 @@ function ApprovedHolidayRow({
             <Trash2 className="h-3.5 w-3.5" /> {confirming ? "Confirm cancel" : "Cancel"}
           </Button>
         </div>
+        )}
       </div>
 
       {confirming && !editing && (
