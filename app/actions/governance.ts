@@ -726,7 +726,7 @@ export async function saveSubletting(formData: FormData) {
 
   // Below target → ensure an open quarterly review action exists for this site.
   const [site] = await db.select().from(sites).where(eq(sites.id, siteId))
-  const siteName = site?.name ?? "Site"
+  const siteName = normalizeSiteName(site?.name) ?? "Site"
   await syncKpiAction({
     open: amount < target,
     title: `Subletting below target — ${siteName}`,
