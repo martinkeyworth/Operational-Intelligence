@@ -12,6 +12,7 @@ import {
 import { requireUser } from "@/lib/access"
 import {
   getBarberForUser,
+  resolveBarberForUser,
   currentLeaveYear,
   getHolidayCapacityConflict,
   getLeadershipHolidayConflict,
@@ -59,7 +60,14 @@ const HOLIDAY_NOTICE_DAYS = 30
 /** Resolve the logged-in user's linked barber record or throw. */
 async function requireLinkedBarber() {
   const user = await requireUser()
-  const barber = await getBarberForUser(user.id)
+  // Use the self-healing resolver (not the strict userId lookup) so a leader
+  // whose roster row was unlinked / stale-linked is repaired on first action,
+  // matching how the nav gate and /team page resolve their barber.
+  const barber = await resolveBarberForUser({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+  })
   if (!barber) throw new Error("not-linked")
   return { user, barber }
 }

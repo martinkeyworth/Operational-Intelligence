@@ -12,7 +12,7 @@ import {
 } from "@/lib/db/schema"
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne } from "drizzle-orm"
 import type { Rag } from "@/lib/format"
-import { LEADERSHIP_HOLIDAY_EMAILS } from "@/lib/access-types"
+import { LEADERSHIP_HOLIDAY_EMAILS, isLeadershipHolidayEmail } from "@/lib/access-types"
 import { normalizeSiteName } from "@/lib/brands"
 import { RTB_PER_BARBER } from "@/lib/capacity-config"
 import { getCurrentOperatingWeek } from "@/lib/data"
@@ -359,20 +359,27 @@ export async function linkBarberToUser(barberId: number, userId: string | null) 
 }
 
 /**
- * Resolve the barber record for a logged-in user WITHOUT ever creating a new
- * one. This backs the personal Team Area (holiday self-service):
- *   1. return the record already linked by userId; else
- *   2. claim an UNLINKED active roster record whose name matches the login
- *      (full name, then first name), permanently linking it (sets userId) so it
- *      self-heals on first access.
- * Returns null when the user has no barber presence at all — unlike
- * ensureBarberForUser this deliberately does NOT self-provision, so leadership
- * / company logins can never spawn a duplicate "barber" record.
+ * Resolve the barber record for a logged-in user, self-healing a broken link.
+ * This backs the personal Team Area (holiday self-service):
+ *   1. return the record already linked by this login id; else
+ *   2. claim a roster record whose name matches the login (full name, then
+ *      first name) AND whose link is "free" — either unlinked (userId IS NULL)
+ *      or ORPHANED (userId points at a login that no longer exists, e.g. the
+ *      person re-registered and got a new id). Active rows are preferred over
+ *      inactive. The chosen row is permanently re-linked to the current id, so
+ *      it self-heals on first access; else
+ *   3. for the known leadership trio (Martin/Cosmin/Mario) ONLY, self-provision
+ *      a record — they must always reach their bookings and the leadership
+ *      holiday rule already assumes they have a linked barber row.
+ * Returns null for everyone else with no barber presence (an admin must link
+ * them in Admin → Team), so ordinary company logins can never spawn a
+ * duplicate "barber" record.
  *
  * Why this exists: gating Team Area on the `isBarber` capability alone hid it
  * from leadership (e.g. the CEO, who books holidays but isn't a takings
  * "barber"), and a strict userId-only lookup left anyone whose roster row was
- * never linked (or was unlinked) unable to reach their own bookings.
+ * never linked — or was linked to a stale login — unable to reach their own
+ * bookings.
  */
 export async function resolveBarberForUser(u: {
   id: string
@@ -384,23 +391,40 @@ export async function resolveBarberForUser(u: {
   if (existing) return existing
 
   const displayName = (u.name?.trim() || u.email?.split("@")[0] || "").trim()
-  if (!displayName) return null
-  const firstName = displayName.split(/\s+/)[0]?.toLowerCase()
+  const firstName = displayName ? displayName.split(/\s+/)[0]?.toLowerCase() : ""
 
-  // 2. Claim an unlinked active roster record by (case-insensitive) name.
-  const unlinked = await db
-    .select()
-    .from(barbers)
-    .where(and(eq(barbers.active, true), isNull(barbers.userId)))
-  const match =
-    unlinked.find((b) => b.name.trim().toLowerCase() === displayName.toLowerCase()) ??
-    unlinked.find((b) => b.name.trim().toLowerCase().split(/\s+/)[0] === firstName)
-  if (match) {
-    await db.update(barbers).set({ userId: u.id }).where(eq(barbers.id, match.id))
-    return { ...match, userId: u.id }
+  if (displayName) {
+    // 2. Find a name-matched roster row whose link is claimable. A row is
+    //    claimable when it has no userId OR its userId is orphaned (no matching
+    //    login row) — never steal a row that belongs to a live different login.
+    const userIdRows = await db.select({ id: userTable.id }).from(userTable)
+    const liveUserIds = new Set(userIdRows.map((r) => r.id))
+    const all = await db.select().from(barbers)
+    const claimable = all.filter(
+      (b) => b.userId === null || !liveUserIds.has(b.userId),
+    )
+    const byName = (b: (typeof claimable)[number]) =>
+      b.name.trim().toLowerCase() === displayName.toLowerCase()
+    const byFirst = (b: (typeof claimable)[number]) =>
+      b.name.trim().toLowerCase().split(/\s+/)[0] === firstName
+    // Prefer active + full-name, then active + first-name, then any match.
+    const match =
+      claimable.find((b) => b.active && byName(b)) ??
+      claimable.find((b) => b.active && byFirst(b)) ??
+      claimable.find(byName) ??
+      claimable.find(byFirst)
+    if (match) {
+      await db.update(barbers).set({ userId: u.id }).where(eq(barbers.id, match.id))
+      return { ...match, userId: u.id }
+    }
   }
 
-  // 3. No barber presence — do NOT create one.
+  // 3. Leadership trio must never be locked out — provision their record.
+  if (u.email && isLeadershipHolidayEmail(u.email)) {
+    return ensureBarberForUser(u)
+  }
+
+  // 4. No barber presence and not leadership — an admin must link them.
   return null
 }
 
