@@ -359,6 +359,52 @@ export async function linkBarberToUser(barberId: number, userId: string | null) 
 }
 
 /**
+ * Resolve the barber record for a logged-in user WITHOUT ever creating a new
+ * one. This backs the personal Team Area (holiday self-service):
+ *   1. return the record already linked by userId; else
+ *   2. claim an UNLINKED active roster record whose name matches the login
+ *      (full name, then first name), permanently linking it (sets userId) so it
+ *      self-heals on first access.
+ * Returns null when the user has no barber presence at all — unlike
+ * ensureBarberForUser this deliberately does NOT self-provision, so leadership
+ * / company logins can never spawn a duplicate "barber" record.
+ *
+ * Why this exists: gating Team Area on the `isBarber` capability alone hid it
+ * from leadership (e.g. the CEO, who books holidays but isn't a takings
+ * "barber"), and a strict userId-only lookup left anyone whose roster row was
+ * never linked (or was unlinked) unable to reach their own bookings.
+ */
+export async function resolveBarberForUser(u: {
+  id: string
+  name?: string | null
+  email?: string | null
+}) {
+  // 1. Already linked by login id.
+  const existing = await getBarberForUser(u.id)
+  if (existing) return existing
+
+  const displayName = (u.name?.trim() || u.email?.split("@")[0] || "").trim()
+  if (!displayName) return null
+  const firstName = displayName.split(/\s+/)[0]?.toLowerCase()
+
+  // 2. Claim an unlinked active roster record by (case-insensitive) name.
+  const unlinked = await db
+    .select()
+    .from(barbers)
+    .where(and(eq(barbers.active, true), isNull(barbers.userId)))
+  const match =
+    unlinked.find((b) => b.name.trim().toLowerCase() === displayName.toLowerCase()) ??
+    unlinked.find((b) => b.name.trim().toLowerCase().split(/\s+/)[0] === firstName)
+  if (match) {
+    await db.update(barbers).set({ userId: u.id }).where(eq(barbers.id, match.id))
+    return { ...match, userId: u.id }
+  }
+
+  // 3. No barber presence — do NOT create one.
+  return null
+}
+
+/**
  * Resolve — and if necessary create — the barber record for a logged-in user.
  *
  * Any non-company login defaults to a barber. Rather than forcing an admin to

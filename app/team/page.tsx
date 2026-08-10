@@ -12,7 +12,7 @@ import { MyLearning } from "@/components/learning/my-learning"
 import { RoleGuidePanel } from "@/components/team/role-guide-panel"
 import { buildPersonGuide } from "@/lib/role-guide"
 import { getMyLearningData } from "@/lib/learning"
-import { getBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
+import { resolveBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
 import { CheckCircle2, AlertCircle, GraduationCap } from "lucide-react"
 
@@ -31,7 +31,9 @@ export default async function TeamHomePage({
   const previewId = user.canViewDashboard ? Number(barberParam) : NaN
   const isPreview = Number.isFinite(previewId) && previewId > 0
 
-  const barber = isPreview ? null : await getBarberForUser(user.id)
+  const barber = isPreview
+    ? null
+    : await resolveBarberForUser({ id: user.id, name: user.name, email: user.email })
 
   // A logged-in user with no linked barber record (e.g. a manager) shouldn't
   // land here unless previewing — send dashboard users to the team roster,

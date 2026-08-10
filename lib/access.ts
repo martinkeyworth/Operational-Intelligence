@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { user as userTable, barbers, sites } from "@/lib/db/schema"
+import { resolveBarberForUser } from "@/lib/team"
 import {
   COMPANY_DOMAIN,
   isCompanyEmail,
@@ -61,15 +62,17 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     base.managedSiteIds = await getManagedSiteIds(base)
   }
 
-  // Does this user have a linked barber record? This — not the `isBarber`
-  // capability flag — gates the personal Team Area (holiday self-service), so
-  // leadership who are linked for holidays but aren't "barbers" (e.g. the CEO)
-  // still see and can manage their own bookings.
-  const [linkedBarber] = await db
-    .select({ id: barbers.id })
-    .from(barbers)
-    .where(eq(barbers.userId, row.id))
-    .limit(1)
+  // Does this user have a barber record? This — not the `isBarber` capability
+  // flag — gates the personal Team Area (holiday self-service), so leadership
+  // who are linked for holidays but aren't "barbers" (e.g. the CEO) still see
+  // and can manage their own bookings. resolveBarberForUser also self-heals a
+  // roster row that exists but was never linked (matching by name and setting
+  // userId once), so the nav link and the /team page always agree.
+  const linkedBarber = await resolveBarberForUser({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+  })
   base.hasBarberRecord = Boolean(linkedBarber)
 
   return base
