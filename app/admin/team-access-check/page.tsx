@@ -1,5 +1,7 @@
 import Link from "next/link"
-import { requireUser } from "@/lib/access"
+import { headers } from "next/headers"
+import { eq } from "drizzle-orm"
+import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { barbers as barbersTable, user as userTable } from "@/lib/db/schema"
 import { resolveBarberForUser } from "@/lib/team"
@@ -9,19 +11,69 @@ import { buttonVariants } from "@/components/ui/button"
 
 export const dynamic = "force-dynamic"
 
-// Diagnostic for the Team Area access problem. Deliberately gated ONLY on being
-// signed in (no owner / admin gate) and fully wrapped in try/catch so it can
-// NEVER redirect or crash — whatever state the account is in, this page must
-// render and show the truth (especially the exact signed-in email). Loading it
-// also repairs the barber link for the signed-in user (resolveBarberForUser
-// self-heals / provisions for leadership).
+// UNBREAKABLE diagnostic for the Team Area access problem.
+//
+// CRITICAL: this page reads the raw auth session DIRECTLY (auth.api.getSession)
+// and NEVER goes through requireUser / getAccessUser. That matters because
+// getAccessUser returns null (→ requireUser redirects to /sign-in) whenever the
+// session's user id has no matching `user` table row — which would make this
+// page bounce just like every other protected page. Reading the session
+// directly lets us SEE that exact situation instead of being redirected by it.
+//
+// Every DB call is wrapped so the page can never crash; it always renders.
 export default async function TeamAccessCheckPage() {
-  const user = await requireUser()
-
-  const email = (user.email ?? "").trim()
+  const session = await safeAsync(async () => {
+    const h = await headers()
+    return auth.api.getSession({ headers: h })
+  }, null)
+  const sUser = session?.user ?? null
+  const sessionId = sUser?.id ?? null
+  const email = (sUser?.email ?? "").trim()
   const emailLower = email.toLowerCase()
+  const sessionName = (sUser?.name ?? "").trim()
+
+  // Not signed in at all — say so plainly, do NOT redirect.
+  if (!sUser) {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
+        <h1 className="mb-3 text-2xl font-semibold text-foreground">
+          Team Area access check
+        </h1>
+        <Card className="border-red-500/50 p-5">
+          <p className="text-sm text-red-600">
+            No active session was found — you are not signed in on this browser.
+            Sign in first, then reopen this page.
+          </p>
+        </Card>
+      </main>
+    )
+  }
+
   const leadership = safe(() => isLeadershipHolidayEmail(email), false)
   const inOwnerList = OWNER_EMAILS.map((e) => e.toLowerCase()).includes(emailLower)
+
+  // The decisive check: is there a `user` row whose id matches the SESSION id?
+  // If not, getAccessUser returns null and EVERY protected page redirects to
+  // /sign-in — which looks like "everything is broken / nothing loads".
+  const rowById = await safeAsync(async () => {
+    const [r] = await db
+      .select({ id: userTable.id, email: userTable.email, name: userTable.name })
+      .from(userTable)
+      .where(eq(userTable.id, sessionId!))
+    return r ?? null
+  }, null)
+
+  // Is there a `user` row with this EMAIL (any id)? A mismatch between this
+  // row's id and the session id === a duplicate / re-registered account.
+  const rowsByEmail = await safeAsync(async () => {
+    if (!emailLower) return []
+    return db
+      .select({ id: userTable.id, email: userTable.email, name: userTable.name })
+      .from(userTable)
+  }, [] as { id: string; email: string; name: string }[])
+  const emailMatches = rowsByEmail.filter(
+    (r) => (r.email ?? "").trim().toLowerCase() === emailLower,
+  )
 
   const allBarbers = await safeAsync(
     () =>
@@ -40,27 +92,31 @@ export default async function TeamAccessCheckPage() {
     return new Set(rows.map((r) => r.id))
   }, new Set<string>())
 
-  const displayName = (user.name?.trim() || email.split("@")[0] || "").trim()
+  const displayName = (sessionName || email.split("@")[0] || "").trim()
   const firstName = displayName.split(/\s+/)[0]?.toLowerCase() ?? ""
   const nameMatches = allBarbers.filter((b) => {
     const n = b.name.trim().toLowerCase()
     return n === displayName.toLowerCase() || (firstName && n.split(/\s+/)[0] === firstName)
   })
 
-  // Resolve (this WRITES: links an unlinked/orphaned row by name, or provisions
-  // for leadership) — so simply loading this page repairs the account.
+  // Attempt the self-healing resolve (this WRITES) only when the session id has
+  // a matching user row — otherwise there is no valid login to link a barber to.
   let resolvedName: string | null = null
   let resolvedId: number | null = null
   let resolveError: string | null = null
-  try {
-    const r = await resolveBarberForUser({ id: user.id, name: user.name, email })
-    if (r) {
-      resolvedId = r.id
-      resolvedName = r.name
+  if (rowById) {
+    try {
+      const r = await resolveBarberForUser({ id: sessionId!, name: sessionName, email })
+      if (r) {
+        resolvedId = r.id
+        resolvedName = r.name
+      }
+    } catch (e) {
+      resolveError = e instanceof Error ? e.message : String(e)
     }
-  } catch (e) {
-    resolveError = e instanceof Error ? e.message : String(e)
   }
+
+  const sessionRowMismatch = !rowById
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
@@ -69,41 +125,67 @@ export default async function TeamAccessCheckPage() {
           Team Area access check
         </h1>
         <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
-          Shows exactly what the system sees for the account you are signed in as,
-          and repairs its barber link. Read the values below carefully.
+          Reads the raw sign-in session directly. Whatever state the account is
+          in, this page renders the truth below.
         </p>
       </header>
 
       <Card className="mb-4 p-5">
         <h2 className="mb-3 text-sm font-semibold text-foreground">
-          Signed-in account
+          Signed-in session
         </h2>
-        <Row label="Login id" value={user.id} />
+        <Row label="Session login id" value={sessionId || "(none)"} />
         <Row label="Email (exactly)" value={email || "(no email on session)"} />
         <Row label="Name" value={displayName || "(none)"} />
         <Row label="Recognised as OWNER" value={yesNo(inOwnerList)} />
         <Row label="Recognised as LEADERSHIP" value={yesNo(leadership)} />
-        <Row label="isOwner (computed)" value={yesNo(Boolean(user.isOwner))} />
-        <Row label="canViewDashboard" value={yesNo(Boolean(user.canViewDashboard))} />
-        <Row label="isBarber capability" value={yesNo(Boolean(user.isBarber))} />
+        <Row
+          label="Has matching account row"
+          value={yesNo(Boolean(rowById))}
+        />
       </Card>
 
-      {!leadership && (
-        <Card className="mb-4 border-amber-500/60 p-5">
-          <h2 className="mb-2 text-sm font-semibold text-amber-600">
-            This email is NOT in the leadership list
+      {sessionRowMismatch && (
+        <Card className="mb-4 border-red-500/60 p-5">
+          <h2 className="mb-2 text-sm font-semibold text-red-600">
+            This is the problem: no account row matches your session
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
-            The account you are signed in as is{" "}
-            <span className="font-semibold text-foreground">{email || "(none)"}</span>.
-            The leadership list expects one of:{" "}
-            <span className="font-medium text-foreground">
-              martin@lessthanzerobarbers.com, cosmin@lessthanzerobarbers.com,
-              mario@lessthanzerobarbers.com
-            </span>
-            . If this is not the address Martin expects, he is logged into a
-            different account — sign out and back in with the correct email.
+            Your session id is{" "}
+            <span className="font-medium text-foreground break-all">{sessionId}</span>{" "}
+            but there is no matching row in the accounts table. When that happens
+            the app treats you as signed out and bounces every protected page to
+            the sign-in screen — which is exactly what you have been seeing.
+            {emailMatches.length > 0 ? (
+              <>
+                {" "}There {emailMatches.length === 1 ? "is" : "are"}{" "}
+                {emailMatches.length} account row(s) with your email under a
+                DIFFERENT id (listed below) — you likely registered a second time.
+                Sign in with the original account, or I can merge them.
+              </>
+            ) : (
+              <> No account row carries this email at all.</>
+            )}
           </p>
+        </Card>
+      )}
+
+      {emailMatches.length > 0 && (
+        <Card className="mb-4 p-5">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
+            Account rows with this email ({emailMatches.length})
+          </h2>
+          {emailMatches.map((r) => (
+            <Row
+              key={r.id}
+              label={r.name || "(no name)"}
+              value={
+                r.id === sessionId
+                  ? "id matches session ✓"
+                  : `id ${r.id} (different from session)`
+              }
+            />
+          ))}
         </Card>
       )}
 
@@ -111,7 +193,12 @@ export default async function TeamAccessCheckPage() {
         className={`mb-4 p-5 ${resolvedId ? "border-emerald-500/50" : "border-red-500/50"}`}
       >
         <h2 className="mb-3 text-sm font-semibold text-foreground">Result</h2>
-        {resolveError ? (
+        {!rowById ? (
+          <p className="text-sm text-red-600">
+            Skipped barber linking because the session has no valid account row
+            (see above). Fix the account first.
+          </p>
+        ) : resolveError ? (
           <p className="text-sm text-red-600 break-all">
             Resolution threw an error: {resolveError}
           </p>
@@ -136,7 +223,7 @@ export default async function TeamAccessCheckPage() {
 
       <Card className="mb-4 p-5">
         <h2 className="mb-1 text-sm font-semibold text-foreground">
-          Rows matching this name ({nameMatches.length})
+          Barber rows matching this name ({nameMatches.length})
         </h2>
         {nameMatches.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -147,7 +234,7 @@ export default async function TeamAccessCheckPage() {
             <Row
               key={b.id}
               label={`#${b.id} ${b.name}${b.active ? "" : " (inactive)"}`}
-              value={linkState(b, user.id, liveUserIds)}
+              value={linkState(b, sessionId, liveUserIds)}
             />
           ))
         )}
@@ -162,7 +249,7 @@ export default async function TeamAccessCheckPage() {
             <Row
               key={b.id}
               label={`#${b.id} ${b.name}${b.active ? "" : " (inactive)"}`}
-              value={linkState(b, user.id, liveUserIds)}
+              value={linkState(b, sessionId, liveUserIds)}
             />
           ))}
         </div>
@@ -186,12 +273,12 @@ function yesNo(v: boolean) {
 
 function linkState(
   b: { userId: string | null },
-  currentId: string,
+  currentId: string | null,
   liveUserIds: Set<string>,
 ) {
   if (b.userId === null) return "unlinked (claimable)"
-  if (!liveUserIds.has(b.userId)) return `orphaned login → claimable`
-  if (b.userId === currentId) return "linked to THIS login"
+  if (!liveUserIds.has(b.userId)) return "orphaned login → claimable"
+  if (currentId && b.userId === currentId) return "linked to THIS login"
   return "linked to another live login"
 }
 
