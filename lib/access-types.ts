@@ -48,6 +48,28 @@ export const OWNER_EMAILS = [
 // Cosmin chairs the weekly operational meeting (risk register owner view).
 export const OPS_MEETING_CHAIR_EMAIL = "cosmin@lessthanzerobarbers.com"
 
+// The CEO (Martin). He submits the weekly board narrative but is NOT a barber
+// and is not expected to submit weekly takings, so he is excluded from the
+// submission board's expected submitters.
+export const CEO_EMAIL = "martin@lessthanzerobarbers.com"
+
+// Senior leadership covered by the concurrent time-off rule: at most ONE of
+// them may be booked off at a time (across all sites). Martin (CEO) is always
+// auto-approved; Cosmin and Mario are auto-declined when it would breach.
+export const LEADERSHIP_HOLIDAY_EMAILS = [
+  "martin@lessthanzerobarbers.com",
+  "cosmin@lessthanzerobarbers.com",
+  "mario@lessthanzerobarbers.com",
+]
+
+export function isCeoEmail(email: string): boolean {
+  return email.toLowerCase() === CEO_EMAIL
+}
+
+export function isLeadershipHolidayEmail(email: string): boolean {
+  return LEADERSHIP_HOLIDAY_EMAILS.includes(email.toLowerCase())
+}
+
 export function isCompanyEmail(email: string): boolean {
   return email.toLowerCase().endsWith(`@${COMPANY_DOMAIN}`)
 }

@@ -136,7 +136,7 @@ export async function runWeeklyAnalysis(weekEnding: string): Promise<{
   try {
     const plan = await getPlanProgress(new Date(weekEnding + "T00:00:00Z"))
     planLines = `Plan tracking (${plan.quarterLabel}, vs LTZ 2025–2030 plan):
-- Chair turnover (barbering + Velvet Ash): ${fmtGBP(plan.chairAnnualised)} annualised = ${plan.chairAttainmentPct}% of the ${fmtGBP(plan.chairMilestone)} ${plan.year} milestone (${plan.chairRag}).
+- Chair turnover (barbering + LTZ Woodseats): ${fmtGBP(plan.chairAnnualised)} annualised = ${plan.chairAttainmentPct}% of the ${fmtGBP(plan.chairMilestone)} ${plan.year} milestone (${plan.chairRag}).
 - Shops open: ${plan.shopsOpen} vs ${plan.shopsPlanned} planned by now (${plan.shopsRag}).
 - Headcount: ${plan.headcountActual} barbers vs ${plan.headcountPlanned} planned (4/shop) (${plan.headcountRag}).
 - Academy income target ${plan.year}: ${fmtGBP(plan.academyMilestone)}. Total group revenue target: ${fmtGBP(plan.totalMilestone)} (£5m goal incl. all streams).${

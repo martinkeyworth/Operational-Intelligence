@@ -1,7 +1,8 @@
 // Central brand registry. Maps each brand name to its logo + accent.
 // The group (parent) brand is LTZ Group International; each site belongs to a
-// barbershop brand (Less Than Zero, F.AF, Velvet Ash) and the academy uses the
-// LTZ Training Academy mark.
+// barbershop brand (Less Than Zero, F.AF, LTZ Woodseats) and the academy uses
+// the LTZ Training Academy mark. LTZ Woodseats was formerly branded "Velvet
+// Ash"; legacy stored values are normalised via BRAND_ALIASES below.
 
 export type Brand = {
   name: string
@@ -34,8 +35,8 @@ export const SITE_BRANDS: Record<string, Brand> = {
     logo: "/brand-faf.jpeg",
     tagline: "Be Loud. Stay Real.",
   },
-  "Velvet Ash": {
-    name: "Velvet Ash",
+  "LTZ Woodseats": {
+    name: "LTZ Woodseats",
     logo: "/brand-velvet-ash.jpeg",
     tagline: "Ritual · Texture · Craft",
   },
@@ -43,6 +44,24 @@ export const SITE_BRANDS: Record<string, Brand> = {
 
 /** The list of brand options for pickers. */
 export const SITE_BRAND_OPTIONS = Object.keys(SITE_BRANDS)
+
+/**
+ * Legacy brand values still stored in sites.brand map to their current name so
+ * the app resolves correctly whether or not the DB has been migrated. Run
+ * `UPDATE sites SET brand='LTZ Woodseats' WHERE brand='Velvet Ash';` on prod to
+ * make the stored value match.
+ */
+const BRAND_ALIASES: Record<string, string> = {
+  "Velvet Ash": "LTZ Woodseats",
+}
+
+/** Normalise a stored brand value to its current canonical name. */
+export function normalizeBrand(
+  brand: string | null | undefined,
+): string | null | undefined {
+  if (!brand) return brand
+  return BRAND_ALIASES[brand] ?? brand
+}
 
 /**
  * Resolve a full brand record. Training-academy sites use the LTZ Training
@@ -54,8 +73,9 @@ export function getBrand(
   siteType?: string | null,
 ): Brand {
   if (siteType === "training") return TRAINING_BRAND
-  if (!brand) return GROUP_BRAND
-  return SITE_BRANDS[brand] ?? GROUP_BRAND
+  const canonical = normalizeBrand(brand)
+  if (!canonical) return GROUP_BRAND
+  return SITE_BRANDS[canonical] ?? GROUP_BRAND
 }
 
 /** Resolve a site brand's logo, falling back to the group mark. */

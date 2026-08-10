@@ -39,7 +39,7 @@ export function VisionPanel({
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
             {fmtGBP(salesGoal)} total group revenue by {targetYear} — barbering,
-            Velvet Ash hairdressing and the Training Academy combined (per the LTZ
+            LTZ Woodseats hairdressing and the Training Academy combined (per the LTZ
             2025–2030 plan), with RTB at the 50% house split (
             {fmtGBP(rtbGoal)}). Per-barber targets follow the brand tier (~
             {fmtGBP(grossPerBarberWeekly)} gross / {fmtGBP(rtbPerBarberWeekly)}{" "}

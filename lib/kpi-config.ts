@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Rag } from "@/lib/format"
+import { normalizeBrand } from "@/lib/brands"
 
 export type KpiDirection = "higher_better" | "lower_better"
 
@@ -70,8 +71,8 @@ export function freeHaircutTarget(learners: number): number {
 }
 
 // Each barbershop brand posts on a specific set of platforms and takes bookings
-// on a specific booking platform. Velvet Ash mirrors Less Than Zero (it is
-// being rebranded to LTZ). Resolve by the value stored in sites.brand.
+// on a specific booking platform. LTZ Woodseats (formerly Velvet Ash) mirrors
+// Less Than Zero. Resolve by the value stored in sites.brand.
 export type SocialProfile = { posts: string[]; booking: string }
 
 export const SOCIAL_PROFILE_BY_BRAND: Record<string, SocialProfile> = {
@@ -79,7 +80,7 @@ export const SOCIAL_PROFILE_BY_BRAND: Record<string, SocialProfile> = {
     posts: ["instagram", "google", "facebook", "booksy"],
     booking: "Booksy",
   },
-  "Velvet Ash": {
+  "LTZ Woodseats": {
     posts: ["instagram", "google", "facebook", "booksy"],
     booking: "Booksy",
   },
@@ -93,7 +94,8 @@ export const SOCIAL_PROFILE_BY_BRAND: Record<string, SocialProfile> = {
 export function socialProfileForBrand(
   brand: string | null | undefined,
 ): SocialProfile {
-  const match = brand ? SOCIAL_PROFILE_BY_BRAND[brand] : undefined
+  const canonical = normalizeBrand(brand)
+  const match = canonical ? SOCIAL_PROFILE_BY_BRAND[canonical] : undefined
   return match ?? SOCIAL_PROFILE_BY_BRAND["Less Than Zero"]
 }
 

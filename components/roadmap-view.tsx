@@ -87,6 +87,8 @@ const BRAND_DOT: Record<string, string> = {
   "Less Than Zero": "bg-chart-1",
   "F.AF": "bg-chart-2",
   Kairos: "bg-chart-4",
+  "LTZ Woodseats": "bg-chart-3",
+  // Legacy brand value still present in some plan/roadmap data.
   "Velvet Ash": "bg-chart-3",
 }
 

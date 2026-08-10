@@ -41,7 +41,9 @@ export const BRAND_CUTTING_ROLE: Record<string, RoleBucket> = {
   // Less Than Zero (Mid) — senior, experienced floor.
   "less than zero": "Senior Barber",
   ltz: "Senior Barber",
-  // Velvet Ash (Elite) — standard "barber" title.
+  // LTZ Woodseats / Velvet Ash (Elite) — standard "barber" title. Both the
+  // current and legacy brand values are keyed so it resolves pre/post DB rename.
+  "ltz woodseats": "Barber",
   "velvet ash": "Barber",
   // F.AF (Youth) — junior/academy-fed floor.
   "f.af": "Junior Barber",

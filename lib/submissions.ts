@@ -12,6 +12,7 @@ import {
 } from "@/lib/db/schema"
 import { and, eq, gte, lte, sql } from "drizzle-orm"
 import { fmtWeekLong, isPastSubmissionDeadline } from "@/lib/format"
+import { CEO_EMAIL } from "@/lib/access-types"
 import {
   getManualKpiResults,
   getMarketingResultsBySite,
@@ -140,10 +141,17 @@ export async function getSubmissionStatus(
       .from(trainingWeeks)
       .where(eq(trainingWeeks.weekEnding, week)),
     // The live roster: active barbers per site. This is who is actually expected
-    // to report takings — NOT the site's chair capacity (sites.headcount).
+    // to report takings — NOT the site's chair capacity (sites.headcount). The
+    // linked login email is pulled so the CEO (Martin), who is not a submitting
+    // barber, can be excluded below.
     db
-      .select({ id: barbers.id, siteId: barbers.siteId })
+      .select({
+        id: barbers.id,
+        siteId: barbers.siteId,
+        email: userTable.email,
+      })
       .from(barbers)
+      .leftJoin(userTable, eq(userTable.id, barbers.userId))
       .where(eq(barbers.active, true)),
     // Approved holidays overlapping this week — those barbers are not expected
     // to submit takings, so they don't count against completeness.

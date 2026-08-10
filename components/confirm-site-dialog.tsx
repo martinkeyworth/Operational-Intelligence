@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { confirmSiteWeek } from "@/app/actions/governance"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
+import { normalizeBrand } from "@/lib/brands"
 import type {
   SiteConfirmReview,
   DiscrepancyState,
@@ -28,7 +29,7 @@ import type {
 export const SITE_BRANDS = [
   "Less Than Zero",
   "F.AF",
-  "Velvet Ash",
+  "LTZ Woodseats",
 ] as const
 
 export function ConfirmSiteDialog({
@@ -397,7 +398,7 @@ export function ConfirmSiteDialog({
                 <select
                   id="brandConfirmed"
                   name="brandConfirmed"
-                  defaultValue={brand}
+                  defaultValue={normalizeBrand(brand) ?? brand}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {SITE_BRANDS.map((b) => (
