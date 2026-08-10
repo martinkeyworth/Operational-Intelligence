@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { user as userTable, barbers, sites } from "@/lib/db/schema"
-import { resolveBarberForUser } from "@/lib/team"
+import { hasOrCanClaimBarber } from "@/lib/team"
 import {
   COMPANY_DOMAIN,
   isCompanyEmail,
@@ -62,18 +62,24 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     base.managedSiteIds = await getManagedSiteIds(base)
   }
 
-  // Does this user have a barber record? This — not the `isBarber` capability
-  // flag — gates the personal Team Area (holiday self-service), so leadership
-  // who are linked for holidays but aren't "barbers" (e.g. the CEO) still see
-  // and can manage their own bookings. resolveBarberForUser also self-heals a
-  // roster row that exists but was never linked (matching by name and setting
-  // userId once), so the nav link and the /team page always agree.
-  const linkedBarber = await resolveBarberForUser({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-  })
-  base.hasBarberRecord = Boolean(linkedBarber)
+  // Does this user have (or could they self-heal into) a barber record? This —
+  // not the `isBarber` capability flag — gates the personal Team Area nav link,
+  // so leadership who book holidays but aren't takings "barbers" (e.g. the CEO)
+  // still see it. This is a READ-ONLY check: getAccessUser runs on every
+  // authenticated request, so it must never write. The actual link/provision
+  // write happens lazily on /team, the team actions, or the diagnostic page via
+  // resolveBarberForUser — keeping the nav link and /team in agreement without
+  // risking a write-on-read failure breaking every page.
+  try {
+    base.hasBarberRecord = await hasOrCanClaimBarber({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+    })
+  } catch {
+    // Never let this gate break authentication for the whole app.
+    base.hasBarberRecord = false
+  }
 
   return base
 }

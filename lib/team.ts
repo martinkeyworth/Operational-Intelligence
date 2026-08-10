@@ -429,6 +429,39 @@ export async function resolveBarberForUser(u: {
 }
 
 /**
+ * READ-ONLY mirror of resolveBarberForUser's matching — performs NO writes, so
+ * it is safe to call on the hot path (getAccessUser runs on every authenticated
+ * request). Returns true when the user already has, or could self-heal into, a
+ * barber record. Used only to decide whether to show the Team Area nav link;
+ * the actual link/provision write happens lazily on /team, the team actions, or
+ * the diagnostic page via resolveBarberForUser.
+ */
+export async function hasOrCanClaimBarber(u: {
+  id: string
+  name?: string | null
+  email?: string | null
+}): Promise<boolean> {
+  const existing = await getBarberForUser(u.id)
+  if (existing) return true
+  // Leadership are always entitled (they get provisioned on first /team visit).
+  if (u.email && isLeadershipHolidayEmail(u.email)) return true
+
+  const displayName = (u.name?.trim() || u.email?.split("@")[0] || "").trim()
+  if (!displayName) return false
+  const firstName = displayName.split(/\s+/)[0]?.toLowerCase()
+
+  const userIdRows = await db.select({ id: userTable.id }).from(userTable)
+  const liveUserIds = new Set(userIdRows.map((r) => r.id))
+  const all = await db.select().from(barbers)
+  return all.some((b) => {
+    const free = b.userId === null || !liveUserIds.has(b.userId)
+    if (!free) return false
+    const n = b.name.trim().toLowerCase()
+    return n === displayName.toLowerCase() || n.split(/\s+/)[0] === firstName
+  })
+}
+
+/**
  * Resolve — and if necessary create — the barber record for a logged-in user.
  *
  * Any non-company login defaults to a barber. Rather than forcing an admin to
