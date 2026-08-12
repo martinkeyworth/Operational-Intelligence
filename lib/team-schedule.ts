@@ -2,7 +2,7 @@ import "server-only"
 import { db } from "@/lib/db"
 import { barbers, oneToOnes, threeSixtyCycles, user as userTable } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
-import { sendOneToOneInvite, sendThreeSixtyNominationNudge } from "@/lib/team-notify"
+import { sendOneToOneInvite, sendThreeSixtyNominationNudge, sendOneToOneManagerCompletionLink } from "@/lib/team-notify"
 import {
   isCalendarConfigured,
   upsertCalendarEvent,
@@ -115,6 +115,27 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
   } else {
     await sendIcsFallback()
   }
+
+  // Always give the manager a direct in-app link to complete this 1-2-1 (the
+  // GDPR-scoped page), regardless of which calendar path ran above. Best-effort
+  // so a mail hiccup never loses the scheduled row.
+  if (manager?.email) {
+    try {
+      await sendOneToOneManagerCompletionLink({
+        managerName: manager.name,
+        managerEmail: manager.email,
+        barberName: barber.name,
+        barberId,
+        scheduledFor: when,
+      })
+    } catch (err) {
+      console.error(
+        `[v0] 1-2-1 manager completion-link email failed for barber ${barberId}:`,
+        err instanceof Error ? err.message : err,
+      )
+    }
+  }
+
   return row.id
 }
 

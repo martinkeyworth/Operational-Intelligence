@@ -325,6 +325,65 @@ export async function getApprovedHolidaysInRange(
   }))
 }
 
+export type ManagerOneToOneReview = {
+  barber: { id: number; name: string }
+  scheduled: { id: number; scheduledFor: string } | null
+  history: { id: number; scheduledFor: string; completedAt: string | null; notes: string | null }[]
+}
+
+/**
+ * GDPR-scoped 1-2-1 view for a barber's assigned MANAGER (or a team admin).
+ * Returns ONLY that one barber's 1-2-1 schedule + completed notes — no takings,
+ * holiday, sickness, 360 or any other personal data. Returns null when the
+ * viewer is neither the barber's assigned manager nor a team admin, so a
+ * manager can only ever open a direct report — never their own record (their
+ * row points to THEIR manager, not themselves) and never a peer's.
+ */
+export async function getOneToOneReviewForManager(
+  barberId: number,
+  viewer: { id: string; isTeamAdmin: boolean },
+): Promise<ManagerOneToOneReview | null> {
+  const [barber] = await db
+    .select({ id: barbers.id, name: barbers.name, managerUserId: barbers.managerUserId })
+    .from(barbers)
+    .where(eq(barbers.id, barberId))
+  if (!barber) return null
+
+  const isManager = barber.managerUserId != null && barber.managerUserId === viewer.id
+  if (!isManager && !viewer.isTeamAdmin) return null
+
+  const rows = await db
+    .select({
+      id: oneToOnes.id,
+      scheduledFor: oneToOnes.scheduledFor,
+      status: oneToOnes.status,
+      completedAt: oneToOnes.completedAt,
+      notes: oneToOnes.notes,
+    })
+    .from(oneToOnes)
+    .where(eq(oneToOnes.barberId, barberId))
+    .orderBy(desc(oneToOnes.scheduledFor))
+
+  // The current open 1-2-1 to complete = the most recent still-Scheduled one.
+  const scheduledRow = rows.find((r) => r.status === "Scheduled") ?? null
+  const history = rows
+    .filter((r) => r.status === "Completed")
+    .map((r) => ({
+      id: r.id,
+      scheduledFor: r.scheduledFor.toISOString(),
+      completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+      notes: r.notes,
+    }))
+
+  return {
+    barber: { id: barber.id, name: barber.name },
+    scheduled: scheduledRow
+      ? { id: scheduledRow.id, scheduledFor: scheduledRow.scheduledFor.toISOString() }
+      : null,
+    history,
+  }
+}
+
 /** Holiday: counts DOWN from the 28-day allowance. Plenty left = green,
  *  running low = amber, none left (or over) = red. */
 export function ragForHoliday(remaining: number, allowance: number): Rag {

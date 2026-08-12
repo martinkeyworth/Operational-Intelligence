@@ -503,6 +503,56 @@ export async function remindPendingReviewers(): Promise<number> {
   return sent
 }
 
+/** Public base URL for links in emails (kept dependency-free on purpose). */
+function emailBaseUrl(): string {
+  return (
+    process.env.BETTER_AUTH_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "")
+  )
+}
+
+/**
+ * Nudge a barber's MANAGER with a direct link to complete the 1-2-1. The link
+ * opens the GDPR-scoped completion page, which shows only that one report's
+ * 1-2-1 (no other data) and is reachable only by the assigned manager (or a
+ * team admin). Sent alongside the calendar invite so the manager always has an
+ * in-app way to record notes and mark it done.
+ */
+export async function sendOneToOneManagerCompletionLink(args: {
+  managerName?: string | null
+  managerEmail?: string | null
+  barberName: string
+  barberId: number
+  scheduledFor: Date
+}): Promise<void> {
+  if (!args.managerEmail) return
+  const when = args.scheduledFor.toLocaleString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+  const url = `${emailBaseUrl()}/one-to-one/${args.barberId}`
+  const subject = `Action: complete your 1-2-1 with ${args.barberName}`
+  const html = wrap(
+    subject,
+    `<p style="font-size:14px;line-height:1.6">Hi ${args.managerName ?? "there"},</p>
+     <p style="font-size:14px;line-height:1.6">
+       Your 1-2-1 with <strong>${args.barberName}</strong> is scheduled for
+       <strong>${when}</strong>. Once you've had it, record your notes and mark it
+       complete here:</p>
+     <p><a href="${url}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px">Complete this 1-2-1</a></p>
+     <p style="font-size:12px;color:#888">This link opens only ${args.barberName}'s 1-2-1
+       and is available to you as their manager.</p>`,
+  )
+  await sendEmail({ to: args.managerEmail, subject, html, kind: "team-1-2-1-complete-link" })
+}
+
 /** Email a 1-2-1 calendar invite (.ics) to the barber + their manager. */
 export async function sendOneToOneInvite(args: {
   oneToOneId: number
