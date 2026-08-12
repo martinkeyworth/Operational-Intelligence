@@ -45,6 +45,7 @@ type ShellUser = {
   canViewDashboard?: boolean
   isBarber?: boolean
   hasBarberRecord?: boolean
+  managesTeam?: boolean
   managedSiteIds?: number[]
 }
 
@@ -100,6 +101,13 @@ export function AppShell({
         // manage nobody don't get the link (their page would be empty).
         ...(user.canViewDashboard || managerSiteId
           ? [{ href: "/approvals", label: "Approvals", icon: CalendarCheck }]
+          : []),
+        // A non-dashboard manager (e.g. a branch manager) has no L&D section,
+        // so without this they can't reach their direct reports' monthly 1-2-1s
+        // and development plans. Dashboard users get the full L&D section below
+        // instead, so only add it here for non-dashboard managers.
+        ...(user.managesTeam && !user.canViewDashboard
+          ? [{ href: "/learning/plans", label: "Team 1-2-1s", icon: ClipboardCheck }]
           : []),
       ],
     },

@@ -24,6 +24,11 @@ export type AccessUser = {
   // the `isBarber` capability flag — leadership (e.g. the CEO) can be linked for
   // holidays without being a "barber" who submits weekly takings.
   hasBarberRecord?: boolean
+  // Whether this user has at least one active direct report (a barber whose
+  // manager_user_id is this user). Drives the "Team 1-2-1s" (Learning Plans)
+  // nav link for non-dashboard managers, who otherwise have no way to reach
+  // their reports' 1-2-1s.
+  managesTeam?: boolean
 } & Capabilities
 
 // All functional areas that can have a designated lead + RAID log.

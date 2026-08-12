@@ -1,7 +1,7 @@
 import "server-only"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { user as userTable, barbers, sites } from "@/lib/db/schema"
@@ -84,6 +84,22 @@ export async function getAccessUser(): Promise<AccessUser | null> {
   } catch {
     // Never let this gate break authentication for the whole app.
     base.hasBarberRecord = false
+  }
+
+  // Does this user manage anyone? A non-dashboard manager (e.g. a branch
+  // manager) has no L&D nav section, so without this flag they have no way to
+  // reach their direct reports' 1-2-1s. Read-only + guarded so it can never
+  // break auth. Dashboard users get the full L&D section regardless, so we only
+  // need this for the non-dashboard case, but computing it always is harmless.
+  try {
+    const reports = await db
+      .select({ id: barbers.id })
+      .from(barbers)
+      .where(and(eq(barbers.active, true), eq(barbers.managerUserId, row.id)))
+      .limit(1)
+    base.managesTeam = reports.length > 0
+  } catch {
+    base.managesTeam = false
   }
 
   return base
