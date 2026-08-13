@@ -4,9 +4,10 @@ import { useState, useTransition } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { CalendarDays, CheckCircle2 } from "lucide-react"
-import { completeOneToOneScoped } from "@/app/one-to-one/actions"
+import { CalendarDays, CheckCircle2, CalendarClock } from "lucide-react"
+import { completeOneToOneScoped, rescheduleOneToOneScoped } from "@/app/one-to-one/actions"
 import type { ManagerOneToOneReview } from "@/lib/team"
 
 function fmt(iso: string) {
@@ -40,6 +41,35 @@ export function OneToOneReview({ review }: { review: ManagerOneToOneReview }) {
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <CalendarDays className="h-4 w-4" /> Scheduled for {fmt(review.scheduled.scheduledFor)}
           </p>
+
+          <form
+            className="mt-3 flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-end"
+            action={(fd) => {
+              setError(null)
+              start(async () => {
+                const res = await rescheduleOneToOneScoped(fd)
+                if (!res?.ok) setError(res?.error ?? "Could not move this 1-2-1")
+              })
+            }}
+          >
+            <input type="hidden" name="id" value={review.scheduled.id} />
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="move-when" className="flex items-center gap-1.5 text-xs">
+                <CalendarClock className="h-3.5 w-3.5" /> Move to a new date/time
+              </Label>
+              <Input
+                id="move-when"
+                name="scheduledFor"
+                type="datetime-local"
+                required
+                className="text-base"
+              />
+            </div>
+            <Button type="submit" variant="outline" disabled={pending} className="self-start sm:self-auto">
+              {pending ? "Moving…" : "Move"}
+            </Button>
+          </form>
+
           <form
             className="mt-3 flex flex-col gap-3"
             action={(fd) => {

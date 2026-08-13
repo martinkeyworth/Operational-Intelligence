@@ -17,6 +17,7 @@ import {
   updateBarberProfile,
   decideLeave,
   scheduleOneToOneNow,
+  rescheduleOneToOneNow,
   completeOneToOne,
   openThreeSixtyCycle,
 } from "@/app/admin/team/actions"
@@ -397,12 +398,31 @@ export function TeamMemberManager({
                   <Badge variant="secondary" className="text-[10px]">{o.status}</Badge>
                   {o.googleEventId && <RsvpBadge barber={o.barberResponse} manager={o.managerResponse} />}
                   {o.status === "Scheduled" && (
-                    <form action={(fd) => run(() => completeOneToOne(fd))}>
-                      <input type="hidden" name="id" value={o.id} />
-                      <Button type="submit" size="sm" variant="ghost" disabled={pending}>
-                        Mark done
-                      </Button>
-                    </form>
+                    <>
+                      <form
+                        action={(fd) => run(() => rescheduleOneToOneNow(fd))}
+                        className="flex items-center gap-1.5"
+                        title="Move this 1-2-1 to a new date/time"
+                      >
+                        <input type="hidden" name="id" value={o.id} />
+                        <Input
+                          name="scheduledFor"
+                          type="datetime-local"
+                          required
+                          aria-label="New date and time"
+                          className="h-8 w-[13.5rem] text-sm"
+                        />
+                        <Button type="submit" size="sm" variant="outline" disabled={pending}>
+                          Move
+                        </Button>
+                      </form>
+                      <form action={(fd) => run(() => completeOneToOne(fd))}>
+                        <input type="hidden" name="id" value={o.id} />
+                        <Button type="submit" size="sm" variant="ghost" disabled={pending}>
+                          Mark done
+                        </Button>
+                      </form>
+                    </>
                   )}
                 </div>
               </div>

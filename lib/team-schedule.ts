@@ -139,6 +139,104 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
   return row.id
 }
 
+/**
+ * Move an existing scheduled 1-2-1 to a new date/time IN PLACE. Unlike
+ * scheduleOneToOne (which always inserts a fresh row + a new calendar event),
+ * this updates the same row and PATCHES the existing Google Calendar event so it
+ * simply moves — no duplicate rows and no orphaned events left at the old time.
+ * Google re-notifies the attendees (sendUpdates:"all") so they can re-accept.
+ * Only a still-Scheduled 1-2-1 can be moved; a Completed one is fixed. Throws if
+ * the row is missing or already completed.
+ */
+export async function rescheduleOneToOne(oneToOneId: number, when: Date): Promise<void> {
+  const [row] = await db.select().from(oneToOnes).where(eq(oneToOnes.id, oneToOneId))
+  if (!row) throw new Error("1-2-1 not found")
+  if (row.status !== "Scheduled") {
+    throw new Error("This 1-2-1 has already been completed and can no longer be moved.")
+  }
+
+  const [barber] = await db.select().from(barbers).where(eq(barbers.id, row.barberId))
+  if (!barber) throw new Error("Barber not found")
+
+  const period = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, "0")}`
+
+  // Move the row first — the schedule change must never be lost to a later
+  // calendar hiccup.
+  await db
+    .update(oneToOnes)
+    .set({ scheduledFor: when, period })
+    .where(eq(oneToOnes.id, oneToOneId))
+
+  // Keep the learning roster consistent if the move crosses a month boundary.
+  if (period !== row.period) {
+    try {
+      await ensureCycleForPeriod(row.barberId, period)
+    } catch (err) {
+      console.error(
+        `[v0] ensureCycleForPeriod (reschedule) failed for barber ${row.barberId} (${period}):`,
+        err instanceof Error ? err.message : err,
+      )
+    }
+  }
+
+  // Resolve attendee emails (same as scheduling).
+  const barberEmail = barber.userId
+    ? (await db.select().from(userTable).where(eq(userTable.id, barber.userId)))[0]?.email
+    : null
+  const manager = barber.managerUserId
+    ? (await db.select().from(userTable).where(eq(userTable.id, barber.managerUserId)))[0]
+    : null
+
+  const sendIcsFallback = () =>
+    sendOneToOneInvite({
+      oneToOneId,
+      barberName: barber.name,
+      barberEmail,
+      managerName: manager?.name ?? null,
+      managerEmail: manager?.email ?? null,
+      scheduledFor: when,
+    })
+
+  if (isCalendarConfigured()) {
+    const attendees = [
+      barberEmail ? { email: barberEmail, displayName: barber.name } : null,
+      manager?.email ? { email: manager.email, displayName: manager.name ?? "Manager" } : null,
+    ].filter(Boolean) as { email: string; displayName: string }[]
+
+    try {
+      const event = await upsertCalendarEvent(
+        {
+          requestId: `1-2-1-${oneToOneId}`,
+          summary: `1-2-1: ${barber.name}`,
+          description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
+          start: when,
+          durationMinutes: 30,
+          attendees,
+        },
+        // Patch the EXISTING event so it moves in place; if we don't have one
+        // yet (e.g. it was created via .ics), this inserts a fresh event.
+        row.googleEventId ?? undefined,
+      )
+      if (event) {
+        await db
+          .update(oneToOnes)
+          .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
+          .where(eq(oneToOnes.id, oneToOneId))
+      } else {
+        await sendIcsFallback()
+      }
+    } catch (err) {
+      console.error(
+        `[v0] 1-2-1 reschedule calendar move failed for 1-2-1 ${oneToOneId}; falling back to .ics email:`,
+        err instanceof Error ? err.message : err,
+      )
+      await sendIcsFallback()
+    }
+  } else {
+    await sendIcsFallback()
+  }
+}
+
 /** Has this barber had a 1-2-1 scheduled within the last `days` days? */
 async function hasRecentOneToOne(barberId: number, days: number): Promise<boolean> {
   const [latest] = await db
