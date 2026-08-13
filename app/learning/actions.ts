@@ -24,6 +24,7 @@ import {
 import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanItemStatus } from "@/lib/learning-types"
 import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
 import { regeneratePbcForBarber } from "@/lib/pbc-refresh"
+import { rescheduleOneToOne } from "@/lib/team-schedule"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -174,6 +175,38 @@ export async function openOneToOneAction(barberId: number): Promise<{ ok: boolea
   const row = await openOneToOne(barberId, basics.managerUserId ?? user.id)
   revalidatePath(`/learning/plans/${barberId}`)
   return { ok: true, id: row.id }
+}
+
+/**
+ * Move a team member's scheduled 1-2-1 to a new date/time from the Learning
+ * Plans surface. Uses the SAME canRatePbc gate as opening/completing the 1-2-1,
+ * so a barber's own manager (e.g. a branch manager like Cosmin) or an L&D
+ * manager can move it — this is the surface managers actually use, so the Move
+ * control belongs here alongside open/complete. The move happens in place (the
+ * calendar event moves too); a Completed 1-2-1 is fixed.
+ */
+export async function rescheduleOneToOneAction(
+  oneToOneId: number,
+  barberId: number,
+  whenIso: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await getAccessUser()
+  if (!user) return { ok: false, error: "Not signed in." }
+  const basics = await getBarberBasics(barberId)
+  if (!basics || !canRatePbc(user, basics.managerUserId)) {
+    return { ok: false, error: "You don't manage this person, so you can't move their 1-2-1." }
+  }
+  const when = whenIso ? new Date(whenIso) : null
+  if (!when || Number.isNaN(when.getTime())) return { ok: false, error: "Pick a new date and time." }
+
+  try {
+    await rescheduleOneToOne(oneToOneId, when)
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not move this 1-2-1." }
+  }
+  revalidatePath(`/learning/plans/${barberId}`)
+  revalidatePath("/learning/plans")
+  return { ok: true }
 }
 
 /**

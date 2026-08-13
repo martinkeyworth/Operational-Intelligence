@@ -95,6 +95,9 @@ export default async function PlanDetailPage({
               barberName={basics.name}
               oneToOneId={otoForPeriod?.id ?? null}
               status={otoForPeriod ? otoForPeriod.status : "None"}
+              scheduledFor={
+                otoForPeriod?.scheduledFor ? new Date(otoForPeriod.scheduledFor).toISOString() : null
+              }
               period={currentPeriod()}
               selfPrep={readSelfPrep(otoForPeriod)}
               managerAnswersInit={readManagerAnswers(otoForPeriod).answers ?? {}}

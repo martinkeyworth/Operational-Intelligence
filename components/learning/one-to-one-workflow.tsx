@@ -12,9 +12,14 @@ import {
   type PbcDimension,
   type SelfPrep,
 } from "@/lib/learning-types"
-import { openOneToOneAction, completeOneToOneAction, generateAiPbcAction } from "@/app/learning/actions"
+import {
+  openOneToOneAction,
+  completeOneToOneAction,
+  generateAiPbcAction,
+  rescheduleOneToOneAction,
+} from "@/app/learning/actions"
 import { cn } from "@/lib/utils"
-import { AlertTriangle, CheckCircle2, ShieldAlert, Sparkles, Users } from "lucide-react"
+import { AlertTriangle, CalendarClock, CheckCircle2, ShieldAlert, Sparkles, Users } from "lucide-react"
 
 export type ThreeSixtyStatus = {
   nominated: number
@@ -45,6 +50,7 @@ type Props = {
   barberName: string
   oneToOneId: number | null
   status: string // None | Scheduled | Completed
+  scheduledFor: string | null // ISO of the current meeting date/time (for Move)
   period: string
   selfPrep: SelfPrep
   managerAnswersInit: OneToOneAnswers
@@ -196,6 +202,11 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
 
   return (
     <div className="space-y-6">
+      <MoveOneToOne
+        oneToOneId={props.oneToOneId}
+        barberId={props.barberId}
+        scheduledFor={props.scheduledFor}
+      />
       <ThreeSixtyPanel status={props.threeSixty} barberName={props.barberName} />
       <CompliancePanel compliance={props.compliance} barberName={props.barberName} />
 
@@ -388,6 +399,81 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
         {msg ? <p className="text-sm text-muted-foreground">{msg}</p> : null}
       </div>
     </div>
+  )
+}
+
+/** Convert an ISO timestamp to a value a <input type="datetime-local"> accepts. */
+function toDatetimeLocal(iso: string | null): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * Move a scheduled 1-2-1 to a new date/time. Available to whoever can run the
+ * 1-2-1 (the barber's manager or an L&D manager), so branch managers can move
+ * their own team's 1-2-1s from the surface they actually use. The move happens
+ * in place — the calendar entry moves too, no duplicate.
+ */
+function MoveOneToOne({
+  oneToOneId,
+  barberId,
+  scheduledFor,
+}: {
+  oneToOneId: number
+  barberId: number
+  scheduledFor: string | null
+}) {
+  const [isPending, startTransition] = useTransition()
+  const [when, setWhen] = useState(() => toDatetimeLocal(scheduledFor))
+  const [msg, setMsg] = useState<string | null>(null)
+  const [err, setErr] = useState(false)
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center gap-2">
+        <CalendarClock className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">Move this 1-2-1</h3>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Change the date/time of the scheduled meeting. Everyone invited is re-notified and the calendar
+        entry moves — no duplicate is created.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input
+          type="datetime-local"
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+          aria-label="New date and time"
+          className="rounded-lg border border-input bg-transparent px-3 py-2 text-base sm:text-sm"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isPending || !when}
+          onClick={() =>
+            startTransition(async () => {
+              setMsg(null)
+              setErr(false)
+              const res = await rescheduleOneToOneAction(oneToOneId, barberId, when)
+              if (res.ok) {
+                setMsg("1-2-1 moved and everyone re-notified.")
+              } else {
+                setErr(true)
+                setMsg(res.error ?? "Could not move this 1-2-1.")
+              }
+            })
+          }
+        >
+          {isPending ? "Moving…" : "Move"}
+        </Button>
+      </div>
+      {msg ? (
+        <p className={cn("mt-2 text-sm", err ? "text-destructive" : "text-muted-foreground")}>{msg}</p>
+      ) : null}
+    </section>
   )
 }
 
