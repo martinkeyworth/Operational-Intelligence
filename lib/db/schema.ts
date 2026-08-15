@@ -123,8 +123,8 @@ export const barbers = pgTable("barbers", {
   splitSetBy: text("split_set_by"),
   splitSetAt: timestamp("split_set_at"),
   // Per-barber weekly cap on how much RTB (house rent) may be taken from CARD.
-  // Anything above the cap is driven onto cash (see lib/rtb.ts). Default £200.
-  cardRtbCap: numeric("card_rtb_cap").notNull().default("200"),
+  // Anything above the cap is driven onto cash (see lib/rtb.ts). Default £160.
+  cardRtbCap: numeric("card_rtb_cap").notNull().default("160"),
   // Discrepancy-detection thresholds (lib/discrepancies.ts). Null = use the
   // system default. swingThresholdPct: ± % vs trailing average that trips a
   // "big swing" flag. expectedWorkingDays: days expected for a "full" week.

@@ -7,7 +7,7 @@
 //
 // Rules (locked with the user):
 //  - The overall business % of total takings is always the rent owed.
-//  - Card rent is capped per barber per week (default £200). We take rent from
+//  - Card rent is capped per barber per week (default £160). We take rent from
 //    card first up to the cap, then the remainder from cash — this drives the
 //    bankable cash rent higher, which is the point of the cap.
 //  - If cash can't cover its remainder, the shortfall goes BACK onto card (the
@@ -22,7 +22,7 @@ export type RtbInput = {
   card: number
   /** Barber's % share (whole number 0-100). Null → group default. */
   barberPct: number | null | undefined
-  /** Max rent taken from card this period (default 200). */
+  /** Max rent taken from card this period (default 160). */
   cardCap?: number | null
 }
 
@@ -44,7 +44,7 @@ export type RtbResult = {
   cardOverflow: number
 }
 
-const DEFAULT_CARD_CAP = 200
+const DEFAULT_CARD_CAP = 160
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100

@@ -1993,7 +1993,7 @@ export async function getBarberSplits(week: string): Promise<BarberSplitRow[]> {
       reviewedThisWeek: setAt
         ? setAt >= new Date(`${week}T00:00:00`)
         : false,
-      cardRtbCap: b.cardRtbCap == null ? 200 : Number(b.cardRtbCap),
+      cardRtbCap: b.cardRtbCap == null ? 160 : Number(b.cardRtbCap),
       swingThresholdPct:
         b.swingThresholdPct == null ? null : Number(b.swingThresholdPct),
       expectedWorkingDays:

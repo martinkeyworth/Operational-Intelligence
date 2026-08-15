@@ -86,7 +86,7 @@ recorded — handy to show the barber their running week + RTB.
 2. Recomputes that barber's `weekly_takings` rollup for the week the date falls
    in (Sun→Sat, week ending Saturday) and writes cash/card + RTB from the split.
 3. RTB uses the barber's split (`barber_pct`) and per-barber card cap
-   (`card_rtb_cap`, default £200): card rent is capped, the remainder goes to
+   (`card_rtb_cap`, default £160): card rent is capped, the remainder goes to
    cash, and only overflows back to card if cash can't cover it.
 
 The manager then reviews the computed RTB + any discrepancy flags inside the
