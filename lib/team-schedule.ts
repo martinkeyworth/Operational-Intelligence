@@ -63,57 +63,56 @@ export async function scheduleOneToOne(barberId: number, when: Date): Promise<nu
     ? (await db.select().from(userTable).where(eq(userTable.id, barber.managerUserId)))[0]
     : null
 
-  // Email a .ics calendar invite to the barber + their manager. Used as the
-  // primary path when Google Calendar isn't configured, and as the automatic
-  // fallback if the Google Calendar call fails for any reason.
-  const sendIcsFallback = () =>
-    sendOneToOneInvite({
-      oneToOneId: row.id,
-      barberName: barber.name,
-      barberEmail,
-      managerName: manager?.name ?? null,
-      managerEmail: manager?.email ?? null,
-      scheduledFor: when,
-    })
+  // ALWAYS send our own deliverable .ics invite from the verified
+  // theltzgroup.com domain, with replies routed to the barber's manager. This
+  // is the primary notification — we no longer depend on Google Calendar's
+  // unmonitored no-reply email (which wasn't reaching attendees).
+  await sendOneToOneInvite({
+    oneToOneId: row.id,
+    barberName: barber.name,
+    barberEmail,
+    managerName: manager?.name ?? null,
+    managerEmail: manager?.email ?? null,
+    scheduledFor: when,
+    replyTo: manager?.email ?? null,
+  })
 
+  // If Google Calendar is configured, ALSO place the event on the shared LTZ
+  // calendar for leadership visibility + native RSVP tracking — but with
+  // sendUpdates:"none" so Google does NOT send its own no-reply email (the
+  // deliverable invite above already notified everyone). Best-effort: a failure
+  // here never loses the schedule or the invite.
   if (isCalendarConfigured()) {
-    // Google Calendar path: create a real event on the shared calendar. Google
-    // sends the invite emails and tracks RSVPs natively. If this fails at
-    // runtime (bad credentials, delegation not granted, API error), we degrade
-    // gracefully to the .ics email instead of throwing — the 1-2-1 row has
-    // already been created, so the schedule itself is never lost.
     const attendees = [
       barberEmail ? { email: barberEmail, displayName: barber.name } : null,
       manager?.email ? { email: manager.email, displayName: manager.name ?? "Manager" } : null,
     ].filter(Boolean) as { email: string; displayName: string }[]
 
     try {
-      const event = await upsertCalendarEvent({
-        requestId: `1-2-1-${row.id}`,
-        summary: `1-2-1: ${barber.name}`,
-        description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
-        start: when,
-        durationMinutes: 30,
-        attendees,
-      })
+      const event = await upsertCalendarEvent(
+        {
+          requestId: `1-2-1-${row.id}`,
+          summary: `1-2-1: ${barber.name}`,
+          description: `Monthly 1-2-1 between ${barber.name} and ${manager?.name ?? "their manager"}.`,
+          start: when,
+          durationMinutes: 30,
+          attendees,
+        },
+        undefined,
+        "none",
+      )
       if (event) {
         await db
           .update(oneToOnes)
           .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
           .where(eq(oneToOnes.id, row.id))
-      } else {
-        // Calendar unconfigured at call time — use the email invite.
-        await sendIcsFallback()
       }
     } catch (err) {
       console.error(
-        `[v0] 1-2-1 calendar event failed for barber ${barberId}; falling back to .ics email:`,
+        `[v0] 1-2-1 shared-calendar event failed for barber ${barberId} (invite already sent):`,
         err instanceof Error ? err.message : err,
       )
-      await sendIcsFallback()
     }
-  } else {
-    await sendIcsFallback()
   }
 
   // Always give the manager a direct in-app link to complete this 1-2-1 (the
@@ -187,16 +186,24 @@ export async function rescheduleOneToOne(oneToOneId: number, when: Date): Promis
     ? (await db.select().from(userTable).where(eq(userTable.id, barber.managerUserId)))[0]
     : null
 
-  const sendIcsFallback = () =>
-    sendOneToOneInvite({
-      oneToOneId,
-      barberName: barber.name,
-      barberEmail,
-      managerName: manager?.name ?? null,
-      managerEmail: manager?.email ?? null,
-      scheduledFor: when,
-    })
+  // ALWAYS send our own deliverable .ics UPDATE from theltzgroup.com (replies to
+  // the manager). isUpdate + the default time-based SEQUENCE make it supersede
+  // the recipient's existing calendar entry rather than creating a duplicate.
+  await sendOneToOneInvite({
+    oneToOneId,
+    barberName: barber.name,
+    barberEmail,
+    managerName: manager?.name ?? null,
+    managerEmail: manager?.email ?? null,
+    scheduledFor: when,
+    replyTo: manager?.email ?? null,
+    isUpdate: true,
+  })
 
+  // If Google Calendar is configured, ALSO move the shared-calendar event in
+  // place for leadership visibility — with sendUpdates:"none" so Google doesn't
+  // send its own no-reply email (the deliverable update above already notified
+  // everyone). Best-effort: the row move above is already persisted.
   if (isCalendarConfigured()) {
     const attendees = [
       barberEmail ? { email: barberEmail, displayName: barber.name } : null,
@@ -216,24 +223,20 @@ export async function rescheduleOneToOne(oneToOneId: number, when: Date): Promis
         // Patch the EXISTING event so it moves in place; if we don't have one
         // yet (e.g. it was created via .ics), this inserts a fresh event.
         row.googleEventId ?? undefined,
+        "none",
       )
       if (event) {
         await db
           .update(oneToOnes)
           .set({ googleEventId: event.eventId, calendarSyncedAt: new Date() })
           .where(eq(oneToOnes.id, oneToOneId))
-      } else {
-        await sendIcsFallback()
       }
     } catch (err) {
       console.error(
-        `[v0] 1-2-1 reschedule calendar move failed for 1-2-1 ${oneToOneId}; falling back to .ics email:`,
+        `[v0] 1-2-1 reschedule shared-calendar move failed for 1-2-1 ${oneToOneId} (update already sent):`,
         err instanceof Error ? err.message : err,
       )
-      await sendIcsFallback()
     }
-  } else {
-    await sendIcsFallback()
   }
 }
 

@@ -91,6 +91,10 @@ export type SendArgs = {
   // Optional carbon-copy recipient(s), e.g. copying leadership on a coaching
   // email. Logged as part of the recipient string.
   cc?: string | string[]
+  // Optional Reply-To. The From stays on the verified theltzgroup.com sending
+  // domain (so delivery works), but replies can be routed to a real monitored
+  // mailbox, e.g. the barber's manager for a 1-2-1 invite.
+  replyTo?: string | string[]
   subject: string
   html: string
   kind: string
@@ -106,6 +110,7 @@ export type SendArgs = {
 export async function sendEmail({
   to,
   cc,
+  replyTo,
   subject,
   html,
   kind,
@@ -113,6 +118,7 @@ export async function sendEmail({
   attachments,
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter(Boolean) : []
+  const replyToList = replyTo ? (Array.isArray(replyTo) ? replyTo : [replyTo]).filter(Boolean) : []
   // Recorded recipient string for the audit log (includes any cc).
   const recipientLabel = ccList.length ? `${to} (cc: ${ccList.join(", ")})` : to
   const resend = client()
@@ -127,6 +133,7 @@ export async function sendEmail({
       from: FROM,
       to,
       ...(ccList.length ? { cc: ccList } : {}),
+      ...(replyToList.length ? { replyTo: replyToList } : {}),
       subject,
       html,
       ...(attachments && attachments.length

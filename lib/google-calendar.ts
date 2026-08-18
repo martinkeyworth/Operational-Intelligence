@@ -100,6 +100,12 @@ export type CalendarEventResult = {
 export async function upsertCalendarEvent(
   args: UpsertEventArgs,
   existingEventId?: string | null,
+  // Who Google emails about the event. Default "all" (Google sends its own
+  // invite/update). Pass "none" when the app sends its own deliverable invite
+  // instead — the event still lands on the shared calendar for visibility, but
+  // Google won't send its unmonitored no-reply notification (which avoids a
+  // duplicate email to attendees).
+  sendUpdates: "all" | "none" = "all",
 ): Promise<CalendarEventResult | null> {
   const cal = calendarClient()
   if (!cal) return null
@@ -128,7 +134,7 @@ export async function upsertCalendarEvent(
 
   const params = {
     calendarId: calendarId(),
-    sendUpdates: "all" as const, // email the attendees so they can accept in Google
+    sendUpdates, // "all" = Google emails attendees; "none" = app sends its own invite
   }
 
   if (existingEventId) {

@@ -553,7 +553,14 @@ export async function sendOneToOneManagerCompletionLink(args: {
   await sendEmail({ to: args.managerEmail, subject, html, kind: "team-1-2-1-complete-link" })
 }
 
-/** Email a 1-2-1 calendar invite (.ics) to the barber + their manager. */
+/**
+ * Email a 1-2-1 calendar invite (.ics) to the barber + their manager, from the
+ * verified theltzgroup.com sending domain so it actually delivers. This is the
+ * PRIMARY notification for both scheduling and moving a 1-2-1 (we no longer rely
+ * on Google Calendar's unmonitored no-reply email). Replies go to `replyTo`
+ * (the barber's manager). On a move, pass `isUpdate` + a higher `sequence` so
+ * the recipient's existing calendar entry is updated in place, not duplicated.
+ */
 export async function sendOneToOneInvite(args: {
   oneToOneId: number
   barberName: string
@@ -561,6 +568,9 @@ export async function sendOneToOneInvite(args: {
   managerName?: string | null
   managerEmail?: string | null
   scheduledFor: Date
+  replyTo?: string | null
+  isUpdate?: boolean
+  sequence?: number
 }): Promise<void> {
   const attendees = [
     args.barberEmail ? { name: args.barberName, email: args.barberEmail } : null,
@@ -568,6 +578,10 @@ export async function sendOneToOneInvite(args: {
       ? { name: args.managerName ?? "Manager", email: args.managerEmail }
       : null,
   ].filter(Boolean) as { name: string; email: string }[]
+
+  // Monotonic-with-time default so each successive invite for the same UID has a
+  // higher SEQUENCE than the last — required for a move to supersede the old one.
+  const sequence = args.sequence ?? Math.floor((Date.now() - Date.UTC(2024, 0, 1)) / 1000)
 
   const ics = buildIcs({
     uid: `1-2-1-${args.oneToOneId}@lessthanzerobarbers.com`,
@@ -580,6 +594,7 @@ export async function sendOneToOneInvite(args: {
     organizerName: APP_NAME,
     organizerEmail: resolvedFrom().replace(/.*<(.+)>.*/, "$1"),
     attendees,
+    sequence,
   })
 
   const when = args.scheduledFor.toLocaleString("en-GB", {
@@ -589,12 +604,18 @@ export async function sendOneToOneInvite(args: {
     hour: "2-digit",
     minute: "2-digit",
   })
-  const subject = `1-2-1 scheduled: ${args.barberName} — ${when}`
+  const subject = args.isUpdate
+    ? `1-2-1 moved: ${args.barberName} — now ${when}`
+    : `1-2-1 scheduled: ${args.barberName} — ${when}`
   const html = wrap(
     subject,
-    `<p style="font-size:14px;line-height:1.6">
-       Your monthly 1-2-1 has been scheduled for <strong>${when}</strong>.
-       Accept the attached calendar invite to add it to your calendar.</p>`,
+    args.isUpdate
+      ? `<p style="font-size:14px;line-height:1.6">
+           Your monthly 1-2-1 has been <strong>moved</strong> to <strong>${when}</strong>.
+           Accept the attached calendar invite to update it in your calendar.</p>`
+      : `<p style="font-size:14px;line-height:1.6">
+           Your monthly 1-2-1 has been scheduled for <strong>${when}</strong>.
+           Accept the attached calendar invite to add it to your calendar.</p>`,
   )
 
   const recipients = attendees.map((a) => a.email)
@@ -603,7 +624,8 @@ export async function sendOneToOneInvite(args: {
       to,
       subject,
       html,
-      kind: "team-1-2-1-invite",
+      kind: args.isUpdate ? "team-1-2-1-move" : "team-1-2-1-invite",
+      replyTo: args.replyTo ?? undefined,
       attachments: [
         { filename: "1-2-1.ics", content: ics, contentType: "text/calendar; method=REQUEST" },
       ],

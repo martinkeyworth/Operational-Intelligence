@@ -13,6 +13,9 @@ export type IcsEvent = {
   organizerEmail?: string
   attendees?: { name?: string; email: string }[]
   location?: string
+  /** iCal SEQUENCE. Bump this on every re-send for the same UID so a moved
+   *  invite UPDATES the recipient's existing entry instead of duplicating it. */
+  sequence?: number
 }
 
 function pad(n: number): string {
@@ -59,6 +62,7 @@ export function buildIcs(event: IcsEvent): string {
     `DTSTAMP:${toIcsUtc(now)}`,
     `DTSTART:${toIcsUtc(event.start)}`,
     `DTEND:${toIcsUtc(end)}`,
+    `SEQUENCE:${Math.max(0, Math.floor(event.sequence ?? 0))}`,
     `SUMMARY:${esc(event.title)}`,
   ]
   if (event.description) lines.push(`DESCRIPTION:${esc(event.description)}`)
