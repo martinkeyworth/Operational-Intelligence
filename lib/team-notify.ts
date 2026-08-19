@@ -82,7 +82,18 @@ export async function resolveOneToOnePeople(barberId: number): Promise<OneToOneP
  * message before the leadership escalation).
  */
 async function sendDeduped(
-  messages: { emails: (string | null | undefined)[]; subject: string; html: string; kind: string }[],
+  messages: {
+    emails: (string | null | undefined)[]
+    subject: string
+    html: string
+    kind: string
+    // Optional per-message sender. `from` sends AS that identity (validated by
+    // sendEmail — an unverified domain keeps the name + falls back to the brand
+    // address); `replyTo` routes replies. Used so 1-2-1 emails come from the
+    // barber's manager rather than a no-reply address.
+    from?: string
+    replyTo?: string
+  }[],
 ): Promise<number> {
   const seen = new Set<string>()
   let sent = 0
@@ -91,11 +102,37 @@ async function sendDeduped(
       const to = raw?.trim().toLowerCase()
       if (!to || seen.has(to)) continue
       seen.add(to)
-      await sendEmail({ to, subject: m.subject, html: m.html, kind: m.kind })
+      await sendEmail({
+        to,
+        subject: m.subject,
+        html: m.html,
+        kind: m.kind,
+        from: m.from,
+        replyTo: m.replyTo,
+      })
       sent++
     }
   }
   return sent
+}
+
+/**
+ * Build the sender identity for a 1-2-1 email so it comes from the barber's
+ * MANAGER, not a no-reply address. `from` is sent as the manager (sendEmail
+ * validates it: a verified-domain manager sends as themselves; an unverified
+ * one keeps their name + falls back to the brand address), and replies always
+ * route to the manager. Returns {} when no manager email is resolved, so the
+ * caller falls back to the default sender.
+ */
+function managerSender(people: {
+  managerName?: string | null
+  managerEmail?: string | null
+}): { from?: string; replyTo?: string } {
+  if (!people.managerEmail) return {}
+  return {
+    from: `${people.managerName ?? "Manager"} <${people.managerEmail}>`,
+    replyTo: people.managerEmail,
+  }
 }
 
 function wrap(title: string, bodyHtml: string): string {
@@ -550,7 +587,8 @@ export async function sendOneToOneManagerCompletionLink(args: {
      <p style="font-size:12px;color:#888">This link opens only ${args.barberName}'s 1-2-1
        and is available to you as their manager.</p>`,
   )
-  await sendEmail({ to: args.managerEmail, subject, html, kind: "team-1-2-1-complete-link" })
+  const sender = managerSender({ managerName: args.managerName, managerEmail: args.managerEmail })
+  await sendEmail({ to: args.managerEmail, subject, html, kind: "team-1-2-1-complete-link", ...sender })
 }
 
 /**
@@ -679,9 +717,10 @@ export async function sendOneToOneReminder(args: {
      <p>${emailButton(`/team`, "Complete your self-prep")}</p>`,
   )
 
+  const sender = managerSender(people)
   return sendDeduped([
-    { emails: [people.managerEmail], subject: `1-2-1 due: ${people.barberName} (${periodLabel})`, html: managerHtml, kind: "team-1-2-1-reminder" },
-    { emails: [people.barberEmail], subject: `Your 1-2-1 is due (${periodLabel})`, html: barberHtml, kind: "team-1-2-1-reminder" },
+    { emails: [people.managerEmail], subject: `1-2-1 due: ${people.barberName} (${periodLabel})`, html: managerHtml, kind: "team-1-2-1-reminder", ...sender },
+    { emails: [people.barberEmail], subject: `Your 1-2-1 is due (${periodLabel})`, html: barberHtml, kind: "team-1-2-1-reminder", ...sender },
   ])
 }
 
@@ -723,10 +762,11 @@ export async function sendOneToOneOverdue(args: {
 
   // Order matters: manager + barber first so they're never re-emailed by the
   // leadership escalation.
+  const sender = managerSender(people)
   return sendDeduped([
-    { emails: [people.managerEmail], subject: `Overdue 1-2-1: ${people.barberName}`, html: managerHtml, kind: "team-1-2-1-overdue" },
-    { emails: [people.barberEmail], subject: `Your 1-2-1 is overdue (${periodLabel})`, html: barberHtml, kind: "team-1-2-1-overdue" },
-    { emails: leadershipRecipients(), subject: `Escalation: overdue 1-2-1 — ${people.barberName}`, html: leadershipHtml, kind: "team-1-2-1-overdue-escalation" },
+    { emails: [people.managerEmail], subject: `Overdue 1-2-1: ${people.barberName}`, html: managerHtml, kind: "team-1-2-1-overdue", ...sender },
+    { emails: [people.barberEmail], subject: `Your 1-2-1 is overdue (${periodLabel})`, html: barberHtml, kind: "team-1-2-1-overdue", ...sender },
+    { emails: leadershipRecipients(), subject: `Escalation: overdue 1-2-1 — ${people.barberName}`, html: leadershipHtml, kind: "team-1-2-1-overdue-escalation", ...sender },
   ])
 }
 
@@ -784,9 +824,10 @@ export async function sendOneToOneComplete(args: {
        <p>${emailButton(forBarber ? `/team` : `/learning/plans/${people.barberId}`, "View the completed 1-2-1")}</p>`,
     )
 
+  const sender = managerSender(people)
   return sendDeduped([
-    { emails: [people.barberEmail], subject: `Your 1-2-1 is complete`, html: body(true), kind: "team-1-2-1-complete" },
-    { emails: [people.managerEmail], subject: `1-2-1 complete: ${people.barberName}`, html: body(false), kind: "team-1-2-1-complete" },
+    { emails: [people.barberEmail], subject: `Your 1-2-1 is complete`, html: body(true), kind: "team-1-2-1-complete", ...sender },
+    { emails: [people.managerEmail], subject: `1-2-1 complete: ${people.barberName}`, html: body(false), kind: "team-1-2-1-complete", ...sender },
   ])
 }
 
