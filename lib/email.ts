@@ -15,10 +15,20 @@ import { emailLog } from "@/lib/db/schema"
 //                     without depending on an env var being present.
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 
-// theltzgroup.com is verified in Resend, so this default lets the app send to
-// anyone even if EMAIL_FROM is not configured in a given environment.
-const VERIFIED_DOMAIN = "theltzgroup.com"
-const DEFAULT_FROM = `Less Than Zero <noreply@${VERIFIED_DOMAIN}>`
+// Domains verified for sending in Resend. A From on ANY of these delivers to
+// anyone; a From on any other domain (e.g. a manager whose profile email is a
+// personal gmail.com) is rejected by Resend for all recipients except the
+// account owner, so we fall back to DEFAULT_FROM for those.
+const VERIFIED_DOMAINS = ["lessthanzerobarbers.com", "theltzgroup.com"]
+// Brand default sender, on the verified lessthanzerobarbers.com domain, so the
+// app can send to anyone even if EMAIL_FROM is unset/misconfigured.
+const DEFAULT_FROM = `Less Than Zero Barbers <noreply@lessthanzerobarbers.com>`
+
+/** Is this bare email address on one of our verified sending domains? */
+function isVerifiedSender(email: string): boolean {
+  const e = email.toLowerCase()
+  return VERIFIED_DOMAINS.some((d) => e.endsWith("@" + d))
+}
 
 /** Normalize the EMAIL_FROM value so common copy/paste issues (esp. from
  *  mobile keyboards) don't produce an invalid Resend `from` header:
@@ -62,11 +72,10 @@ function normalizeFrom(raw: string | undefined): string {
   // Rebuild a guaranteed-valid RFC 5322 `Name <email>` header.
   const rebuilt = `${name} <${email}>`
 
-  // Guard: only trust EMAIL_FROM if it's on the verified sending domain.
-  // Any other domain (e.g. a stale lessthanzerobarbers.com value) would be
-  // rejected by Resend for all recipients except the account owner, so we
-  // force the known-verified default instead.
-  if (!email.endsWith("@" + VERIFIED_DOMAIN)) return fallback
+  // Guard: only trust a From if it's on a verified sending domain. Any other
+  // domain would be rejected by Resend for all recipients except the account
+  // owner, so we force the known-verified default instead.
+  if (!isVerifiedSender(email)) return fallback
 
   return rebuilt
 }
@@ -88,12 +97,19 @@ function client(): Resend | null {
 
 export type SendArgs = {
   to: string
+  // Optional per-send From override, e.g. a 1-2-1 invite sent AS the barber's
+  // manager ("Cosmin <cosmin@lessthanzerobarbers.com>"). It's normalized and
+  // validated: if its domain isn't verified in Resend (e.g. a manager on a
+  // personal gmail.com), it's ignored and the verified DEFAULT_FROM is used
+  // instead — so delivery never breaks. Pair with replyTo to still route
+  // replies to that person.
+  from?: string
   // Optional carbon-copy recipient(s), e.g. copying leadership on a coaching
   // email. Logged as part of the recipient string.
   cc?: string | string[]
-  // Optional Reply-To. The From stays on the verified theltzgroup.com sending
-  // domain (so delivery works), but replies can be routed to a real monitored
-  // mailbox, e.g. the barber's manager for a 1-2-1 invite.
+  // Optional Reply-To. The From stays on a verified sending domain (so delivery
+  // works), but replies can be routed to a real monitored mailbox, e.g. the
+  // barber's manager for a 1-2-1 invite.
   replyTo?: string | string[]
   subject: string
   html: string
@@ -109,6 +125,7 @@ export type SendArgs = {
  *  failures. */
 export async function sendEmail({
   to,
+  from,
   cc,
   replyTo,
   subject,
@@ -119,6 +136,9 @@ export async function sendEmail({
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter(Boolean) : []
   const replyToList = replyTo ? (Array.isArray(replyTo) ? replyTo : [replyTo]).filter(Boolean) : []
+  // Per-send From override, normalized+validated (falls back to DEFAULT_FROM if
+  // its domain isn't verified). Defaults to the global FROM when not supplied.
+  const fromHeader = from ? normalizeFrom(from) : FROM
   // Recorded recipient string for the audit log (includes any cc).
   const recipientLabel = ccList.length ? `${to} (cc: ${ccList.join(", ")})` : to
   const resend = client()
@@ -130,7 +150,7 @@ export async function sendEmail({
 
   try {
     const { error: sendError } = await resend.emails.send({
-      from: FROM,
+      from: fromHeader,
       to,
       ...(ccList.length ? { cc: ccList } : {}),
       ...(replyToList.length ? { replyTo: replyToList } : {}),

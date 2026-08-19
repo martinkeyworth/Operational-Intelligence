@@ -554,12 +554,14 @@ export async function sendOneToOneManagerCompletionLink(args: {
 }
 
 /**
- * Email a 1-2-1 calendar invite (.ics) to the barber + their manager, from the
- * verified theltzgroup.com sending domain so it actually delivers. This is the
- * PRIMARY notification for both scheduling and moving a 1-2-1 (we no longer rely
- * on Google Calendar's unmonitored no-reply email). Replies go to `replyTo`
- * (the barber's manager). On a move, pass `isUpdate` + a higher `sequence` so
- * the recipient's existing calendar entry is updated in place, not duplicated.
+ * Email a 1-2-1 calendar invite (.ics) to the barber + their manager, sent AS
+ * the barber's manager (their profile email) so it comes from a real person on
+ * a verified domain — not a no-reply. If the manager's email isn't on a
+ * verified sending domain, sendEmail falls back to the brand default but still
+ * sets Reply-To to the manager. This is the PRIMARY notification for both
+ * scheduling and moving a 1-2-1 (we no longer rely on Google Calendar's
+ * unmonitored no-reply email). On a move, pass `isUpdate` + a higher `sequence`
+ * so the recipient's existing calendar entry is updated in place, not duplicated.
  */
 export async function sendOneToOneInvite(args: {
   oneToOneId: number
@@ -583,6 +585,17 @@ export async function sendOneToOneInvite(args: {
   // higher SEQUENCE than the last — required for a move to supersede the old one.
   const sequence = args.sequence ?? Math.floor((Date.now() - Date.UTC(2024, 0, 1)) / 1000)
 
+  // Send AS the barber's manager (their profile email) so the invite comes from
+  // a real person, not a no-reply. sendEmail validates this: if the manager's
+  // email isn't on a verified sending domain (e.g. a personal gmail), it falls
+  // back to the brand default and we keep replyTo pointed at the manager.
+  const managerFrom = args.managerEmail
+    ? `${args.managerName ?? "Manager"} <${args.managerEmail}>`
+    : undefined
+  // The calendar organizer should match the sender identity.
+  const organizerEmail = args.managerEmail ?? resolvedFrom().replace(/.*<(.+)>.*/, "$1")
+  const organizerName = args.managerName ?? APP_NAME
+
   const ics = buildIcs({
     uid: `1-2-1-${args.oneToOneId}@lessthanzerobarbers.com`,
     title: `1-2-1: ${args.barberName}`,
@@ -591,8 +604,8 @@ export async function sendOneToOneInvite(args: {
     }.`,
     start: args.scheduledFor,
     durationMinutes: 30,
-    organizerName: APP_NAME,
-    organizerEmail: resolvedFrom().replace(/.*<(.+)>.*/, "$1"),
+    organizerName,
+    organizerEmail,
     attendees,
     sequence,
   })
@@ -622,10 +635,11 @@ export async function sendOneToOneInvite(args: {
   for (const to of recipients) {
     await sendEmail({
       to,
+      from: managerFrom,
       subject,
       html,
       kind: args.isUpdate ? "team-1-2-1-move" : "team-1-2-1-invite",
-      replyTo: args.replyTo ?? undefined,
+      replyTo: args.replyTo ?? args.managerEmail ?? undefined,
       attachments: [
         { filename: "1-2-1.ics", content: ics, contentType: "text/calendar; method=REQUEST" },
       ],
