@@ -253,24 +253,124 @@ async function hasRecentOneToOne(barberId: number, days: number): Promise<boolea
   return ageDays < days
 }
 
-/** Auto-schedule monthly 1-2-1s: every active, linked barber with a manager
- *  who hasn't had one in ~30 days gets a new one a few days out. Idempotent —
- *  safe to run daily. Returns how many were created. */
+// 1-2-1s are auto-scheduled at 09:00 or 09:30 UK time — exactly two slots per
+// manager per day, so a manager can never be double-booked (a clash) and each
+// day has predictable, low-admin timings. Managers can still move a 1-2-1 to
+// any date/time afterwards; this only governs the automatic generation.
+const ONE_TO_ONE_SLOTS: [number, number][] = [
+  [9, 0],
+  [9, 30],
+]
+
+/** Europe/London UTC offset in minutes at a given instant (handles BST/GMT). */
+function londonOffsetMinutes(at: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+  const p: Record<string, string> = {}
+  for (const part of dtf.formatToParts(at)) p[part.type] = part.value
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second)
+  return Math.round((asUtc - at.getTime()) / 60000)
+}
+
+/** The absolute Date for HH:MM UK wall-clock on a given London calendar day, so
+ *  the stored instant renders as e.g. 09:00 London regardless of server TZ. */
+function londonInstant(year: number, monthIndex: number, day: number, hour: number, minute: number): Date {
+  const guess = Date.UTC(year, monthIndex, day, hour, minute, 0, 0)
+  const offset = londonOffsetMinutes(new Date(guess))
+  return new Date(guess - offset * 60000)
+}
+
+/** London calendar Y/M/D for an instant. */
+function londonYmd(at: Date): { y: number; m: number; d: number } {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const p: Record<string, string> = {}
+  for (const part of dtf.formatToParts(at)) p[part.type] = part.value
+  return { y: +p.year, m: +p.month - 1, d: +p.day }
+}
+
+/** Earliest clash-free 09:00/09:30 UK slot for a manager on/after `from`,
+ *  skipping any slot already taken by that manager. Returns null if the horizon
+ *  is exhausted. */
+function nextFreeOneToOneSlot(
+  managerUserId: string,
+  from: Date,
+  occupied: Set<string>,
+  horizonDays = 60,
+): Date | null {
+  const start = londonYmd(from)
+  for (let d = 0; d < horizonDays; d++) {
+    // Increment whole days from an anchored UTC noon so DST day-length changes
+    // never skip or repeat a calendar day.
+    const anchor = new Date(Date.UTC(start.y, start.m, start.d, 12, 0, 0))
+    anchor.setUTCDate(anchor.getUTCDate() + d)
+    for (const [h, mi] of ONE_TO_ONE_SLOTS) {
+      const slot = londonInstant(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate(), h, mi)
+      if (slot.getTime() < from.getTime()) continue
+      if (!occupied.has(`${managerUserId}|${slot.getTime()}`)) return slot
+    }
+  }
+  return null
+}
+
+/** Auto-schedule monthly 1-2-1s: every active, linked barber with a manager who
+ *  hasn't had one in ~28 days gets a new one at the manager's next free
+ *  09:00/09:30 UK slot (clash-free — at most two per manager per day). Runs
+ *  daily with no manager intervention and is idempotent (safe to re-run — the
+ *  28-day guard prevents duplicate rows, and each row keys a single calendar
+ *  event). Returns how many were created. */
 export async function autoScheduleOneToOnes(now = new Date()): Promise<number> {
   const rows = await db.select().from(barbers).where(eq(barbers.active, true))
+
+  // Preload every still-Scheduled 1-2-1 so we never double-book a manager at a
+  // slot they already hold (clash prevention), keyed by manager + exact start.
+  const existing = await db
+    .select({ managerUserId: oneToOnes.managerUserId, scheduledFor: oneToOnes.scheduledFor })
+    .from(oneToOnes)
+    .where(eq(oneToOnes.status, "Scheduled"))
+  const occupied = new Set<string>()
+  for (const e of existing) {
+    if (!e.managerUserId) continue
+    occupied.add(`${e.managerUserId}|${new Date(e.scheduledFor).getTime()}`)
+  }
+
+  // A few days out so barbers/managers get notice.
+  const base = new Date(now)
+  base.setDate(base.getDate() + 5)
+
   let created = 0
   for (const b of rows) {
     if (!b.managerUserId) continue
     if (await hasRecentOneToOne(b.id, 28)) continue
-    const when = new Date(now)
-    when.setDate(when.getDate() + 5)
-    when.setHours(10, 0, 0, 0)
+
+    const when = nextFreeOneToOneSlot(b.managerUserId, base, occupied)
+    if (!when) {
+      console.error(`[v0] No free 1-2-1 slot within horizon for barber ${b.id} (${b.name})`)
+      continue
+    }
+    // Reserve the slot immediately so the next barber under the same manager
+    // can't be assigned the same time in this run.
+    const key = `${b.managerUserId}|${when.getTime()}`
+    occupied.add(key)
     // Isolate each barber: a failure scheduling one must not abort the whole
     // run, otherwise a single bad row blocks everyone behind it.
     try {
       await scheduleOneToOne(b.id, when)
       created++
     } catch (err) {
+      occupied.delete(key) // free the slot back so it can be reused
       console.error(
         `[v0] Failed to auto-schedule 1-2-1 for barber ${b.id} (${b.name}):`,
         err instanceof Error ? err.message : err,
