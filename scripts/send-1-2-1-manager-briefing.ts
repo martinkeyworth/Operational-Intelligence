@@ -7,7 +7,10 @@ import { Pool } from "pg"
 // 1-2-1s. Sent from the owner so it's a real, replyable sender (not no-reply).
 // Self-contained (does not import lib/email, which is server-only): sends via
 // Resend directly and mirrors the email_log insert.
-const FROM = "Martin Wallis-Keyworth <martin@lessthanzerobarbers.com>"
+// Send from the verified theltzgroup.com domain (lessthanzerobarbers.com is not
+// yet verified in Resend), keeping Martin's name, with Reply-To to his real
+// mailbox so replies reach him.
+const FROM = "Martin Wallis-Keyworth <noreply@theltzgroup.com>"
 const REPLY_TO = "martin@lessthanzerobarbers.com"
 
 function baseUrl(): string {

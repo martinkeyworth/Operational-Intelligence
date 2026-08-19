@@ -15,14 +15,18 @@ import { emailLog } from "@/lib/db/schema"
 //                     without depending on an env var being present.
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 
-// Domains verified for sending in Resend. A From on ANY of these delivers to
-// anyone; a From on any other domain (e.g. a manager whose profile email is a
-// personal gmail.com) is rejected by Resend for all recipients except the
-// account owner, so we fall back to DEFAULT_FROM for those.
-const VERIFIED_DOMAINS = ["lessthanzerobarbers.com", "theltzgroup.com"]
-// Brand default sender, on the verified lessthanzerobarbers.com domain, so the
-// app can send to anyone even if EMAIL_FROM is unset/misconfigured.
-const DEFAULT_FROM = `Less Than Zero Barbers <noreply@lessthanzerobarbers.com>`
+// Domains VERIFIED for sending in Resend. Only theltzgroup.com is verified
+// (confirmed by live Resend sends — lessthanzerobarbers.com is NOT yet verified
+// and Resend rejects every send from it). A From on a verified domain delivers
+// to anyone; a From on any other domain (e.g. a manager on lessthanzerobarbers
+// or a personal gmail) is downgraded to DEFAULT_FROM while keeping their name +
+// Reply-To. ⚠️ To let managers send literally AS themselves from
+// lessthanzerobarbers.com, that domain must first be verified in Resend
+// (add DNS records at resend.com/domains), then added to this list.
+const VERIFIED_DOMAINS = ["theltzgroup.com"]
+// Brand default sender, on the verified theltzgroup.com domain, so the app can
+// send to anyone even if EMAIL_FROM is unset/misconfigured.
+const DEFAULT_FROM = `Less Than Zero Barbers <noreply@theltzgroup.com>`
 
 /** Is this bare email address on one of our verified sending domains? */
 function isVerifiedSender(email: string): boolean {
