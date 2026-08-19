@@ -55,12 +55,19 @@ function buildHtml(managerName: string, rows: Row[]): string {
       <li style="margin:0 0 6px">You and the team member both get a calendar invite, sent <strong>from you</strong>.</li>
     </ul>
 
-    <h3 style="font-size:15px;margin:16px 0 6px">What you need to do</h3>
-    <ul style="font-size:14px;margin:0 0 12px;padding-left:18px">
-      <li style="margin:0 0 6px"><strong>To move a 1-2-1:</strong> do it <strong>in the app</strong> — go to Learning Plans, open the team member, and use <strong>"Move this 1-2-1"</strong> to pick a new date/time.</li>
-      <li style="margin:0 0 6px"><strong>Please don't</strong> try to drag or delete the event inside Google Calendar — it won't let you (you're an attendee on a shared event), and it won't update the system. Always move it in the app.</li>
-      <li style="margin:0 0 6px"><strong>To complete a 1-2-1:</strong> open it in the app afterwards and mark it complete with your notes.</li>
-    </ul>
+    <h3 style="font-size:15px;margin:16px 0 6px">How to move or change a 1-2-1 (in the app)</h3>
+    <p style="font-size:14px;margin:0 0 8px">You can change the date and time yourself — it takes a few seconds. Always do it in the app, not in Google Calendar:</p>
+    <ol style="font-size:14px;margin:0 0 12px;padding-left:18px">
+      <li style="margin:0 0 6px">Open the app and go to <strong>Learning Plans</strong>.</li>
+      <li style="margin:0 0 6px">Click the <strong>team member</strong> whose 1-2-1 you want to move.</li>
+      <li style="margin:0 0 6px">Find the <strong>"Move this 1-2-1"</strong> box near the top.</li>
+      <li style="margin:0 0 6px">Pick the <strong>new date and time</strong> and click <strong>Move</strong>.</li>
+      <li style="margin:0 0 6px">Both you and the team member automatically get an updated invite — no need to email anyone.</li>
+    </ol>
+    <p style="font-size:14px;margin:0 0 12px;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px">
+      <strong>Important:</strong> please <strong>don't</strong> drag, edit, or delete the event inside Google Calendar. You're only an attendee on the shared event, so Google won't let you change it — and even if it looks like it worked, the system won't update. The <strong>"Move this 1-2-1"</strong> button in the app is the only thing that actually reschedules it.
+    </p>
+    <p style="font-size:14px;margin:0 0 12px"><strong>To complete a 1-2-1:</strong> open it in the app afterwards and mark it complete with your notes.</p>
 
     <h3 style="font-size:15px;margin:16px 0 6px">Your upcoming 1-2-1s</h3>
     ${fmtList(rows)}
