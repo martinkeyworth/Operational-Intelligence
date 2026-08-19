@@ -80,6 +80,40 @@ function normalizeFrom(raw: string | undefined): string {
   return rebuilt
 }
 
+/**
+ * Resolve a per-send From override into a deliverable header while keeping the
+ * person's identity. Resend can only send from a verified domain, so a manager
+ * whose profile email is on an UNVERIFIED domain (e.g. Rossco on gmail.com)
+ * cannot literally be the From address — Gmail's DMARC would bounce it. Instead
+ * we KEEP their display name and swap only the address to the verified default,
+ * so recipients still see "Rossco McKay" and (with Reply-To set to their real
+ * email) replies go straight to them. A verified From is used as-is.
+ * Returns { from, downgraded, email } so the caller can guarantee Reply-To.
+ */
+function senderOverrideFrom(raw: string): { from: string; downgraded: boolean; email: string | null } {
+  const emailMatch = raw.match(/[^\s<>@"]+@[^\s<>@"]+\.[^\s<>@"]+/)
+  const email = emailMatch ? emailMatch[0].toLowerCase() : null
+  // No parseable email — treat as no override.
+  if (!email) return { from: FROM, downgraded: false, email: null }
+
+  // Derive the display name (whatever precedes the email), sanitized.
+  let name = raw
+    .slice(0, raw.indexOf(emailMatch![0]))
+    .replace(/[<>"']/g, "")
+    .replace(/[",;:<>@\\]/g, "")
+    .trim()
+
+  if (isVerifiedSender(email)) {
+    const from = name ? `${name} <${email}>` : email
+    return { from, downgraded: false, email }
+  }
+
+  // Unverified domain: keep the name, use the verified default address.
+  const defaultEmail = DEFAULT_FROM.replace(/.*<(.+)>.*/, "$1")
+  if (!name) name = DEFAULT_FROM.replace(/\s*<.*/, "").trim() || "Less Than Zero Barbers"
+  return { from: `${name} <${defaultEmail}>`, downgraded: true, email }
+}
+
 const FROM = normalizeFrom(process.env.EMAIL_FROM)
 
 /** The exact, normalized `from` header the app will hand to Resend. */
@@ -136,9 +170,16 @@ export async function sendEmail({
 }: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter(Boolean) : []
   const replyToList = replyTo ? (Array.isArray(replyTo) ? replyTo : [replyTo]).filter(Boolean) : []
-  // Per-send From override, normalized+validated (falls back to DEFAULT_FROM if
-  // its domain isn't verified). Defaults to the global FROM when not supplied.
-  const fromHeader = from ? normalizeFrom(from) : FROM
+  // Per-send From override. A verified-domain address is used as-is; an
+  // unverified one (e.g. a manager on gmail) keeps the person's NAME but sends
+  // from the verified default address. Defaults to the global FROM when unset.
+  const sender = from ? senderOverrideFrom(from) : { from: FROM, downgraded: false, email: null }
+  const fromHeader = sender.from
+  // If we had to downgrade an unverified sender, make sure replies still reach
+  // that person even if the caller didn't pass an explicit replyTo.
+  if (sender.downgraded && sender.email && !replyToList.includes(sender.email)) {
+    replyToList.push(sender.email)
+  }
   // Recorded recipient string for the audit log (includes any cc).
   const recipientLabel = ccList.length ? `${to} (cc: ${ccList.join(", ")})` : to
   const resend = client()
