@@ -5,7 +5,7 @@ import { barbers, oneToOnes } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireUser } from "@/lib/access"
-import { rescheduleOneToOne } from "@/lib/team-schedule"
+import { rescheduleOneToOne, parseLondonDateTimeLocal } from "@/lib/team-schedule"
 
 /**
  * Complete a direct report's 1-2-1 and record notes. Scoped for MANAGERS:
@@ -95,8 +95,12 @@ export async function rescheduleOneToOneScoped(formData: FormData) {
     return { ok: false, error: "This 1-2-1 has already been completed and can no longer be moved." }
   }
 
+  // Interpret the picked value as UK wall-clock, not the UTC runtime's zone.
+  const when = parseLondonDateTimeLocal(whenRaw)
+  if (!when) return { ok: false, error: "Pick a new date and time" }
+
   try {
-    await rescheduleOneToOne(id, new Date(whenRaw))
+    await rescheduleOneToOne(id, when)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Could not move this 1-2-1" }
   }

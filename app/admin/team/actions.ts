@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { requireTeamAdmin } from "@/lib/access"
 import { getBarberForUser, getHolidayCapacityConflict } from "@/lib/team"
-import { scheduleOneToOne, rescheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles, syncOneToOneRsvps } from "@/lib/team-schedule"
+import { scheduleOneToOne, rescheduleOneToOne, autoScheduleOneToOnes, autoOpenThreeSixtyCycles, syncOneToOneRsvps, parseLondonDateTimeLocal } from "@/lib/team-schedule"
 import { syncLeaveToCalendar } from "@/lib/leave-calendar"
 
 function revalidateTeam(barberId?: number) {
@@ -116,7 +116,8 @@ export async function scheduleOneToOneNow(formData: FormData) {
   await requireTeamAdmin()
   const barberId = Number(formData.get("barberId"))
   const whenRaw = String(formData.get("scheduledFor") ?? "").trim()
-  const when = whenRaw ? new Date(whenRaw) : new Date(Date.now() + 7 * 864e5)
+  // Interpret the picked value as UK wall-clock, not the UTC runtime's zone.
+  const when = parseLondonDateTimeLocal(whenRaw) ?? new Date(Date.now() + 7 * 864e5)
   await scheduleOneToOne(barberId, when)
   revalidateTeam(barberId)
   return { ok: true }
@@ -129,9 +130,10 @@ export async function rescheduleOneToOneNow(formData: FormData) {
   const id = Number(formData.get("id"))
   const whenRaw = String(formData.get("scheduledFor") ?? "").trim()
   if (!Number.isFinite(id) || id <= 0) return { ok: false, error: "Missing 1-2-1 reference" }
-  if (!whenRaw) return { ok: false, error: "Pick a new date and time" }
+  const when = parseLondonDateTimeLocal(whenRaw)
+  if (!when) return { ok: false, error: "Pick a new date and time" }
   try {
-    await rescheduleOneToOne(id, new Date(whenRaw))
+    await rescheduleOneToOne(id, when)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Could not move this 1-2-1" }
   }

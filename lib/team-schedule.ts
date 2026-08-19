@@ -288,6 +288,21 @@ function londonInstant(year: number, monthIndex: number, day: number, hour: numb
   return new Date(guess - offset * 60000)
 }
 
+/**
+ * Parse a zoneless `<input type="datetime-local">` value (e.g. "2026-08-25T09:00")
+ * as UK WALL-CLOCK time and return the correct absolute instant. `new Date(value)`
+ * must NOT be used for this: on a UTC runtime (Vercel) it treats the value as UTC,
+ * so a manager picking 09:00 would drift to 10:00 BST. Interpreting it via
+ * londonInstant keeps a manual move consistent with the 09:00/09:30 auto-slots.
+ * Returns null for an empty or unparseable value.
+ */
+export function parseLondonDateTimeLocal(value: string | null | undefined): Date | null {
+  const m = (value ?? "").trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!m) return null
+  const [, y, mo, d, h, mi] = m
+  return londonInstant(+y, +mo - 1, +d, +h, +mi)
+}
+
 /** London calendar Y/M/D for an instant. */
 function londonYmd(at: Date): { y: number; m: number; d: number } {
   const dtf = new Intl.DateTimeFormat("en-CA", {

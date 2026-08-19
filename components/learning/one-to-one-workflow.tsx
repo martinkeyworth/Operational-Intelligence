@@ -402,13 +402,28 @@ function TwoStageForm(props: Props & { completed: boolean; oneToOneId: number })
   )
 }
 
-/** Convert an ISO timestamp to a value a <input type="datetime-local"> accepts. */
+/** Convert an ISO instant to a `<input type="datetime-local">` value showing the
+ *  UK wall-clock, independent of the viewer's browser timezone. Pairs with the
+ *  server's parseLondonDateTimeLocal so the time round-trips exactly (a 09:00
+ *  slot shows and saves as 09:00 UK). */
 function toDatetimeLocal(iso: string | null): string {
   if (!iso) return ""
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ""
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(d)
+  const p: Record<string, string> = {}
+  for (const part of parts) p[part.type] = part.value
+  // Intl can emit "24" for midnight in en-GB; normalise to "00".
+  const hour = p.hour === "24" ? "00" : p.hour
+  return `${p.year}-${p.month}-${p.day}T${hour}:${p.minute}`
 }
 
 /**

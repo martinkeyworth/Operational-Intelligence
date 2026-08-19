@@ -24,7 +24,7 @@ import {
 import { currentPeriod, type OneToOneAnswers, type CourseRequirement, type PlanItemStatus } from "@/lib/learning-types"
 import { sendOneToOneComplete, sendOneToOneReminder } from "@/lib/team-notify"
 import { regeneratePbcForBarber } from "@/lib/pbc-refresh"
-import { rescheduleOneToOne } from "@/lib/team-schedule"
+import { rescheduleOneToOne, parseLondonDateTimeLocal } from "@/lib/team-schedule"
 
 // ---------------------------------------------------------------------------
 // L&D manager / training-lead server actions.
@@ -196,7 +196,9 @@ export async function rescheduleOneToOneAction(
   if (!basics || !canRatePbc(user, basics.managerUserId)) {
     return { ok: false, error: "You don't manage this person, so you can't move their 1-2-1." }
   }
-  const when = whenIso ? new Date(whenIso) : null
+  // Interpret the picked value as UK wall-clock (not the UTC runtime's zone),
+  // so a 09:00 pick stays 09:00 UK — consistent with the auto-scheduled slots.
+  const when = parseLondonDateTimeLocal(whenIso)
   if (!when || Number.isNaN(when.getTime())) return { ok: false, error: "Pick a new date and time." }
 
   try {
