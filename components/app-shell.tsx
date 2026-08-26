@@ -412,6 +412,26 @@ export function AppShell({
               Daily
             </Link>
           )}
+          {/* Pinned Team Area — personal holiday / sickness / 1-2-1 / 360. On
+              mobile the desktop sidebar is hidden and this lives three items
+              deep inside the "My Work" section's second-tier strip, so it was
+              effectively unreachable (leadership who only book holiday, e.g.
+              the CEO, land on a different section by default and never see it).
+              Pinning it makes booking holiday one tap from any screen. */}
+          {(user.isBarber || user.hasBarberRecord) && (
+            <Link
+              href="/team"
+              className={cn(
+                "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+                isItemActive("/team")
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-primary/10 text-primary",
+              )}
+            >
+              <UserRound className="h-4 w-4" />
+              Team Area
+            </Link>
+          )}
           {sections.map((section) => {
             const SectionIcon = section.icon
             const selected = section.title === mobileSection
