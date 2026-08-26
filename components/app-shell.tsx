@@ -29,6 +29,7 @@ import {
   Crown,
   Wrench,
   UserRound,
+  Plane,
   ChevronDown,
   Map,
   Target,
@@ -420,7 +421,9 @@ export function AppShell({
               Pinning it makes booking holiday one tap from any screen. */}
           {(user.isBarber || user.hasBarberRecord) && (
             <Link
-              href="/team"
+              /* Deep-link to the holiday card so booking is immediate on a
+                 phone instead of being buried below the takings cards. */
+              href="/team#holiday"
               className={cn(
                 "flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold transition-colors",
                 isItemActive("/team")
@@ -428,8 +431,22 @@ export function AppShell({
                   : "bg-primary/10 text-primary",
               )}
             >
-              <UserRound className="h-4 w-4" />
-              Team Area
+              {user.isBarber ? (
+                <>
+                  <UserRound className="h-4 w-4" />
+                  Team Area
+                </>
+              ) : (
+                /* Leadership (e.g. the CEO) aren't takings barbers and come here
+                   only to book time off. Admin already has its own "Team Area"
+                   item (the whole-company roster), and two identically-named
+                   tabs on the mobile strips is what made this unfindable — so
+                   label the personal one for what they actually need. */
+                <>
+                  <Plane className="h-4 w-4" />
+                  My Holiday
+                </>
+              )}
             </Link>
           )}
           {sections.map((section) => {

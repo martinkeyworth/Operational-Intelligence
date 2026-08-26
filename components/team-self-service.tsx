@@ -50,7 +50,9 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
   const [declined, setDeclined] = useState<string | null>(null)
 
   return (
-    <Card className="p-5">
+    // id="holiday" lets the nav deep-link (/team#holiday) scroll straight to
+    // booking, so it's never buried below the takings cards on a phone.
+    <Card id="holiday" className="scroll-mt-24 p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Plane className="h-4 w-4 text-muted-foreground" />
