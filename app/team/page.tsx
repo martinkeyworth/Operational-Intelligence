@@ -14,6 +14,7 @@ import { buildPersonGuide } from "@/lib/role-guide"
 import { getMyLearningData } from "@/lib/learning"
 import { resolveBarberForUser, getBarberSelfView, ragForWeekTakings, RTB_TARGET } from "@/lib/team"
 import { fmtWeekLong, fmtGBP } from "@/lib/format"
+import { isCeoEmail } from "@/lib/access-types"
 import { CheckCircle2, AlertCircle, GraduationCap } from "lucide-react"
 
 export const dynamic = "force-dynamic"
@@ -49,6 +50,19 @@ export default async function TeamHomePage({
   // The barber's own development area (1-2-1 self-prep, plan, PBC history).
   const myLearning = await getMyLearningData(self.barber.id)
 
+  // Leadership (e.g. the CEO) hold a barber record purely so they can book
+  // holiday/sickness — they don't submit weekly takings, and lib/submissions.ts
+  // already excludes them from the expected-submitter roster. So don't nag them
+  // for takings or show them a personal RTB chart they'll never populate.
+  // In leadership preview we're looking at a real barber, so always show it.
+  const showTakings = isPreview || user.isBarber
+  // Their barber row says "Barber"; label the CEO honestly instead.
+  const roleLabel = !isPreview && isCeoEmail(user.email) ? "CEO" : self.barber.role
+  // Rendered in different positions depending on whether takings apply, so
+  // holiday/sickness is the FIRST thing leadership see instead of being buried
+  // below the takings cards on a phone.
+  const selfServiceBlock = <TeamSelfService self={self} readOnly={isPreview} />
+
   // Personalised "how to use the dashboard" guide, combining every role this
   // person holds. Only shown for the real signed-in barber (in leadership
   // preview the viewer's capability flags wouldn't match the previewed barber).
@@ -72,7 +86,7 @@ export default async function TeamHomePage({
       <PageHeader
         meta={isPreview ? "Team Area · Leadership preview" : "Team Area"}
         title={isPreview ? self.barber.name : `Hi, ${self.barber.name.split(" ")[0]}`}
-        subtitle={`${self.barber.role} · ${self.barber.siteName}`}
+        subtitle={`${roleLabel} · ${self.barber.siteName}`}
       />
 
       {isPreview && (
@@ -94,7 +108,12 @@ export default async function TeamHomePage({
       )}
 
       <div className="space-y-6 px-5 py-6 md:px-8">
-        {/* 1. Weekly submission status — always at the very top. */}
+        {/* Leadership don't submit takings, so their holiday/sickness self-service
+            comes first — one tap from the pinned "My Holiday" tab, no scrolling. */}
+        {!showTakings && selfServiceBlock}
+
+        {/* 1. Weekly submission status — top of the page for actual barbers. */}
+        {showTakings && (
         <Card
           className={`flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between ${
             submitted ? "border-emerald-500/40" : "border-amber-500/50"
@@ -130,6 +149,7 @@ export default async function TeamHomePage({
             {submitted ? "Edit takings" : "Submit takings"}
           </Link>
         </Card>
+        )}
 
         {/* Your personalised guide to the dashboard (combines all your roles). */}
         {guide && <RoleGuidePanel guide={guide} />}
@@ -155,9 +175,10 @@ export default async function TeamHomePage({
         )}
 
         {/* 2. Personal RTB target vs actuals chart. */}
-        <BarberRtbChart data={self.takings} />
+        {showTakings && <BarberRtbChart data={self.takings} />}
 
         {/* 3. Their own weekly takings history. */}
+        {showTakings && (
         <Card className="p-5">
           <h3 className="text-sm font-semibold text-foreground">Your weekly takings</h3>
           <p className="text-xs text-muted-foreground">
@@ -212,9 +233,11 @@ export default async function TeamHomePage({
             </div>
           )}
         </Card>
+        )}
 
-        {/* 4. HR self-service: holiday, sickness, 1-2-1, 360. */}
-        <TeamSelfService self={self} readOnly={isPreview} />
+        {/* 4. HR self-service: holiday, sickness, 1-2-1, 360 (already rendered
+            above for leadership, who have no takings section). */}
+        {showTakings && selfServiceBlock}
 
         {/* 5. My development: 1-2-1 self-prep + self-scoring, plan, PBC history. */}
         <MyLearning data={myLearning} />
