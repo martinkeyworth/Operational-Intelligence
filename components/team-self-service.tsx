@@ -48,6 +48,11 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
   const [declined, setDeclined] = useState<string | null>(null)
+  // Validation failures (end before start, over allowance) were previously
+  // swallowed — the form just closed as though it had worked.
+  const [error, setError] = useState<string | null>(null)
+  // Bound to the "To" picker's min so an end-before-start range can't be picked.
+  const [from, setFrom] = useState("")
 
   return (
     // id="holiday" lets the nav deep-link (/team#holiday) scroll straight to
@@ -95,6 +100,7 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
             start(async () => {
               setDone(false)
               setDeclined(null)
+              setError(null)
               const res = await requestHoliday(fd)
               if (res?.autoDeclined) {
                 setDeclined(res.error ?? "That request was automatically declined.")
@@ -102,6 +108,10 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
               } else if (res?.ok) {
                 setDone(true)
                 setOpen(false)
+                setFrom("")
+              } else {
+                // Keep the form open so the dates can be corrected.
+                setError(res?.error ?? "That request couldn't be saved.")
               }
             })
           }
@@ -110,13 +120,33 @@ function HolidayCard({ self, readOnly }: { self: SelfView; readOnly: boolean }) 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="h-start" className="text-xs">From</Label>
-              <Input id="h-start" name="startDate" type="date" required className="text-base" />
+              <Input
+                id="h-start"
+                name="startDate"
+                type="date"
+                required
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="text-base"
+              />
             </div>
             <div>
               <Label htmlFor="h-end" className="text-xs">To</Label>
-              <Input id="h-end" name="endDate" type="date" className="text-base" />
+              <Input
+                id="h-end"
+                name="endDate"
+                type="date"
+                /* Can't choose an end before the start. */
+                min={from || undefined}
+                className="text-base"
+              />
             </div>
           </div>
+          {error && (
+            <p className="text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          )}
           <Textarea name="reason" placeholder="Optional note" rows={2} className="text-base" />
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={pending}>
@@ -156,6 +186,8 @@ function HolidayBookingRow({
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Bound to the "New to" picker's min so the end can't precede the start.
+  const [newFrom, setNewFrom] = useState(booking.startDate)
   const approved = booking.status === "Approved"
   // Editable only up to the day it starts; once begun it's fixed.
   const locked = isHolidayLocked(booking.startDate)
@@ -254,7 +286,8 @@ function HolidayBookingRow({
                 id={`c-start-${booking.id}`}
                 name="startDate"
                 type="date"
-                defaultValue={booking.startDate}
+                value={newFrom}
+                onChange={(e) => setNewFrom(e.target.value)}
                 required
                 className="text-base"
               />
@@ -266,6 +299,8 @@ function HolidayBookingRow({
                 name="endDate"
                 type="date"
                 defaultValue={booking.endDate}
+                /* Can't move the end before the start. */
+                min={newFrom || undefined}
                 className="text-base"
               />
             </div>

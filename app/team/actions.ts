@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import { db } from "@/lib/db"
 import {
   barbers,
@@ -46,6 +46,73 @@ function daysBetween(start: string, end: string): number {
   return Math.max(1, diff)
 }
 
+/**
+ * Reject a range whose end falls before its start. daysBetween() clamps to a
+ * minimum of 1, so without this an end-before-start range was silently stored
+ * as a nonsensical "1 day" booking (e.g. "14 Oct 2026 → 17 Sep 2026 (1d)").
+ * Returns an error string, or null when the range is valid.
+ */
+function invalidRangeError(start: string, end: string): string | null {
+  const a = new Date(start + "T00:00:00")
+  const b = new Date(end + "T00:00:00")
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
+    return "Those dates aren't valid — please pick them again."
+  }
+  if (b.getTime() < a.getTime()) {
+    return `The end date (${fmtDay(end)}) is before the start date (${fmtDay(start)}) — please check the dates.`
+  }
+  return null
+}
+
+/**
+ * Days of holiday already committed in a leave year (Declined/Cancelled don't
+ * hold a day). `excludeId` omits a booking that's being replaced, so a change
+ * doesn't count the row it's about to supersede. Mirrors the balance shown on
+ * the Team Area (lib/team.ts getBarberSelfView).
+ */
+async function holidayDaysUsed(
+  barberId: number,
+  leaveYear: number,
+  excludeId?: number,
+): Promise<number> {
+  const rows = await db
+    .select({ id: leaveRequests.id, days: leaveRequests.days, status: leaveRequests.status })
+    .from(leaveRequests)
+    .where(
+      and(
+        eq(leaveRequests.barberId, barberId),
+        eq(leaveRequests.kind, "holiday"),
+        eq(leaveRequests.leaveYear, leaveYear),
+      ),
+    )
+  return rows
+    .filter((r) => r.status !== "Declined" && r.status !== "Cancelled" && r.id !== excludeId)
+    .reduce((sum, r) => sum + r.days, 0)
+}
+
+/**
+ * Stop a booking taking the barber past their annual entitlement. Without this
+ * the balance silently went negative (e.g. "-6 / 28 days left" after 34 days
+ * were booked against a 28-day allowance).
+ */
+async function allowanceError(
+  barberId: number,
+  allowance: number,
+  days: number,
+  leaveYear: number,
+  excludeId?: number,
+): Promise<string | null> {
+  if (!allowance || allowance <= 0) return null
+  const used = await holidayDaysUsed(barberId, leaveYear, excludeId)
+  const left = allowance - used
+  if (days > left) {
+    return left <= 0
+      ? `You've used all ${allowance} days of your holiday allowance for this leave year, so this booking can't be added.`
+      : `That's ${days} days but you only have ${left} left of your ${allowance}-day allowance. Shorten the dates or cancel another booking.`
+  }
+  return null
+}
+
 /** Days of notice between today and the holiday start date (min 0). */
 function noticeDaysUntil(start: string): number {
   const today = new Date()
@@ -80,9 +147,22 @@ export async function requestHoliday(formData: FormData) {
   const reason = String(formData.get("reason") ?? "").trim() || null
   if (!start) return { ok: false, error: "Start date required" }
 
+  const rangeError = invalidRangeError(start, end)
+  if (rangeError) return { ok: false, error: rangeError }
+
   const days = daysBetween(start, end)
   const noticeDays = noticeDaysUntil(start)
   const isException = noticeDays < HOLIDAY_NOTICE_DAYS
+
+  // Don't let the booking push the balance past the annual entitlement.
+  const leaveYear = currentLeaveYear()
+  const overAllowance = await allowanceError(
+    barber.id,
+    barber.holidayAllowance,
+    days,
+    leaveYear,
+  )
+  if (overAllowance) return { ok: false, error: overAllowance }
 
   // Senior-leadership time-off rule (Martin/Cosmin/Mario), applied BEFORE the
   // per-site cap because it spans all sites: at most one of the trio may be off
@@ -385,6 +465,7 @@ async function loadLeaveForCaller(id: number) {
       siteId: barbers.siteId,
       managerUserId: barbers.managerUserId,
       barberName: barbers.name,
+      holidayAllowance: barbers.holidayAllowance,
     })
     .from(leaveRequests)
     .innerJoin(barbers, eq(barbers.id, leaveRequests.barberId))
@@ -499,9 +580,24 @@ export async function changeHoliday(formData: FormData) {
     }
   }
 
+  const rangeError = invalidRangeError(newStart, newEnd)
+  if (rangeError) return { ok: false, error: rangeError }
+
   const newDays = daysBetween(newStart, newEnd)
   const noticeDays = noticeDaysUntil(newStart)
   const isException = noticeDays < HOLIDAY_NOTICE_DAYS
+
+  // Check the entitlement, ignoring the booking being replaced so moving dates
+  // never counts the same holiday twice.
+  const changeLeaveYear = currentLeaveYear()
+  const overAllowance = await allowanceError(
+    row.barberId,
+    row.holidayAllowance ?? 28,
+    newDays,
+    changeLeaveYear,
+    id,
+  )
+  if (overAllowance) return { ok: false, error: overAllowance }
 
   // The shop's concurrent time-off cap must allow the new dates. Own bookings
   // are excluded from the count, so the old approved row (still present here)
@@ -559,17 +655,28 @@ export async function changeHoliday(formData: FormData) {
     .where(eq(leaveRequests.id, id))
   await syncLeaveToCalendar(id)
 
-  await db.insert(leaveRequests).values({
-    barberId: row.barberId,
-    kind: "holiday",
-    startDate: newStart,
-    endDate: newEnd,
-    days: newDays,
-    status: "Pending",
-    reason: row.reason,
-    leaveYear: currentLeaveYear(),
-    requestedByUserId: loaded.user.id,
-  })
+  // The CEO's holiday is auto-approved on booking, so a CHANGE must approve too
+  // — otherwise moving the dates silently downgraded it to Pending and told him
+  // "Request sent to leadership", i.e. he'd be waiting on his own approval.
+  const isCeoOwnBooking = loaded.isOwner && isCeoEmail((loaded.user.email ?? "").toLowerCase())
+  const [rebooked] = await db
+    .insert(leaveRequests)
+    .values({
+      barberId: row.barberId,
+      kind: "holiday",
+      startDate: newStart,
+      endDate: newEnd,
+      days: newDays,
+      status: isCeoOwnBooking ? "Approved" : "Pending",
+      reason: row.reason,
+      leaveYear: currentLeaveYear(),
+      requestedByUserId: loaded.user.id,
+      ...(isCeoOwnBooking ? { decidedAt: new Date(), decidedByUserId: loaded.user.id } : {}),
+    })
+    .returning({ id: leaveRequests.id })
+
+  // Straight onto the shared calendar, matching the auto-approved booking path.
+  if (isCeoOwnBooking && rebooked) await syncLeaveToCalendar(rebooked.id)
 
   await sendHolidayCancellationNotice({
     barberId: row.barberId,
@@ -585,7 +692,7 @@ export async function changeHoliday(formData: FormData) {
   revalidatePath("/team")
   revalidatePath("/approvals")
   revalidatePath("/admin/team")
-  return { ok: true, rebooked: true }
+  return { ok: true, rebooked: true, autoApproved: isCeoOwnBooking }
 }
 
 /** Submit the 5 nominees for the open 360 cycle and fire their invites. */
