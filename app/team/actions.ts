@@ -13,7 +13,7 @@ import { requireUser } from "@/lib/access"
 import {
   getBarberForUser,
   resolveBarberForUser,
-  currentLeaveYear,
+  leaveYearForDate,
   getHolidayCapacityConflict,
   getLeadershipHolidayConflict,
 } from "@/lib/team"
@@ -154,8 +154,11 @@ export async function requestHoliday(formData: FormData) {
   const noticeDays = noticeDaysUntil(start)
   const isException = noticeDays < HOLIDAY_NOTICE_DAYS
 
-  // Don't let the booking push the balance past the annual entitlement.
-  const leaveYear = currentLeaveYear()
+  // Don't let the booking push the balance past the annual entitlement. The
+  // leave year comes from the date the holiday STARTS, not today — otherwise a
+  // 2027 holiday booked now eats the 2026 allowance and the balance goes
+  // negative (the "-6 / 28 days left" bug).
+  const leaveYear = leaveYearForDate(start)
   const overAllowance = await allowanceError(
     barber.id,
     barber.holidayAllowance,
@@ -193,7 +196,7 @@ export async function requestHoliday(formData: FormData) {
           days,
           status: "Approved",
           reason: reason ? `${reason}${note}` : note || null,
-          leaveYear: currentLeaveYear(),
+          leaveYear,
           requestedByUserId: user.id,
           decidedByUserId: user.id,
           decidedAt: new Date(),
@@ -231,7 +234,7 @@ export async function requestHoliday(formData: FormData) {
         days,
         status: "Declined",
         reason: reason ? `${reason} — ${declineReason}` : declineReason,
-        leaveYear: currentLeaveYear(),
+        leaveYear,
         requestedByUserId: user.id,
       })
 
@@ -278,7 +281,7 @@ export async function requestHoliday(formData: FormData) {
       days,
       status: "Declined",
       reason: reason ? `${reason} — ${declineReason}` : declineReason,
-      leaveYear: currentLeaveYear(),
+      leaveYear,
       requestedByUserId: user.id,
     })
 
@@ -306,7 +309,7 @@ export async function requestHoliday(formData: FormData) {
     days,
     status: "Pending",
     reason,
-    leaveYear: currentLeaveYear(),
+    leaveYear,
     requestedByUserId: user.id,
   })
 
@@ -344,7 +347,7 @@ export async function logSickness(formData: FormData) {
       days,
       status: "Recorded",
       reason,
-      leaveYear: currentLeaveYear(),
+      leaveYear: leaveYearForDate(start),
       requestedByUserId: user.id,
     })
     .returning({ id: leaveRequests.id })
@@ -589,7 +592,7 @@ export async function changeHoliday(formData: FormData) {
 
   // Check the entitlement, ignoring the booking being replaced so moving dates
   // never counts the same holiday twice.
-  const changeLeaveYear = currentLeaveYear()
+  const changeLeaveYear = leaveYearForDate(newStart)
   const overAllowance = await allowanceError(
     row.barberId,
     row.holidayAllowance ?? 28,
@@ -622,7 +625,7 @@ export async function changeHoliday(formData: FormData) {
   if (row.status === "Pending") {
     await db
       .update(leaveRequests)
-      .set({ startDate: newStart, endDate: newEnd, days: newDays, leaveYear: currentLeaveYear() })
+      .set({ startDate: newStart, endDate: newEnd, days: newDays, leaveYear: changeLeaveYear })
       .where(eq(leaveRequests.id, id))
 
     await sendLeaveNotification({
@@ -669,7 +672,7 @@ export async function changeHoliday(formData: FormData) {
       days: newDays,
       status: isCeoOwnBooking ? "Approved" : "Pending",
       reason: row.reason,
-      leaveYear: currentLeaveYear(),
+      leaveYear: changeLeaveYear,
       requestedByUserId: loaded.user.id,
       ...(isCeoOwnBooking ? { decidedAt: new Date(), decidedByUserId: loaded.user.id } : {}),
     })

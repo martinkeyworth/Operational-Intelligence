@@ -404,6 +404,18 @@ export function currentLeaveYear(now = new Date()): number {
   return now.getFullYear()
 }
 
+/**
+ * The leave year a booking belongs to, derived from the date it STARTS rather
+ * than the date it was booked. Writes must use this: tagging by booking date
+ * meant a holiday booked in 2026 for Sep 2027 consumed the 2026 allowance,
+ * pushing the balance negative ("-6 / 28 days left"). Reads still use
+ * currentLeaveYear() to show the balance for the year we're in now.
+ */
+export function leaveYearForDate(startISO: string, fallback = new Date()): number {
+  const d = new Date(startISO + "T00:00:00")
+  return Number.isNaN(d.getTime()) ? fallback.getFullYear() : d.getFullYear()
+}
+
 // --- Barber <-> login linking ----------------------------------------------
 
 /** Resolve the operational barber record for a logged-in user, if linked. */
