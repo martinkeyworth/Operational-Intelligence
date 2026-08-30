@@ -1484,11 +1484,17 @@ export async function dryRunRaidAiAnalysis() {
 //        final AI wrap-around → consolidated board report to all @company.
 // ---------------------------------------------------------------------------
 
-// Single-reminder policy: each stage sends ONE request, then never re-nags. A
-// single owner escalation fires once after this delay purely as a safety net
-// if the stage is still stuck; the state-machine gates (collection → COO → CEO
-// → board report) still hold the report until each stage is satisfied.
+// Each stage sends ONE request, then a single owner escalation fires once after
+// this delay as a safety net if the stage is still stuck. The state-machine
+// gates (collection → COO → CEO → board report) hold the report until each
+// stage is satisfied.
 const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // one owner escalation after 1h
+// Leadership stages (COO narrative, CEO response) also re-nudge the responsible
+// person on this interval until they act — otherwise a single overnight request
+// that's missed would leave the whole board report stuck indefinitely with no
+// further prompt. Collection deliberately does NOT use this (it has its own
+// per-manager chase and completes quickly).
+const CADENCE_RECHASE_EVERY_MS = 24 * 60 * 60 * 1000 // re-nudge the responsible person daily
 
 type CadencePhase = {
   requestedAt?: string
@@ -1508,15 +1514,17 @@ async function saveCadenceState(weekEnding: string, state: CadenceState) {
     .where(eq(weeklyReports.weekEnding, weekEnding))
 }
 
-// Run one chase cycle for a phase: the first tick fires the request ONCE; there
-// is no repeated re-chase (single-reminder policy). A single owner escalation
-// fires once after 1h if the stage is still stuck. Mutates `phase` in place and
-// returns what it did this tick.
+// Run one chase cycle for a phase: the first tick fires the request ONCE. A
+// single owner escalation fires once after 1h if the stage is still stuck. When
+// `rechaseEveryMs` is set, the request is ALSO re-sent to the responsible person
+// once that interval has elapsed since the last chase, repeating until the stage
+// is satisfied. Mutates `phase` in place and returns what it did this tick.
 async function runChasePhase(
   phase: CadencePhase,
   now: Date,
   sendFn: () => Promise<unknown>,
   escalateFn: () => Promise<unknown>,
+  rechaseEveryMs?: number,
 ): Promise<string[]> {
   const t = now.getTime()
   if (!phase.requestedAt) {
@@ -1526,7 +1534,7 @@ async function runChasePhase(
     return ["requested"]
   }
   const did: string[] = []
-  // No repeated re-chase — we deliberately do not re-nag the responsible person.
+  // Owner escalation once, ~1h in.
   if (
     !phase.escalatedAt &&
     t - Date.parse(phase.requestedAt) >= CADENCE_ESCALATE_AFTER_MS
@@ -1534,6 +1542,15 @@ async function runChasePhase(
     await escalateFn()
     phase.escalatedAt = now.toISOString()
     did.push("escalated")
+  }
+  // Repeated re-nudge to the responsible person, if this phase opts in.
+  if (
+    rechaseEveryMs &&
+    t - Date.parse(phase.lastChaseAt ?? phase.requestedAt) >= rechaseEveryMs
+  ) {
+    await sendFn()
+    phase.lastChaseAt = now.toISOString()
+    did.push("re-chased")
   }
   return did.length ? did : ["waiting"]
 }
@@ -1724,6 +1741,7 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
       now,
       () => requestCosminNarrative(weekEnding),
       () => escalateStalledStageToOwners(weekEnding, "COO narrative (Cosmin)"),
+      CADENCE_RECHASE_EVERY_MS,
     )
     await saveCadenceState(weekEnding, state)
     return { stage: "awaiting-coo", did }
@@ -1737,6 +1755,7 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
       now,
       () => requestMartinResponse(weekEnding),
       () => escalateStalledStageToOwners(weekEnding, "CEO response (Martin)"),
+      CADENCE_RECHASE_EVERY_MS,
     )
     await saveCadenceState(weekEnding, state)
     return { stage: "awaiting-ceo", did }
