@@ -10,8 +10,13 @@ import {
   remindPendingReviewers,
   sendHolidayLookaheadEmail,
 } from "@/lib/team-notify"
-import { getApprovedHolidaysInRange } from "@/lib/team"
-import { OWNER_EMAILS, OPS_MEETING_CHAIR_EMAIL } from "@/lib/access-types"
+import { getApprovedHolidaysInRange, getManagersWithReports } from "@/lib/team"
+import {
+  OWNER_EMAILS,
+  LEADERSHIP_HOLIDAY_EMAILS,
+  isLeadershipHolidayEmail,
+  isOwnerEmail,
+} from "@/lib/access-types"
 import { isOutboundHold } from "@/lib/outbound-hold"
 import { isCommEnabled } from "@/lib/comms"
 
@@ -63,9 +68,10 @@ export async function GET(req: Request) {
 
   const step = searchParams.get("step")
 
-  // --- Monthly "who's off next month" digest → Cosmin --------------------
+  // --- Monthly "who's off next month" digest → managers + leadership -----
   // Scheduled every Saturday 18:00; only fires on the LAST Saturday of the
-  // month. Lists everyone with approved holiday in the COMING month.
+  // month. Leadership/owners (the @lessthanzerobarbers.com senior team) get the
+  // WHOLE-COMPANY list; every other manager gets just their OWN team's holiday.
   if (step === "holiday-lookahead") {
     if (isOutboundHold()) return NextResponse.json({ ok: true, step, held: true })
     const now = new Date()
@@ -74,8 +80,13 @@ export async function GET(req: Request) {
     }
     const { start, end, label } = comingMonthRange(now)
     const rows = await getApprovedHolidaysInRange(start, end)
-    const sent = await sendHolidayLookaheadEmail({
-      recipients: [OPS_MEETING_CHAIR_EMAIL],
+
+    let sent = 0
+
+    // 1) Leadership + owners: the whole company, one shared email.
+    const leadership = Array.from(new Set([...LEADERSHIP_HOLIDAY_EMAILS, ...OWNER_EMAILS]))
+    sent += await sendHolidayLookaheadEmail({
+      recipients: leadership,
       subject: `Who's off in ${label}`,
       title: `Who's off in ${label}`,
       intro: `Advance notice of everyone with approved holiday next month (${label}), across all shops.`,
@@ -83,7 +94,35 @@ export async function GET(req: Request) {
       rows,
       kind: "team-holiday-lookahead",
     })
-    return NextResponse.json({ ok: true, step, sent, bookings: rows.length, range: { start, end } })
+
+    // 2) Every other manager: only their own team's bookings.
+    const managers = await getManagersWithReports()
+    let managerEmails = 0
+    for (const m of managers) {
+      if (!m.email) continue
+      // Leadership already received the full company-wide list above.
+      if (isLeadershipHolidayEmail(m.email) || isOwnerEmail(m.email)) continue
+      const mine = rows.filter((r) => m.barberIds.includes(r.barberId))
+      sent += await sendHolidayLookaheadEmail({
+        recipients: [m.email],
+        subject: `Your team's holiday in ${label}`,
+        title: `Your team off in ${label}`,
+        intro: `Advance notice of your team's approved holiday next month (${label}).`,
+        rangeLabel: label,
+        rows: mine,
+        kind: "team-holiday-lookahead",
+      })
+      managerEmails++
+    }
+
+    return NextResponse.json({
+      ok: true,
+      step,
+      sent,
+      managerEmails,
+      bookings: rows.length,
+      range: { start, end },
+    })
   }
 
   // --- On-demand "who's off — rest of the year" → Martin + Cosmin --------

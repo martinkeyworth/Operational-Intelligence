@@ -325,6 +325,48 @@ export async function getApprovedHolidaysInRange(
   }))
 }
 
+export type ManagerWithReports = {
+  userId: string
+  name: string
+  email: string
+  barberIds: number[]
+}
+
+/**
+ * Every login that manages at least one ACTIVE barber, with the ids of their
+ * direct reports. Used by the monthly holiday digest to send each manager just
+ * their own team's bookings (leadership still get the whole company). A barber
+ * whose manager_user_id is null is simply not attributed to anyone here.
+ */
+export async function getManagersWithReports(): Promise<ManagerWithReports[]> {
+  const rows = await db
+    .select({
+      userId: userTable.id,
+      name: userTable.name,
+      email: userTable.email,
+      barberId: barbers.id,
+    })
+    .from(barbers)
+    .innerJoin(userTable, eq(barbers.managerUserId, userTable.id))
+    .where(eq(barbers.active, true))
+
+  const byManager = new Map<string, ManagerWithReports>()
+  for (const r of rows) {
+    const existing = byManager.get(r.userId)
+    if (existing) {
+      existing.barberIds.push(r.barberId)
+    } else {
+      byManager.set(r.userId, {
+        userId: r.userId,
+        name: r.name,
+        email: r.email,
+        barberIds: [r.barberId],
+      })
+    }
+  }
+  return Array.from(byManager.values())
+}
+
 export type ManagerOneToOneReview = {
   barber: { id: number; name: string }
   scheduled: { id: number; scheduledFor: string } | null
