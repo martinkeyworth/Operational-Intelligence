@@ -75,7 +75,11 @@ export async function GET(req: Request) {
   if (step === "holiday-lookahead") {
     if (isOutboundHold()) return NextResponse.json({ ok: true, step, held: true })
     const now = new Date()
-    if (!isLastSaturdayOfMonth(now)) {
+    // The schedule fires every Saturday but only the last one of the month
+    // should send. `?force=1` lets us trigger the same digest off-schedule
+    // (e.g. to send this month's list after the last Saturday has passed).
+    const force = searchParams.get("force") === "1"
+    if (!force && !isLastSaturdayOfMonth(now)) {
       return NextResponse.json({ ok: true, step, skipped: "not the last Saturday" })
     }
     const { start, end, label } = comingMonthRange(now)
