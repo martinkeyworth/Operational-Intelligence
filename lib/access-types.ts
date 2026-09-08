@@ -58,6 +58,10 @@ export const OWNER_EMAILS = [
 // Cosmin chairs the weekly operational meeting (risk register owner view).
 export const OPS_MEETING_CHAIR_EMAIL = "cosmin@lessthanzerobarbers.com"
 
+// The COO (Cosmin). Area leads (Marketing/HR/Training) report up to him, so
+// outstanding group-KPI submissions escalate to the COO as their manager.
+export const COO_EMAIL = "cosmin@lessthanzerobarbers.com"
+
 // The CEO (Martin). He submits the weekly board narrative but is NOT a barber
 // and is not expected to submit weekly takings, so he is excluded from the
 // submission board's expected submitters.

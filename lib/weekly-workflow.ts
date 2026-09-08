@@ -7,6 +7,7 @@ import {
   user as userTable,
   weeklyTakings,
   sites,
+  barbers,
 } from "@/lib/db/schema"
 import { fmtWeekLong, getActions, type ActionRow } from "@/lib/data"
 import { canonicalAreaKey, FUNCTION_AREAS } from "@/lib/function-areas"
@@ -20,7 +21,7 @@ import {
 } from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
 import { sendChatDm, sendSpaceChat, sendAreaChat } from "@/lib/google-chat"
-import { OWNER_EMAILS } from "@/lib/access-types"
+import { OWNER_EMAILS, COO_EMAIL } from "@/lib/access-types"
 import { defaultOwnerEmailForArea } from "@/lib/area-owners"
 import {
   currentWeekEnding,
@@ -1488,18 +1489,25 @@ export async function dryRunRaidAiAnalysis() {
 // this delay as a safety net if the stage is still stuck. The state-machine
 // gates (collection → COO → CEO → board report) hold the report until each
 // stage is satisfied.
-const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // one owner escalation after 1h
-// Leadership stages (COO narrative, CEO response) also re-nudge the responsible
-// person on this interval until they act — otherwise a single overnight request
-// that's missed would leave the whole board report stuck indefinitely with no
-// further prompt. Collection deliberately does NOT use this (it has its own
-// per-manager chase and completes quickly).
-const CADENCE_RECHASE_EVERY_MS = 24 * 60 * 60 * 1000 // re-nudge the responsible person daily
+const CADENCE_ESCALATE_AFTER_MS = 60 * 60 * 1000 // owner escalation after 1h
+// If a collection item is still outstanding this long after the first chase, it
+// escalates to the responsible person's ALLOCATED MANAGER (area-lead KPIs → the
+// COO) so it's actioned quickly rather than stalling silently.
+const CADENCE_MANAGER_ESCALATE_AFTER_MS = 2 * 60 * 60 * 1000 // manager escalation after 2h
+// Every stage re-nudges the outstanding party on this interval until they act —
+// otherwise a single overnight request that's missed would leave the board
+// report stuck indefinitely with no further prompt. Collection re-chases both
+// the responsible people AND their managers daily.
+const CADENCE_RECHASE_EVERY_MS = 24 * 60 * 60 * 1000 // re-nudge daily
 
 type CadencePhase = {
   requestedAt?: string
   lastChaseAt?: string
   escalatedAt?: string
+  // Collection-only: when the responsible people's managers were first brought
+  // in, and when they were last re-chased.
+  managerEscalatedAt?: string
+  lastManagerChaseAt?: string
 }
 type CadenceState = {
   collection?: CadencePhase
@@ -1659,6 +1667,148 @@ async function escalateUnconfirmedToCosmin(
   })
 }
 
+// Map each active person's email → their ALLOCATED manager's email, so an
+// outstanding item's responsible person can be escalated to the right manager.
+// Two simple reads (no self-join): person→managerUserId, then id→email.
+async function getManagerEmailByPerson(): Promise<Map<string, string>> {
+  const [barberRows, userRows] = await Promise.all([
+    db
+      .select({ email: userTable.email, managerUserId: barbers.managerUserId })
+      .from(barbers)
+      .innerJoin(userTable, eq(userTable.id, barbers.userId))
+      .where(eq(barbers.active, true)),
+    db.select({ id: userTable.id, email: userTable.email }).from(userTable),
+  ])
+  const emailById = new Map(
+    userRows.map((u) => [u.id, u.email.toLowerCase()] as const),
+  )
+  const map = new Map<string, string>()
+  for (const b of barberRows) {
+    if (!b.email || !b.managerUserId) continue
+    const mgr = emailById.get(b.managerUserId)
+    if (mgr) map.set(b.email.toLowerCase(), mgr)
+  }
+  return map
+}
+
+// The ALLOCATED MANAGER(s) an outstanding item should escalate to. Group-level
+// KPI areas (Marketing/HR/Training) are owned by an area lead who reports to the
+// COO. Site-scoped work escalates to that site manager's own allocated manager,
+// falling back to the COO when none is recorded.
+function escalationManagerEmailsFor(
+  item: SubmissionItem,
+  contacts: Map<number, { emails: string[] }>,
+  managerByPerson: Map<string, string>,
+): string[] {
+  if (item.siteId == null && item.category === "KPI") return [COO_EMAIL]
+  const managers = new Set<string>()
+  for (const email of responsibleEmailsFor(item, contacts)) {
+    managers.add(managerByPerson.get(email.toLowerCase()) ?? COO_EMAIL)
+  }
+  if (managers.size === 0) managers.add(COO_EMAIL)
+  return [...managers]
+}
+
+// Escalate still-outstanding collection to each responsible person's ALLOCATED
+// MANAGER (area-lead KPIs → the COO). Fires ~2h in, then daily. Groups items by
+// manager so each gets one email listing exactly what their team still owes.
+// Best-effort; returns how many managers were emailed.
+async function escalateCollectionToManagers(weekEnding: string): Promise<number> {
+  const status = await getSubmissionStatus(weekEnding)
+  if (status.complete) return 0
+  const [contacts, managerByPerson] = await Promise.all([
+    getSiteManagerContacts(),
+    getManagerEmailByPerson(),
+  ])
+
+  const byManager = new Map<string, SubmissionItem[]>()
+  for (const item of status.outstanding) {
+    for (const mgr of escalationManagerEmailsFor(item, contacts, managerByPerson)) {
+      const key = mgr.toLowerCase()
+      const list = byManager.get(key) ?? []
+      list.push(item)
+      byManager.set(key, list)
+    }
+  }
+
+  const url = appBaseUrl().replace(/\/+$/, "")
+  let sent = 0
+  for (const [managerEmail, items] of byManager) {
+    const one = items.length === 1
+    const html = emailShell(
+      `Action needed from your team · w/e ${fmtWeekLong(weekEnding)}`,
+      `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${items.length} item${
+        one ? "" : "s"
+      } your team is responsible for ${one ? "is" : "are"} still outstanding and blocking this week's board report.</p>
+       <p style="margin:0 0 12px;">This has been outstanding for over two hours. As their manager, please make sure it's actioned now — tap each item to go straight to the page that resolves it:</p>
+       ${outstandingTable(items, weekEnding)}
+       <p style="margin:16px 0;"><a href="${url}/reports/submissions" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">View submission board</a></p>`,
+    )
+    const res = await sendEmail({
+      to: managerEmail,
+      subject: `Action your team: ${items.length} outstanding (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "cadence_escalation",
+      weekEnding,
+    })
+    if (res.ok) sent++
+    // Best-effort in-domain Chat ping to the manager.
+    await chatDmOutstanding(managerEmail, items, weekEnding)
+  }
+  return sent
+}
+
+// Collection is chased differently from the single-recipient leadership stages:
+// several people are responsible, so we chase each of them, escalate to the
+// OWNERS after 1h, escalate to each responsible person's ALLOCATED MANAGER after
+// 2h, and thereafter re-chase BOTH the people and their managers daily until
+// everything is in. Mutates `phase` in place; returns what it did this tick.
+async function runCollectionChase(
+  phase: CadencePhase,
+  now: Date,
+  weekEnding: string,
+): Promise<string[]> {
+  const t = now.getTime()
+  if (!phase.requestedAt) {
+    phase.requestedAt = now.toISOString()
+    await chaseOutstandingCollection(weekEnding)
+    phase.lastChaseAt = now.toISOString()
+    return ["requested"]
+  }
+  const did: string[] = []
+  const since = Date.parse(phase.requestedAt)
+  // Owner escalation once, ~1h in.
+  if (!phase.escalatedAt && t - since >= CADENCE_ESCALATE_AFTER_MS) {
+    await escalateCollectionToOwners(weekEnding)
+    phase.escalatedAt = now.toISOString()
+    did.push("escalated-owners")
+  }
+  // Manager escalation once, ~2h in.
+  if (!phase.managerEscalatedAt && t - since >= CADENCE_MANAGER_ESCALATE_AFTER_MS) {
+    await escalateCollectionToManagers(weekEnding)
+    phase.managerEscalatedAt = now.toISOString()
+    phase.lastManagerChaseAt = now.toISOString()
+    did.push("escalated-managers")
+  }
+  // Daily re-chase of the responsible people.
+  if (t - Date.parse(phase.lastChaseAt ?? phase.requestedAt) >= CADENCE_RECHASE_EVERY_MS) {
+    await chaseOutstandingCollection(weekEnding)
+    phase.lastChaseAt = now.toISOString()
+    did.push("re-chased")
+  }
+  // Daily re-chase of the managers, once they've been brought in.
+  if (
+    phase.managerEscalatedAt &&
+    t - Date.parse(phase.lastManagerChaseAt ?? phase.managerEscalatedAt) >=
+      CADENCE_RECHASE_EVERY_MS
+  ) {
+    await escalateCollectionToManagers(weekEnding)
+    phase.lastManagerChaseAt = now.toISOString()
+    did.push("re-chased-managers")
+  }
+  return did.length ? did : ["waiting"]
+}
+
 // Email the owners that a leadership stage (COO/CEO) has been outstanding over
 // an hour and is blocking the board report.
 async function escalateStalledStageToOwners(
@@ -1711,12 +1861,7 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
   const status = await getSubmissionStatus(weekEnding)
   if (!status.complete) {
     state.collection ??= {}
-    const did = await runChasePhase(
-      state.collection,
-      now,
-      () => chaseOutstandingCollection(weekEnding),
-      () => escalateCollectionToOwners(weekEnding),
-    )
+    const did = await runCollectionChase(state.collection, now, weekEnding)
     await saveCadenceState(weekEnding, state)
     return { stage: "collecting", outstanding: status.outstandingCount, did }
   }
