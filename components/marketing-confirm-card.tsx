@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, Loader2, Megaphone } from "lucide-react"
+import { CheckCircle2, Loader2, Megaphone, PencilLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { confirmMarketingWeek } from "@/app/actions/governance"
@@ -18,11 +19,15 @@ export function MarketingConfirmCard({
   confirmed,
   confirmedBy,
   canConfirm,
+  entryHref,
 }: {
   week: string
   confirmed: boolean
   confirmedBy: string | null
   canConfirm: boolean
+  // When set, the lead can jump straight to the entry page to enter or correct
+  // every site's figures before signing off.
+  entryHref?: string
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -70,16 +75,31 @@ export function MarketingConfirmCard({
         </div>
       </div>
       {canConfirm && (
-        <form action={onConfirm}>
-          <input type="hidden" name="weekEnding" value={week} />
-          <Button type="submit" disabled={pending} className="h-10 min-w-[140px]">
-            {pending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Confirm week"
-            )}
-          </Button>
-        </form>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {entryHref && (
+            <Link
+              href={entryHref}
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              <PencilLine className="h-4 w-4" />
+              Enter / edit figures
+            </Link>
+          )}
+          <form action={onConfirm}>
+            <input type="hidden" name="weekEnding" value={week} />
+            <Button
+              type="submit"
+              disabled={pending}
+              className="h-10 w-full min-w-[140px] sm:w-auto"
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Confirm week"
+              )}
+            </Button>
+          </form>
+        </div>
       )}
     </Card>
   )

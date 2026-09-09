@@ -45,6 +45,38 @@ async function advanceCadenceSafely(weekEnding: string) {
   }
 }
 
+/**
+ * Owner override: force the board report out immediately, skipping any pending
+ * COO/CEO input, without waiting for the 24h auto-advance timeout.
+ */
+export async function sendBoardReportNow(
+  _prev: { ok: boolean; error?: string; message?: string } | null,
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const user = await requireUser()
+  if (!user.isOwner)
+    return { ok: false, error: "Only owners can send the board report." }
+  const weekEnding = String(formData.get("weekEnding") ?? "")
+  if (!weekEnding) return { ok: false, error: "Missing week." }
+
+  try {
+    const { forceSendBoardReport } = await import("@/lib/weekly-workflow")
+    const res = await forceSendBoardReport(weekEnding)
+    revalidatePath(`/reports/${weekEnding}`)
+    if ("alreadySent" in res && res.alreadySent)
+      return { ok: true, message: "The board report had already been sent." }
+    if ("sent" in res)
+      return {
+        ok: true,
+        message: `Board report sent to ${res.sent} of ${res.total} recipients.`,
+      }
+    return { ok: true, message: "Board report sent." }
+  } catch (err) {
+    console.log("[v0] sendBoardReportNow failed:", err)
+    return { ok: false, error: "Could not send the report. Please try again." }
+  }
+}
+
 /** Martin (CEO) submits his response for a week. Owners may also edit. */
 export async function saveMartinResponse(formData: FormData) {
   const user = await requireUser()

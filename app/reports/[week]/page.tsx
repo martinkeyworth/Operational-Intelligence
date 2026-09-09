@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/card"
 import { RagBadge } from "@/components/rag"
 import { NarrativeForm } from "@/components/narrative-form"
 import { RootCausePanel } from "@/components/root-cause-panel"
+import { SendReportNow } from "@/components/send-report-now"
+import { fmtDate } from "@/lib/format"
 import { buildComparison, getOrCreateReport } from "@/lib/reporting"
 import { fmtWeekLong, type Rag } from "@/lib/data"
 import {
@@ -61,6 +63,12 @@ export default async function ReportPage({
   const cooNeedsInput = isCosmin && !report?.cosminNarrativeAt
   const ceoNeedsInput = isMartin && !report?.martinResponseAt
   const youNeedToAct = cooNeedsInput || ceoNeedsInput
+
+  // Leadership inputs still missing — surfaced on the owner "send now" override
+  // so it's clear what the report will go out without.
+  const pendingLeadership: string[] = []
+  if (!report?.cosminNarrative) pendingLeadership.push("COO narrative")
+  if (!report?.martinResponse) pendingLeadership.push("CEO response")
 
   return (
     <AppShell user={user}>
@@ -208,6 +216,15 @@ export default async function ReportPage({
             </Card>
           )}
         </section>
+
+        {report?.reportSentAt ? (
+          <p className="text-xs text-muted-foreground">
+            Board report sent{" "}
+            {fmtDate(new Date(report.reportSentAt).toISOString())}.
+          </p>
+        ) : user.isOwner ? (
+          <SendReportNow weekEnding={week} pendingLabels={pendingLeadership} />
+        ) : null}
       </div>
     </AppShell>
   )

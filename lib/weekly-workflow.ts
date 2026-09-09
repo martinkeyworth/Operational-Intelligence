@@ -21,7 +21,7 @@ import {
 } from "@/lib/submissions"
 import { sweepAutoEscalations } from "@/lib/registers"
 import { sendChatDm, sendSpaceChat, sendAreaChat } from "@/lib/google-chat"
-import { OWNER_EMAILS, COO_EMAIL } from "@/lib/access-types"
+import { OWNER_EMAILS, COO_EMAIL, CEO_EMAIL } from "@/lib/access-types"
 import { defaultOwnerEmailForArea } from "@/lib/area-owners"
 import {
   currentWeekEnding,
@@ -1499,6 +1499,10 @@ const CADENCE_MANAGER_ESCALATE_AFTER_MS = 2 * 60 * 60 * 1000 // manager escalati
 // report stuck indefinitely with no further prompt. Collection re-chases both
 // the responsible people AND their managers daily.
 const CADENCE_RECHASE_EVERY_MS = 24 * 60 * 60 * 1000 // re-nudge daily
+// A leadership stage (COO narrative, CEO response) auto-advances after this long
+// so an unavailable COO or CEO can never hold the board report indefinitely.
+// The report still goes out, noting the missing input; it can be added after.
+const CADENCE_AUTO_ADVANCE_AFTER_MS = 24 * 60 * 60 * 1000 // skip a silent leader after 24h
 
 type CadencePhase = {
   requestedAt?: string
@@ -1508,6 +1512,9 @@ type CadencePhase = {
   // in, and when they were last re-chased.
   managerEscalatedAt?: string
   lastManagerChaseAt?: string
+  // Leadership stages: set when the stage was auto-advanced past a
+  // non-responding COO/CEO on timeout.
+  autoAdvancedAt?: string
 }
 type CadenceState = {
   collection?: CadencePhase
@@ -1809,6 +1816,65 @@ async function runCollectionChase(
   return did.length ? did : ["waiting"]
 }
 
+// A leadership stage timed out and is being auto-advanced. Tell the owners AND
+// the person who was skipped that the board report proceeded without their
+// input — so it's visible and they can add it (it stays editable on the report
+// page for the record).
+async function notifyStageAutoAdvanced(
+  weekEnding: string,
+  stageLabel: string,
+  skippedEmail: string,
+) {
+  const url = appBaseUrl().replace(/\/+$/, "")
+  const to = [...new Set([...OWNER_EMAILS, skippedEmail.toLowerCase()])]
+  const html = emailShell(
+    `Board report proceeding without ${stageLabel} · w/e ${fmtWeekLong(weekEnding)}`,
+    `<p style="margin:0 0 12px;">The <strong>${esc(stageLabel)}</strong> wasn't submitted within 24 hours, so the weekly board report is going ahead without it — an absent COO or CEO no longer holds the report.</p>
+     <p style="margin:0 0 12px;">The report notes the missing input. You can still add it on the report page for the record.</p>
+     <p style="margin:16px 0;"><a href="${url}/reports/${weekEnding}#leadership-input" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Open the report</a></p>`,
+  )
+  for (const email of to) {
+    await sendEmail({
+      to: email,
+      subject: `Board report proceeding without ${stageLabel} (w/e ${fmtWeekLong(weekEnding)})`,
+      html,
+      kind: "cadence_auto_advance",
+      weekEnding,
+    })
+  }
+}
+
+// Owner override: force the board report out now, skipping any pending COO/CEO
+// input, without waiting for the 24h auto-advance. Ensures the analysis (and a
+// best-effort AI wrap) exist first so the report is still meaningful. Idempotent
+// via reportSentAt.
+export async function forceSendBoardReport(weekEnding = currentWeekEnding()) {
+  const [existing] = await db
+    .select()
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  if (existing?.reportSentAt) return { alreadySent: true as const }
+
+  // The analysis persists overallRag/overallPct + analysisRunAt; run it if it
+  // somehow hasn't happened, so the forced report isn't blank.
+  if (!existing?.analysisRunAt) await runAnalysis(weekEnding)
+
+  const [afterAnalysis] = await db
+    .select()
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekEnding, weekEnding))
+  if (!afterAnalysis?.finalAnalysisAt) {
+    const final = await synthesiseFinalReview(weekEnding)
+    if (final) {
+      await db
+        .update(weeklyReports)
+        .set({ finalAnalysis: final, finalAnalysisAt: new Date() })
+        .where(eq(weeklyReports.weekEnding, weekEnding))
+    }
+  }
+  return await sendBoardReport(weekEnding)
+}
+
 // Email the owners that a leadership stage (COO/CEO) has been outstanding over
 // an hour and is blocking the board report.
 async function escalateStalledStageToOwners(
@@ -1878,9 +1944,28 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
     return { stage: "analysis-run" }
   }
 
-  // STAGE 2 — COO narrative. Request + chase until submitted.
+  // STAGE 2 — COO narrative. Request + chase, but auto-advance after 24h so an
+  // unavailable COO can't hold the board report indefinitely.
   if (!report.cosminNarrativeAt) {
     state.narrative ??= {}
+    const requestedMs = state.narrative.requestedAt
+      ? Date.parse(state.narrative.requestedAt)
+      : null
+    if (
+      requestedMs != null &&
+      now.getTime() - requestedMs >= CADENCE_AUTO_ADVANCE_AFTER_MS
+    ) {
+      // Stamp the timestamp (leaving the narrative text null so the report notes
+      // it as missing) and move on. The COO can still add it afterwards.
+      await db
+        .update(weeklyReports)
+        .set({ cosminNarrativeAt: now })
+        .where(eq(weeklyReports.weekEnding, weekEnding))
+      state.narrative.autoAdvancedAt = now.toISOString()
+      await saveCadenceState(weekEnding, state)
+      await notifyStageAutoAdvanced(weekEnding, "COO narrative (Cosmin)", COO_EMAIL)
+      return { stage: "coo-auto-advanced" }
+    }
     const did = await runChasePhase(
       state.narrative,
       now,
@@ -1892,9 +1977,26 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
     return { stage: "awaiting-coo", did }
   }
 
-  // STAGE 3 — CEO response. Request + chase until submitted.
+  // STAGE 3 — CEO response. Request + chase, but auto-advance after 24h so an
+  // unavailable CEO can't hold the board report indefinitely.
   if (!report.martinResponseAt) {
     state.response ??= {}
+    const requestedMs = state.response.requestedAt
+      ? Date.parse(state.response.requestedAt)
+      : null
+    if (
+      requestedMs != null &&
+      now.getTime() - requestedMs >= CADENCE_AUTO_ADVANCE_AFTER_MS
+    ) {
+      await db
+        .update(weeklyReports)
+        .set({ martinResponseAt: now })
+        .where(eq(weeklyReports.weekEnding, weekEnding))
+      state.response.autoAdvancedAt = now.toISOString()
+      await saveCadenceState(weekEnding, state)
+      await notifyStageAutoAdvanced(weekEnding, "CEO response (Martin)", CEO_EMAIL)
+      return { stage: "ceo-auto-advanced" }
+    }
     const did = await runChasePhase(
       state.response,
       now,
