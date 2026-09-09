@@ -65,9 +65,11 @@ export default async function FunctionAreaPage({
   const amber = open.filter((a) => a.rag === "amber").length
   const rag = red > 0 ? "red" : amber > 0 ? "amber" : "green"
 
-  // Areas with a dedicated, lead-owned weekly input page (Marketing is entered
-  // per-site by managers, so it is not linked here).
-  const INPUT_AREAS = ["HR", "Training"]
+  // Areas with a dedicated, lead-owned weekly input page. Marketing is entered
+  // per-site, but the Marketing lead (Mario) can enter or override EVERY site's
+  // figures from the same input page — so it is linked here too, otherwise the
+  // person responsible for sign-off has no way to enter or correct the data.
+  const INPUT_AREAS = ["HR", "Marketing", "Training"]
   const isLead = canInputArea(user, area.key)
   const canInput = INPUT_AREAS.includes(area.key) && isLead
   // Only HR/Training social posts (group-level) matter for Mario's review.
@@ -109,6 +111,7 @@ export default async function FunctionAreaPage({
             confirmed={marketingConf.confirmed}
             confirmedBy={marketingConf.confirmedBy}
             canConfirm={isLead}
+            entryHref={isLead ? `/functions/${area.key}/input` : undefined}
           />
         )}
 
