@@ -31,6 +31,9 @@ export const user = pgTable("user", {
   // A lead can manage their own area's RAID log. Generalises the per-flag leads
   // above to all six areas (Capacity, RTB, Subletting, Training, HR, Marketing).
   leadAreas: text("lead_areas").notNull().default(""),
+  // When set, the account is suspended: blocked from all access until cleared.
+  // Enforced in getAccessUser so every protected surface fails closed.
+  suspendedAt: timestamp("suspended_at"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })

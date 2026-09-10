@@ -2,14 +2,17 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2 } from "lucide-react"
+import { Check, Loader2, Ban, ShieldCheck } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { CAPABILITY_LABELS, AREA_KEYS, type AccessUser } from "@/lib/access-types"
 import { FUNCTION_AREAS } from "@/lib/function-areas"
-import { updateUserCapabilities } from "@/app/admin/people/actions"
+import {
+  updateUserCapabilities,
+  setUserSuspended,
+} from "@/app/admin/people/actions"
 import { SetPasswordForm } from "@/components/set-password-form"
 
 const AREA_LABELS: Record<string, string> = Object.fromEntries(
@@ -20,6 +23,17 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [suspending, setSuspending] = useState(false)
+
+  async function suspendAction(formData: FormData) {
+    setSuspending(true)
+    try {
+      await setUserSuspended(formData)
+      router.refresh()
+    } finally {
+      setSuspending(false)
+    }
+  }
 
   async function action(formData: FormData) {
     setPending(true)
@@ -51,8 +65,14 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
             {initials}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {user.name}
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <span className="truncate">{user.name}</span>
+              {user.suspended && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+                  <Ban className="h-3 w-3" />
+                  Suspended
+                </span>
+              )}
             </p>
             <p className="truncate text-xs text-muted-foreground">
               {user.email}
@@ -138,6 +158,41 @@ export function UserAccessCard({ user }: { user: AccessUser }) {
         </p>
         <SetPasswordForm userId={user.id} userName={user.name} />
       </div>
+
+      {!user.isOwner && (
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="mb-2 text-xs font-semibold text-foreground">Access</p>
+          <p className="mb-2.5 text-xs text-muted-foreground">
+            {user.suspended
+              ? "This person is blocked from signing in and using the app, and is off all rosters and chases."
+              : "Suspend to immediately block this person from signing in and drop them off rosters, chases, holiday and 1-2-1s. Reversible."}
+          </p>
+          <form action={suspendAction}>
+            <input type="hidden" name="userId" value={user.id} />
+            <input
+              type="hidden"
+              name="suspend"
+              value={user.suspended ? "false" : "true"}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant={user.suspended ? "outline" : "destructive"}
+              disabled={suspending}
+              className="h-9 w-full gap-1.5 sm:w-auto"
+            >
+              {suspending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : user.suspended ? (
+                <ShieldCheck className="h-4 w-4" />
+              ) : (
+                <Ban className="h-4 w-4" />
+              )}
+              {user.suspended ? "Restore access" : "Suspend access"}
+            </Button>
+          </form>
+        </div>
+      )}
     </Card>
   )
 }
