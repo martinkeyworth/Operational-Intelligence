@@ -29,6 +29,9 @@ export type AccessUser = {
   // nav link for non-dashboard managers, who otherwise have no way to reach
   // their reports' 1-2-1s.
   managesTeam?: boolean
+  // Whether this account is suspended (blocked from all access). Only surfaced
+  // in the admin People list — a suspended user never resolves at runtime.
+  suspended?: boolean
 } & Capabilities
 
 // All functional areas that can have a designated lead + RAID log.

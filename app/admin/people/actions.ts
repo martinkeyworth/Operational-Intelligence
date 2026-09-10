@@ -3,10 +3,10 @@
 import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { user as userTable } from "@/lib/db/schema"
+import { user as userTable, barbers } from "@/lib/db/schema"
 import { auth } from "@/lib/auth"
 import { requireAdmin, serializeLeadAreas } from "@/lib/access"
-import { AREA_KEYS } from "@/lib/access-types"
+import { AREA_KEYS, isOwnerEmail } from "@/lib/access-types"
 
 export type SetPasswordResult = { ok: boolean; error?: string }
 
@@ -65,6 +65,53 @@ export async function setUserPassword(
 
   revalidatePath("/admin/people")
   return { ok: true }
+}
+
+/**
+ * Admin-only: suspend or restore an account. Suspending blocks all access
+ * (enforced in getAccessUser), revokes any live sessions immediately, and marks
+ * the person's barber record inactive so they drop off weekly rosters, chases,
+ * holiday and 1-2-1s. Restoring reverses all three. Owners cannot be suspended.
+ */
+export async function setUserSuspended(formData: FormData) {
+  const admin = await requireAdmin()
+
+  const userId = String(formData.get("userId") ?? "")
+  const suspend = String(formData.get("suspend")) === "true"
+  if (!userId) throw new Error("Missing user")
+
+  const [target] = await db
+    .select({ id: userTable.id, email: userTable.email })
+    .from(userTable)
+    .where(eq(userTable.id, userId))
+  if (!target) throw new Error("User not found")
+  if (isOwnerEmail(target.email)) throw new Error("Owners cannot be suspended.")
+
+  await db
+    .update(userTable)
+    .set({ suspendedAt: suspend ? new Date() : null, updatedAt: new Date() })
+    .where(eq(userTable.id, userId))
+
+  // Mirror on the barber record so a suspended person is no longer chased or
+  // counted; restoring reactivates it.
+  await db
+    .update(barbers)
+    .set({ active: !suspend })
+    .where(eq(barbers.userId, userId))
+
+  if (suspend) {
+    // Kill any live sessions so the block takes effect immediately, not just on
+    // next login.
+    const ctx = await auth.$context
+    await ctx.internalAdapter.deleteUserSessions(userId)
+  }
+
+  console.log(
+    `[v0] Admin ${admin.email} ${suspend ? "suspended" : "restored"} user ${userId}`,
+  )
+
+  // Access + rosters change app-wide, so refresh the whole tree.
+  revalidatePath("/", "layout")
 }
 
 export async function updateUserCapabilities(formData: FormData) {

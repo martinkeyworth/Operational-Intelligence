@@ -41,6 +41,11 @@ export async function getAccessUser(): Promise<AccessUser | null> {
     .where(eq(userTable.id, session.user.id))
   if (!row) return null
 
+  // A suspended account is blocked from everything until un-suspended.
+  // Returning null makes every protected surface fail closed (redirect to
+  // sign-in), so this single check disables all access app-wide.
+  if (row.suspendedAt) return null
+
   const base: AccessUser = {
     id: row.id,
     name: row.name,
@@ -345,8 +350,9 @@ export async function getAllUsers(): Promise<AccessUser[]> {
     // Keep the admin People view consistent with runtime: the CEO is never a
     // submitting barber (see getAccessUser).
     isBarber: isCeoEmail(row.email) ? false : row.isBarber,
-    isTrainingLead: row.isTrainingLead,
-    isHrLead: row.isHrLead,
-    isSocialMedia: row.isSocialMedia,
+  isTrainingLead: row.isTrainingLead,
+  isHrLead: row.isHrLead,
+  isSocialMedia: row.isSocialMedia,
+  suspended: !!row.suspendedAt,
   }))
-}
+  }
