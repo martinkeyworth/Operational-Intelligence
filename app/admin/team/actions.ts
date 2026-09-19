@@ -43,16 +43,32 @@ export async function setManager(formData: FormData) {
   return { ok: true }
 }
 
-/** Update HR profile: apprentice flag, start date, holiday allowance. */
+// Selectable job titles for a barber record, aligned with the canonical roles
+// in lib/roles.ts. This is a title/headcount label, not an app permission.
+const BARBER_ROLES = [
+  "Manager",
+  "Assistant Manager",
+  "Senior Barber",
+  "Barber",
+  "Junior Barber",
+  "Apprentice",
+] as const
+
+/** Update HR profile: role/title, apprentice flag, start date, holiday allowance. */
 export async function updateBarberProfile(formData: FormData) {
   await requireTeamAdmin()
   const barberId = Number(formData.get("barberId"))
   const isApprentice = formData.get("isApprentice") === "on"
   const startDate = String(formData.get("startDate") ?? "").trim() || null
   const holidayAllowance = Number(formData.get("holidayAllowance")) || 28
+  const roleRaw = String(formData.get("role") ?? "").trim()
+  // Only accept a known title; otherwise leave the role unchanged.
+  const role = (BARBER_ROLES as readonly string[]).includes(roleRaw)
+    ? roleRaw
+    : undefined
   await db
     .update(barbers)
-    .set({ isApprentice, startDate, holidayAllowance })
+    .set({ isApprentice, startDate, holidayAllowance, ...(role ? { role } : {}) })
     .where(eq(barbers.id, barberId))
   revalidateTeam(barberId)
   return { ok: true }

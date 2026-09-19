@@ -189,6 +189,39 @@ export function TeamMemberManager({
 
         <form action={(fd) => run(() => updateBarberProfile(fd))} className="space-y-3">
           <input type="hidden" name="barberId" value={self.barber.id} />
+          <div>
+            <Label htmlFor="role" className="text-xs">Role / title</Label>
+            <select
+              id="role"
+              name="role"
+              defaultValue={self.barber.role}
+              className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base"
+            >
+              {[
+                "Manager",
+                "Assistant Manager",
+                "Senior Barber",
+                "Barber",
+                "Junior Barber",
+                "Apprentice",
+              ].map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+              {/* Preserve any legacy value not in the list above */}
+              {![
+                "Manager",
+                "Assistant Manager",
+                "Senior Barber",
+                "Barber",
+                "Junior Barber",
+                "Apprentice",
+              ].includes(self.barber.role) && (
+                <option value={self.barber.role}>{self.barber.role}</option>
+              )}
+            </select>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="start" className="text-xs">Start date</Label>
