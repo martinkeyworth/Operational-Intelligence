@@ -11,6 +11,7 @@ export const maxDuration = 300
 const STEP_CHANNEL: Partial<Record<StepName, CommKey>> = {
   reminders: "weekly-reminders",
   cadence: "board-cadence",
+  "stalled-reports": "board-cadence",
   analysis: "board-cadence",
   "cosmin-narrative": "board-cadence",
   "board-report": "board-cadence",

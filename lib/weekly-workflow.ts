@@ -1,5 +1,5 @@
 import "server-only"
-import { and, eq, ne, sql } from "drizzle-orm"
+import { and, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import {
   weeklyReports,
@@ -2064,6 +2064,129 @@ export async function getCadenceStatus(weekEnding = mostRecentWeekEnding()) {
   }
 }
 
+// Outside the Sat–Mon cadence window the 30-min ticks stop, so a report still
+// blocked on Monday afternoon would otherwise go silent. This daily sweep keeps
+// every started-but-unsent report escalating until it is sent: it re-runs the
+// cadence for each (daily re-chase of the responsible people AND their allocated
+// managers, COO/CEO 24h auto-advance, onward to send), then emails the owners one
+// summary of exactly what is still blocking each report.
+const STALLED_LOOKBACK_DAYS = 56
+const STALLED_MIN_AGE_MS = 24 * 60 * 60 * 1000
+const STALLED_MAX_STEPS_PER_WEEK = 8
+// Cadence results that mean "progressed — try the next stage now".
+const PROGRESS_STAGES = new Set([
+  "analysis-run",
+  "coo-auto-advanced",
+  "ceo-auto-advanced",
+  "wrap-done",
+])
+
+const STALLED_STAGE_LABEL: Record<string, string> = {
+  collecting: "Waiting on submissions",
+  analysis: "Waiting on AI analysis",
+  "awaiting-coo": "Waiting on COO narrative",
+  "awaiting-ceo": "Waiting on CEO response",
+  "wrap-around": "Waiting on AI wrap-up",
+  "ready-to-send": "Ready to send",
+}
+
+type StalledReport = {
+  weekEnding: string
+  stage: string
+  items: SubmissionItem[]
+}
+
+async function notifyOwnersOfStalledReports(blocked: StalledReport[]) {
+  const url = appBaseUrl().replace(/\/+$/, "")
+  const sections = blocked
+    .map((b) => {
+      const label = STALLED_STAGE_LABEL[b.stage] ?? b.stage
+      const detail =
+        b.items.length > 0
+          ? outstandingTable(b.items, b.weekEnding)
+          : `<p style="margin:0 0 8px;">The responsible leader has been chased and will be skipped automatically after 24h.</p>`
+      return `<h3 style="margin:20px 0 6px;font-size:15px;">w/e ${esc(fmtWeekLong(b.weekEnding))} — ${esc(label)}</h3>
+        ${detail}
+        <p style="margin:8px 0 0;"><a href="${url}/reports/${b.weekEnding}" style="color:#111827;font-weight:600;">Open report (owners can send it now)</a></p>`
+    })
+    .join("")
+  const n = blocked.length
+  const html = emailShell(
+    `${n} board report${n === 1 ? "" : "s"} still blocked`,
+    `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${n} weekly board report${
+      n === 1 ? " is" : "s are"
+    } still not sent. The responsible people and their managers have been chased again today.</p>
+     <p style="margin:0 0 12px;">You'll get this summary daily until each report is sent. Resolve the items below, or send the report now from its page.</p>
+     ${sections}`,
+  )
+  for (const email of OWNER_EMAILS) {
+    await sendEmail({
+      to: email,
+      subject: `${n} board report${n === 1 ? "" : "s"} still blocked — action needed`,
+      html,
+      kind: "cadence_stalled_digest",
+      weekEnding: blocked[0].weekEnding,
+    })
+  }
+}
+
+export async function escalateStalledReports(now = new Date()) {
+  const since = new Date(now.getTime() - STALLED_LOOKBACK_DAYS * 86_400_000)
+    .toISOString()
+    .slice(0, 10)
+  const rows = await db
+    .select({
+      weekEnding: weeklyReports.weekEnding,
+      remindersSentAt: weeklyReports.remindersSentAt,
+    })
+    .from(weeklyReports)
+    .where(
+      and(
+        isNull(weeklyReports.reportSentAt),
+        isNotNull(weeklyReports.remindersSentAt),
+        gte(weeklyReports.weekEnding, since),
+      ),
+    )
+  // Only reports whose cadence started over a day ago — never pre-empt a
+  // Saturday close that is still running inside its window.
+  const stalled = rows.filter(
+    (r) =>
+      r.remindersSentAt &&
+      now.getTime() - r.remindersSentAt.getTime() >= STALLED_MIN_AGE_MS,
+  )
+
+  const blocked: StalledReport[] = []
+  const results: { weekEnding: string; stages: string[] }[] = []
+  for (const r of stalled) {
+    const stages: string[] = []
+    for (let i = 0; i < STALLED_MAX_STEPS_PER_WEEK; i++) {
+      const res = await advanceWeeklyCadence(r.weekEnding)
+      stages.push(res.stage)
+      if (!PROGRESS_STAGES.has(res.stage)) break
+    }
+    results.push({ weekEnding: r.weekEnding, stages })
+
+    const cs = await getCadenceStatus(r.weekEnding)
+    if (cs.stage === "sent") continue
+    const items =
+      cs.stage === "collecting"
+        ? (await getSubmissionStatus(r.weekEnding)).outstanding
+        : []
+    blocked.push({ weekEnding: r.weekEnding, stage: cs.stage, items })
+  }
+
+  if (blocked.length > 0) await notifyOwnersOfStalledReports(blocked)
+  return {
+    swept: stalled.length,
+    blocked: blocked.map((b) => ({
+      weekEnding: b.weekEnding,
+      stage: b.stage,
+      outstanding: b.items.length,
+    })),
+    results,
+  }
+}
+
 export const STEPS = {
   reminders: remindUsers,
   "submission-alert": submissionAlert,
@@ -2074,6 +2197,7 @@ export const STEPS = {
   "board-report": sendBoardReport,
   "martin-response": requestMartinResponse,
   cadence: advanceWeeklyCadence,
+  "stalled-reports": () => escalateStalledReports(),
   "brand-rtb": sendBrandRtbSummary,
   "red-action-reminders": remindRedActionOwners,
   "raid-ai-analysis": raidAiAnalysis,

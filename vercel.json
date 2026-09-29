@@ -4,6 +4,7 @@
     { "path": "/api/cron/weekly?step=cadence", "schedule": "*/30 17-23 * * 6" },
     { "path": "/api/cron/weekly?step=cadence", "schedule": "*/30 * * * 0" },
     { "path": "/api/cron/weekly?step=cadence", "schedule": "*/30 0-12 * * 1" },
+    { "path": "/api/cron/weekly?step=stalled-reports", "schedule": "0 8 * * *" },
     { "path": "/api/cron/weekly?step=brand-rtb", "schedule": "45 20 * * 6" },
     { "path": "/api/cron/weekly?step=red-action-reminders", "schedule": "0 7 * * *" },
     { "path": "/api/cron/weekly?step=escalate", "schedule": "5 7 * * *" },
