@@ -1503,6 +1503,13 @@ const CADENCE_RECHASE_EVERY_MS = 24 * 60 * 60 * 1000 // re-nudge daily
 // so an unavailable COO or CEO can never hold the board report indefinitely.
 // The report still goes out, noting the missing input; it can be added after.
 const CADENCE_AUTO_ADVANCE_AFTER_MS = 24 * 60 * 60 * 1000 // skip a silent leader after 24h
+// The daily 08:00 sweep runs a few hundred ms earlier or later each day. With an
+// exact 24h comparison a run landing 1s "early" missed the threshold, so daily
+// chases and 24h skips actually fired every OTHER day. This slack absorbs that.
+const CADENCE_TICK_SLACK_MS = 30 * 60 * 1000
+function hasElapsed(nowMs: number, sinceMs: number, intervalMs: number) {
+  return nowMs - sinceMs >= intervalMs - CADENCE_TICK_SLACK_MS
+}
 
 type CadencePhase = {
   requestedAt?: string
@@ -1561,7 +1568,7 @@ async function runChasePhase(
   // Repeated re-nudge to the responsible person, if this phase opts in.
   if (
     rechaseEveryMs &&
-    t - Date.parse(phase.lastChaseAt ?? phase.requestedAt) >= rechaseEveryMs
+    hasElapsed(t, Date.parse(phase.lastChaseAt ?? phase.requestedAt), rechaseEveryMs)
   ) {
     await sendFn()
     phase.lastChaseAt = now.toISOString()
@@ -1798,7 +1805,9 @@ async function runCollectionChase(
     did.push("escalated-managers")
   }
   // Daily re-chase of the responsible people.
-  if (t - Date.parse(phase.lastChaseAt ?? phase.requestedAt) >= CADENCE_RECHASE_EVERY_MS) {
+  if (
+    hasElapsed(t, Date.parse(phase.lastChaseAt ?? phase.requestedAt), CADENCE_RECHASE_EVERY_MS)
+  ) {
     await chaseOutstandingCollection(weekEnding)
     phase.lastChaseAt = now.toISOString()
     did.push("re-chased")
@@ -1806,8 +1815,11 @@ async function runCollectionChase(
   // Daily re-chase of the managers, once they've been brought in.
   if (
     phase.managerEscalatedAt &&
-    t - Date.parse(phase.lastManagerChaseAt ?? phase.managerEscalatedAt) >=
-      CADENCE_RECHASE_EVERY_MS
+    hasElapsed(
+      t,
+      Date.parse(phase.lastManagerChaseAt ?? phase.managerEscalatedAt),
+      CADENCE_RECHASE_EVERY_MS,
+    )
   ) {
     await escalateCollectionToManagers(weekEnding)
     phase.lastManagerChaseAt = now.toISOString()
@@ -1953,7 +1965,7 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
       : null
     if (
       requestedMs != null &&
-      now.getTime() - requestedMs >= CADENCE_AUTO_ADVANCE_AFTER_MS
+      hasElapsed(now.getTime(), requestedMs, CADENCE_AUTO_ADVANCE_AFTER_MS)
     ) {
       // Stamp the timestamp (leaving the narrative text null so the report notes
       // it as missing) and move on. The COO can still add it afterwards.
@@ -1986,7 +1998,7 @@ export async function advanceWeeklyCadence(weekEnding = mostRecentWeekEnding()) 
       : null
     if (
       requestedMs != null &&
-      now.getTime() - requestedMs >= CADENCE_AUTO_ADVANCE_AFTER_MS
+      hasElapsed(now.getTime(), requestedMs, CADENCE_AUTO_ADVANCE_AFTER_MS)
     ) {
       await db
         .update(weeklyReports)
@@ -2094,6 +2106,21 @@ type StalledReport = {
   weekEnding: string
   stage: string
   items: SubmissionItem[]
+  // Leadership stages: when the COO/CEO was first asked.
+  requestedAt?: string
+}
+
+// A leadership request younger than this isn't "blocked" — it was just sent
+// (often by this same sweep, seconds earlier), so it's left out of the digest.
+const STALLED_FRESH_REQUEST_MS = 12 * 60 * 60 * 1000
+
+function fmtUkDay(ms: number) {
+  return new Date(ms).toLocaleDateString("en-GB", {
+    timeZone: "Europe/London",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  })
 }
 
 async function notifyOwnersOfStalledReports(blocked: StalledReport[]) {
@@ -2101,10 +2128,19 @@ async function notifyOwnersOfStalledReports(blocked: StalledReport[]) {
   const sections = blocked
     .map((b) => {
       const label = STALLED_STAGE_LABEL[b.stage] ?? b.stage
+      const leader =
+        b.stage === "awaiting-coo"
+          ? "Cosmin (COO)"
+          : b.stage === "awaiting-ceo"
+            ? "Martin (CEO)"
+            : null
+      const reqMs = b.requestedAt ? Date.parse(b.requestedAt) : null
       const detail =
         b.items.length > 0
           ? outstandingTable(b.items, b.weekEnding)
-          : `<p style="margin:0 0 8px;">The responsible leader has been chased and will be skipped automatically after 24h.</p>`
+          : leader && reqMs != null
+            ? `<p style="margin:0 0 8px;">${esc(leader)} was asked on ${esc(fmtUkDay(reqMs))} and is chased daily. If it's still missing, the report goes ahead without it at the daily check on ${esc(fmtUkDay(reqMs + CADENCE_AUTO_ADVANCE_AFTER_MS))}.</p>`
+            : `<p style="margin:0 0 8px;">The next automatic step runs at the daily check.</p>`
       return `<h3 style="margin:20px 0 6px;font-size:15px;">w/e ${esc(fmtWeekLong(b.weekEnding))} — ${esc(label)}</h3>
         ${detail}
         <p style="margin:8px 0 0;"><a href="${url}/reports/${b.weekEnding}" style="color:#111827;font-weight:600;">Open report (owners can send it now)</a></p>`
@@ -2115,7 +2151,7 @@ async function notifyOwnersOfStalledReports(blocked: StalledReport[]) {
     `${n} board report${n === 1 ? "" : "s"} still blocked`,
     `<p style="margin:0 0 12px;color:#b91c1c;font-weight:600;">${n} weekly board report${
       n === 1 ? " is" : "s are"
-    } still not sent. The responsible people and their managers have been chased again today.</p>
+    } still not sent. Whoever owes the missing input is chased daily until it's in.</p>
      <p style="margin:0 0 12px;">You'll get this summary daily until each report is sent. Resolve the items below, or send the report now from its page.</p>
      ${sections}`,
   )
@@ -2168,11 +2204,22 @@ export async function escalateStalledReports(now = new Date()) {
 
     const cs = await getCadenceStatus(r.weekEnding)
     if (cs.stage === "sent") continue
+    const requestedAt =
+      cs.stage === "awaiting-coo"
+        ? cs.cadenceState.narrative?.requestedAt
+        : cs.stage === "awaiting-ceo"
+          ? cs.cadenceState.response?.requestedAt
+          : undefined
+    if (
+      requestedAt &&
+      now.getTime() - Date.parse(requestedAt) < STALLED_FRESH_REQUEST_MS
+    )
+      continue
     const items =
       cs.stage === "collecting"
         ? (await getSubmissionStatus(r.weekEnding)).outstanding
         : []
-    blocked.push({ weekEnding: r.weekEnding, stage: cs.stage, items })
+    blocked.push({ weekEnding: r.weekEnding, stage: cs.stage, items, requestedAt })
   }
 
   if (blocked.length > 0) await notifyOwnersOfStalledReports(blocked)
